@@ -92,6 +92,7 @@ enum AccountFlags : uint32_t {
     asfDisallowIncomingPayChan = 14,
     asfDisallowIncomingTrustline = 15,
     asfDisallowIncomingRemit = 16,
+    asfAllowClawback = 17,
 };
 
 // OfferCreate flags:
@@ -189,6 +190,9 @@ constexpr std::uint32_t const tfURITokenNonMintMask = ~tfUniversal;
 enum ClaimRewardFlags : uint32_t {
     tfOptOut = 0x00000001,
 };
+
+// Clawback flags:
+constexpr std::uint32_t const tfClawbackMask     = ~tfUniversal;
 
 // clang-format on
 

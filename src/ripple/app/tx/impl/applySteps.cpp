@@ -24,6 +24,7 @@
 #include <ripple/app/tx/impl/CashCheck.h>
 #include <ripple/app/tx/impl/Change.h>
 #include <ripple/app/tx/impl/ClaimReward.h>
+#include <ripple/app/tx/impl/Clawback.h>
 #include <ripple/app/tx/impl/CreateCheck.h>
 #include <ripple/app/tx/impl/CreateOffer.h>
 #include <ripple/app/tx/impl/CreateTicket.h>
@@ -175,6 +176,8 @@ invoke_preflight(PreflightContext const& ctx)
         case ttURITOKEN_CREATE_SELL_OFFER:
         case ttURITOKEN_CANCEL_SELL_OFFER:
             return invoke_preflight_helper<URIToken>(ctx);
+        case ttCLAWBACK:
+            return invoke_preflight_helper<Clawback>(ctx);
         default:
             assert(false);
             return {temUNKNOWN, TxConsequences{temUNKNOWN}};
@@ -296,6 +299,8 @@ invoke_preclaim(PreclaimContext const& ctx)
         case ttURITOKEN_CREATE_SELL_OFFER:
         case ttURITOKEN_CANCEL_SELL_OFFER:
             return invoke_preclaim<URIToken>(ctx);
+        case ttCLAWBACK:
+            return invoke_preclaim<Clawback>(ctx);
         default:
             assert(false);
             return temUNKNOWN;
@@ -379,6 +384,8 @@ invoke_calculateBaseFee(ReadView const& view, STTx const& tx)
         case ttURITOKEN_CREATE_SELL_OFFER:
         case ttURITOKEN_CANCEL_SELL_OFFER:
             return URIToken::calculateBaseFee(view, tx);
+        case ttCLAWBACK:
+            return Clawback::calculateBaseFee(view, tx);
         default:
             return XRPAmount{0};
     }
@@ -562,6 +569,10 @@ invoke_apply(ApplyContext& ctx)
         case ttURITOKEN_CREATE_SELL_OFFER:
         case ttURITOKEN_CANCEL_SELL_OFFER: {
             URIToken p(ctx);
+            return p();
+        }
+        case ttCLAWBACK: {
+            Clawback p(ctx);
             return p();
         }
         default:
