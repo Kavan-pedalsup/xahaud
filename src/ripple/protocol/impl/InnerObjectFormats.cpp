@@ -159,6 +159,24 @@ InnerObjectFormats::InnerObjectFormats()
             {sfDigest, soeOPTIONAL},
             {sfFlags, soeOPTIONAL},
         });
+
+    add(sfVoteEntry.jsonName.c_str(),
+        sfVoteEntry.getCode(),
+        {
+            {sfAccount, soeREQUIRED},
+            {sfTradingFee, soeDEFAULT},
+            {sfVoteWeight, soeREQUIRED},
+        });
+
+    add(sfAuctionSlot.jsonName.c_str(),
+        sfAuctionSlot.getCode(),
+        {
+            {sfAccount, soeREQUIRED},
+            {sfExpiration, soeREQUIRED},
+            {sfDiscountedFee, soeDEFAULT},
+            {sfPrice, soeREQUIRED},
+            {sfAuthAccounts, soeOPTIONAL},
+        });
 }
 
 InnerObjectFormats const&
