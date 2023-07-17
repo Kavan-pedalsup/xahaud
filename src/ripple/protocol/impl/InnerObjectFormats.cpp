@@ -177,6 +177,12 @@ InnerObjectFormats::InnerObjectFormats()
             {sfPrice, soeREQUIRED},
             {sfAuthAccounts, soeOPTIONAL},
         });
+
+    add(sfAuthAccount.jsonName.c_str(),
+        sfAuthAccount.getCode(),
+        {
+            {sfAccount, soeREQUIRED},
+        });
 }
 
 InnerObjectFormats const&

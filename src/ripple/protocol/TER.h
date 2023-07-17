@@ -319,7 +319,9 @@ enum TECcodes : TERUnderlyingType {
     tecAMM_BALANCE = 163,
     tecAMM_FAILED = 164,
     tecAMM_INVALID_TOKENS = 165,
-    // 166-168: free
+    tecAMM_EMPTY = 166,
+    tecAMM_NOT_EMPTY = 167,
+    tecAMM_ACCOUNT = 168,
     tecREQUIRES_FLAG = 169,
     tecPRECISION_LOSS = 170,
     tecBAD_XCHAIN_TRANSFER_ISSUE = 171,           // RESERVED - XCHAIN
@@ -339,6 +341,7 @@ enum TECcodes : TERUnderlyingType {
     tecXCHAIN_SELF_COMMIT = 185,                  // RESERVED - XCHAIN
     tecXCHAIN_BAD_PUBLIC_KEY_ACCOUNT_PAIR = 186,  // RESERVED - XCHAIN
     tecINSUF_RESERVE_SELLER = 187,
+    tecINCOMPLETE = 188,
     tecLAST_POSSIBLE_ENTRY = 255,
 };
 
