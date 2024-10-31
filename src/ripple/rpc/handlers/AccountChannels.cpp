@@ -38,7 +38,7 @@ addChannel(Json::Value& jsonLines, SLE const& line)
     jDst[jss::channel_id] = to_string(line.key());
     jDst[jss::account] = to_string(line[sfAccount]);
     jDst[jss::destination_account] = to_string(line[sfDestination]);
-    jDst[jss::amount] = line[sfAmount].getText();
+    line[sfAmount].setJson(jDst[jss::amount]);
     jDst[jss::balance] = line[sfBalance].getText();
     if (publicKeyType(line[sfPublicKey]))
     {
@@ -169,6 +169,10 @@ doAccountChannels(RPC::JsonContext& context)
                     assert(false);
                     return false;
                 }
+
+                // Filter out ripple state objects.
+                if (sleCur->getType() != ltPAYCHAN)
+                    return false;
 
                 if (++count == limit)
                 {

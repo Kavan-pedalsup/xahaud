@@ -129,10 +129,28 @@ public:
             BEAST_EXPECT(env.app().config().NETWORK_ID == 1025);
 
             // try to submit a txn without network id, this should not work
+            {
+                env.fund(XRP(200), alice);
+                Json::Value jvn;
+                jvn[jss::Account] = alice.human();
+                jvn[jss::TransactionType] = jss::AccountSet;
+                jvn[jss::Fee] = to_string(env.current()->fees().base);
+                jvn[jss::Sequence] = env.seq(alice);
+                jvn[jss::LastLedgerSequence] = env.current()->info().seq + 2;
+                auto jt = env.jtnofill(jvn, alice);
+                Serializer s;
+                jt.stx->add(s);
+                BEAST_EXPECT(
+                    env.rpc(
+                        "submit",
+                        strHex(s.slice()))[jss::result][jss::engine_result] ==
+                    "telREQUIRES_NETWORK_ID");
+                env.close();
+            }
+
             Json::Value jv;
             jv[jss::Account] = alice.human();
             jv[jss::TransactionType] = jss::AccountSet;
-            runTx(env, jv, telREQUIRES_NETWORK_ID);
 
             // try to submit with wrong network id
             jv[jss::NetworkID] = 0;
