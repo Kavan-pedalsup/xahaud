@@ -148,7 +148,7 @@ NegativeUNLVote::addReportingTx(
         repUnlTx.add(s);
         if (!initalSet->addGiveItem(
                 SHAMapNodeType::tnTRANSACTION_NM,
-                std::make_shared<SHAMapItem>(txID, s.slice())))
+                make_shamapitem(txID, s.slice())))
         {
             JLOG(j_.warn()) << "R-UNL: ledger seq=" << seq
                             << ", add ttUNL_REPORT tx failed";
@@ -203,7 +203,7 @@ NegativeUNLVote::addImportVLTx(
         repUnlTx.add(s);
         if (!initalSet->addGiveItem(
                 SHAMapNodeType::tnTRANSACTION_NM,
-                std::make_shared<SHAMapItem>(txID, s.slice())))
+                make_shamapitem(txID, s.slice())))
         {
             JLOG(j_.warn()) << "R-UNL: ledger seq=" << seq
                             << ", add ttUNL_REPORT tx failed (import_vl_key)";
