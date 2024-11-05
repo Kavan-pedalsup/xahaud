@@ -8,6 +8,11 @@
 #include <memory>
 #include <mutex>
 
+// Define the map implementation selector
+#ifndef MEMORY_DB_USE_CONCURRENT_MAP
+#define MEMORY_DB_USE_CONCURRENT_MAP 0  // Set to 0 to use mutex-guarded std::map
+#endif
+
 namespace ripple {
 
 struct base_uint_hasher
@@ -23,17 +28,74 @@ struct base_uint_hasher
 
 namespace NodeStore {
 
+#if MEMORY_DB_USE_CONCURRENT_MAP
+    using DataStore = boost::unordered::concurrent_flat_map<
+        uint256,
+        std::shared_ptr<NodeObject>,
+        base_uint_hasher>;
+#else
+    using DataStore = std::map<uint256, std::shared_ptr<NodeObject>>;
+#endif
+
 struct MemoryDB
 {
     explicit MemoryDB() = default;
 
-    std::mutex mutex;
+#if !MEMORY_DB_USE_CONCURRENT_MAP
+    mutable std::mutex mutex;  // Only needed for std::map implementation
+#endif
     bool open = false;
-    boost::unordered::concurrent_flat_map<
-        uint256,
-        std::shared_ptr<NodeObject>,
-        base_uint_hasher>
-        table;
+    DataStore table;
+
+    // Helper functions to abstract the different map implementations
+    Status fetch(uint256 const& hash, std::shared_ptr<NodeObject>* pObject) const
+    {
+#if MEMORY_DB_USE_CONCURRENT_MAP
+        bool found = table.visit(hash, [&](const auto& key_value_pair) {
+            *pObject = key_value_pair.second;
+        });
+        return found ? ok : notFound;
+#else
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = table.find(hash);
+        if (it == table.end())
+            return notFound;
+        *pObject = it->second;
+        return ok;
+#endif
+    }
+
+    void store(uint256 const& hash, std::shared_ptr<NodeObject> const& object)
+    {
+#if MEMORY_DB_USE_CONCURRENT_MAP
+        table.insert_or_assign(hash, object);
+#else
+        std::lock_guard<std::mutex> lock(mutex);
+        table[hash] = object;
+#endif
+    }
+
+    template <typename Func>
+    void for_each(Func&& f) const
+    {
+#if MEMORY_DB_USE_CONCURRENT_MAP
+        table.visit_all([&f](const auto& entry) { f(entry.second); });
+#else
+        std::lock_guard<std::mutex> lock(mutex);
+        for (const auto& entry : table)
+            f(entry.second);
+#endif
+    }
+
+    size_t size() const
+    {
+#if MEMORY_DB_USE_CONCURRENT_MAP
+        return table.size();
+#else
+        std::lock_guard<std::mutex> lock(mutex);
+        return table.size();
+#endif
+    }
 };
 
 class MemoryFactory : public Factory
@@ -77,11 +139,6 @@ static MemoryFactory memoryFactory;
 class MemoryBackend : public Backend
 {
 private:
-    using Map = boost::unordered::concurrent_flat_map<
-        uint256,
-        std::shared_ptr<NodeObject>,
-        base_uint_hasher>;
-
     std::string name_;
     beast::Journal const journal_;
     MemoryDB* db_{nullptr};
@@ -93,7 +150,7 @@ public:
         beast::Journal journal)
         : name_(get(keyValues, "path")), journal_(journal)
     {
-        boost::ignore_unused(journal_);  // Keep unused journal_ just in case.
+        boost::ignore_unused(journal_);
         if (name_.empty())
             name_ = "node_db";
     }
@@ -134,12 +191,7 @@ public:
     {
         assert(db_);
         uint256 const hash(uint256::fromVoid(key));
-
-        bool found = db_->table.visit(hash, [&](const auto& key_value_pair) {
-            *pObject = key_value_pair.second;
-        });
-
-        return found ? ok : notFound;
+        return db_->fetch(hash, pObject);
     }
 
     std::pair<std::vector<std::shared_ptr<NodeObject>>, Status>
@@ -156,7 +208,6 @@ public:
             else
                 results.push_back(nObj);
         }
-
         return {results, ok};
     }
 
@@ -164,7 +215,14 @@ public:
     store(std::shared_ptr<NodeObject> const& object) override
     {
         assert(db_);
-        db_->table.insert_or_assign(object->getHash(), object);
+        if (!object)
+            std::cout << "mapping null object\n";
+
+        db_->store(object->getHash(), object);
+
+        static int counter = 0;
+        if (counter++ % 1000 == 0)
+            std::cout << "map size: " << db_->size() << "\n";
     }
 
     void
@@ -183,7 +241,7 @@ public:
     for_each(std::function<void(std::shared_ptr<NodeObject>)> f) override
     {
         assert(db_);
-        db_->table.visit_all([&f](const auto& entry) { f(entry.second); });
+        db_->for_each(f);
     }
 
     int
@@ -204,8 +262,7 @@ public:
     }
 };
 
-//------------------------------------------------------------------------------
-
+// Factory implementation remains the same
 MemoryFactory::MemoryFactory()
 {
     Manager::instance().insert(*this);

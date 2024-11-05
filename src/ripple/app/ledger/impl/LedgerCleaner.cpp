@@ -219,7 +219,7 @@ private:
     run()
     {
         beast::setCurrentThreadName("LedgerCleaner");
-        JLOG(j_.debug()) << "Started";
+        JLOG(j_.warn()) << "Started ledger cleaner";
 
         while (true)
         {
@@ -392,7 +392,7 @@ private:
 
             if (app_.getFeeTrack().isLoadedLocal())
             {
-                JLOG(j_.debug()) << "Waiting for load to subside";
+                JLOG(j_.warn()) << "Ledger Cleaner: Waiting for load to subside";
                 std::this_thread::sleep_for(std::chrono::seconds(5));
                 continue;
             }
@@ -415,13 +415,13 @@ private:
             bool fail = false;
             if (ledgerHash.isZero())
             {
-                JLOG(j_.info())
-                    << "Unable to get hash for ledger " << ledgerIndex;
+                JLOG(j_.warn())
+                    << "Ledger Cleaner: Unable to get hash for ledger " << ledgerIndex;
                 fail = true;
             }
             else if (!doLedger(ledgerIndex, ledgerHash, doNodes, doTxns))
             {
-                JLOG(j_.info()) << "Failed to process ledger " << ledgerIndex;
+                JLOG(j_.warn()) << "Ledger Cleaner: Failed to process ledger " << ledgerIndex;
                 fail = true;
             }
 

@@ -19,7 +19,6 @@
 
 #ifndef RIPPLE_APP_MAIN_APPLICATION_H_INCLUDED
 #define RIPPLE_APP_MAIN_APPLICATION_H_INCLUDED
-
 #include <ripple/basics/TaggedCache.h>
 #include <ripple/beast/utility/PropertyStream.h>
 #include <ripple/core/Config.h>
