@@ -37,8 +37,11 @@ private:
         std::vector<std::uint8_t>,  // Store compressed blob data
         base_uint_hasher>;
 #else
-    using DataStore = std::map<uint256, std::vector<std::uint8_t>>;  // Store compressed blob data
-    mutable std::recursive_mutex mutex_;  // Only needed for std::map implementation
+    using DataStore =
+        std::map<uint256, std::vector<std::uint8_t>>;  // Store compressed blob
+                                                       // data
+    mutable std::recursive_mutex
+        mutex_;  // Only needed for std::map implementation
 #endif
 
     DataStore table_;
@@ -48,8 +51,7 @@ public:
         size_t keyBytes,
         Section const& keyValues,
         beast::Journal journal)
-        : name_(get(keyValues, "path"))
-        , journal_(journal)
+        : name_(get(keyValues, "path")), journal_(journal)
     {
         boost::ignore_unused(journal_);
         if (name_.empty())
@@ -109,9 +111,7 @@ public:
         bool found = table_.visit(hash, [&](const auto& key_value_pair) {
             nudb::detail::buffer bf;
             auto const result = nodeobject_decompress(
-                key_value_pair.second.data(), 
-                key_value_pair.second.size(),
-                bf);
+                key_value_pair.second.data(), key_value_pair.second.size(), bf);
             DecodedBlob decoded(hash.data(), result.first, result.second);
             if (!decoded.wasOk())
             {
@@ -128,10 +128,8 @@ public:
             return notFound;
 
         nudb::detail::buffer bf;
-        auto const result = nodeobject_decompress(
-            it->second.data(),
-            it->second.size(),
-            bf);
+        auto const result =
+            nodeobject_decompress(it->second.data(), it->second.size(), bf);
         DecodedBlob decoded(hash.data(), result.first, result.second);
         if (!decoded.wasOk())
             return dataCorrupt;
@@ -171,10 +169,8 @@ public:
 
         EncodedBlob encoded(object);
         nudb::detail::buffer bf;
-        auto const result = nodeobject_compress(
-            encoded.getData(), 
-            encoded.getSize(),
-            bf);
+        auto const result =
+            nodeobject_compress(encoded.getData(), encoded.getSize(), bf);
 
         std::vector<std::uint8_t> compressed(
             static_cast<const std::uint8_t*>(result.first),
@@ -214,10 +210,9 @@ public:
         table_.visit_all([&f](const auto& entry) {
             nudb::detail::buffer bf;
             auto const result = nodeobject_decompress(
-                entry.second.data(),
-                entry.second.size(),
-                bf);
-            DecodedBlob decoded(entry.first.data(), result.first, result.second);
+                entry.second.data(), entry.second.size(), bf);
+            DecodedBlob decoded(
+                entry.first.data(), result.first, result.second);
             if (decoded.wasOk())
                 f(decoded.createObject());
         });
@@ -227,10 +222,9 @@ public:
         {
             nudb::detail::buffer bf;
             auto const result = nodeobject_decompress(
-                entry.second.data(),
-                entry.second.size(),
-                bf);
-            DecodedBlob decoded(entry.first.data(), result.first, result.second);
+                entry.second.data(), entry.second.size(), bf);
+            DecodedBlob decoded(
+                entry.first.data(), result.first, result.second);
             if (decoded.wasOk())
                 f(decoded.createObject());
         }
@@ -256,7 +250,8 @@ public:
     }
 
 private:
-    size_t size() const
+    size_t
+    size() const
     {
 #if MEMORY_DB_USE_CONCURRENT_MAP
         return table_.size();

@@ -1,16 +1,16 @@
 #ifndef RIPPLE_APP_RDB_BACKEND_MEMORYDATABASE_H_INCLUDED
 #define RIPPLE_APP_RDB_BACKEND_MEMORYDATABASE_H_INCLUDED
 
-#include <ripple/app/rdb/backend/SQLiteDatabase.h>
 #include <ripple/app/ledger/AcceptedLedger.h>
 #include <ripple/app/ledger/LedgerMaster.h>
 #include <ripple/app/ledger/TransactionMaster.h>
-#include <mutex>
+#include <ripple/app/rdb/backend/SQLiteDatabase.h>
+#include <algorithm>
 #include <map>
-#include <vector>
+#include <mutex>
 #include <optional>
 #include <shared_mutex>
-#include <algorithm>
+#include <vector>
 
 #if RDB_CONCURRENT
 #include <boost/unordered/concurrent_flat_map.hpp>
@@ -19,36 +19,49 @@
 namespace ripple {
 
 #if RDB_CONCURRENT
-struct base_uint_hasher {
+struct base_uint_hasher
+{
     using result_type = std::size_t;
 
-    result_type operator()(base_uint<256> const& value) const {
+    result_type
+    operator()(base_uint<256> const& value) const
+    {
         return hardened_hash<>{}(value);
     }
 
-    result_type operator()(AccountID const& value) const {
+    result_type
+    operator()(AccountID const& value) const
+    {
         return hardened_hash<>{}(value);
     }
 };
 #endif
 
-class MemoryDatabase : public SQLiteDatabase {
+class MemoryDatabase : public SQLiteDatabase
+{
 private:
-    struct LedgerData {
+    struct LedgerData
+    {
         LedgerInfo info;
 #if RDB_CONCURRENT
-        boost::unordered::concurrent_flat_map<uint256, AccountTx, base_uint_hasher> transactions;
+        boost::unordered::
+            concurrent_flat_map<uint256, AccountTx, base_uint_hasher>
+                transactions;
 #else
         std::map<uint256, AccountTx> transactions;
 #endif
     };
 
-    struct AccountTxData {
+    struct AccountTxData
+    {
 #if RDB_CONCURRENT
-        boost::unordered::concurrent_flat_map<std::pair<uint32_t, uint32_t>, AccountTx> transactions;
+        boost::unordered::
+            concurrent_flat_map<std::pair<uint32_t, uint32_t>, AccountTx>
+                transactions;
 #else
         AccountTxs transactions;
-        std::map<uint32_t, std::map<uint32_t, size_t>> ledgerTxMap; // ledgerSeq -> txSeq -> index in transactions
+        std::map<uint32_t, std::map<uint32_t, size_t>>
+            ledgerTxMap;  // ledgerSeq -> txSeq -> index in transactions
 #endif
     };
 
@@ -62,9 +75,14 @@ private:
 
 #if RDB_CONCURRENT
     boost::unordered::concurrent_flat_map<LedgerIndex, LedgerData> ledgers_;
-    boost::unordered::concurrent_flat_map<uint256, LedgerIndex, base_uint_hasher> ledgerHashToSeq_;
-    boost::unordered::concurrent_flat_map<uint256, AccountTx, base_uint_hasher> transactionMap_;
-    boost::unordered::concurrent_flat_map<AccountID, AccountTxData, base_uint_hasher> accountTxMap_;
+    boost::unordered::
+        concurrent_flat_map<uint256, LedgerIndex, base_uint_hasher>
+            ledgerHashToSeq_;
+    boost::unordered::concurrent_flat_map<uint256, AccountTx, base_uint_hasher>
+        transactionMap_;
+    boost::unordered::
+        concurrent_flat_map<AccountID, AccountTxData, base_uint_hasher>
+            accountTxMap_;
 #else
     std::map<LedgerIndex, LedgerData> ledgers_;
     std::map<uint256, LedgerIndex> ledgerHashToSeq_;
@@ -74,13 +92,18 @@ private:
 
 public:
     MemoryDatabase(Application& app, Config const& config, JobQueue& jobQueue)
-        : app_(app), config_(config), jobQueue_(jobQueue) {}
+        : app_(app), config_(config), jobQueue_(jobQueue)
+    {
+    }
 
-    std::optional<LedgerIndex> getMinLedgerSeq() override {
+    std::optional<LedgerIndex>
+    getMinLedgerSeq() override
+    {
 #if RDB_CONCURRENT
         std::optional<LedgerIndex> minSeq;
         ledgers_.visit_all([&minSeq](auto const& pair) {
-            if (!minSeq || pair.first < *minSeq) {
+            if (!minSeq || pair.first < *minSeq)
+            {
                 minSeq = pair.first;
             }
         });
@@ -93,12 +116,15 @@ public:
 #endif
     }
 
-    std::optional<LedgerIndex> getTransactionsMinLedgerSeq() override {
+    std::optional<LedgerIndex>
+    getTransactionsMinLedgerSeq() override
+    {
 #if RDB_CONCURRENT
         std::optional<LedgerIndex> minSeq;
         transactionMap_.visit_all([&minSeq](auto const& pair) {
             LedgerIndex seq = pair.second.second->getLgrSeq();
-            if (!minSeq || seq < *minSeq) {
+            if (!minSeq || seq < *minSeq)
+            {
                 minSeq = seq;
             }
         });
@@ -111,12 +137,15 @@ public:
 #endif
     }
 
-    std::optional<LedgerIndex> getAccountTransactionsMinLedgerSeq() override {
+    std::optional<LedgerIndex>
+    getAccountTransactionsMinLedgerSeq() override
+    {
 #if RDB_CONCURRENT
         std::optional<LedgerIndex> minSeq;
         accountTxMap_.visit_all([&minSeq](auto const& pair) {
             pair.second.transactions.visit_all([&minSeq](auto const& tx) {
-                if (!minSeq || tx.first.first < *minSeq) {
+                if (!minSeq || tx.first.first < *minSeq)
+                {
                     minSeq = tx.first.first;
                 }
             });
@@ -127,19 +156,26 @@ public:
         if (accountTxMap_.empty())
             return std::nullopt;
         LedgerIndex minSeq = std::numeric_limits<LedgerIndex>::max();
-        for (const auto& [_, accountData] : accountTxMap_) {
+        for (const auto& [_, accountData] : accountTxMap_)
+        {
             if (!accountData.ledgerTxMap.empty())
-                minSeq = std::min(minSeq, accountData.ledgerTxMap.begin()->first);
+                minSeq =
+                    std::min(minSeq, accountData.ledgerTxMap.begin()->first);
         }
-        return minSeq == std::numeric_limits<LedgerIndex>::max() ? std::nullopt : std::optional<LedgerIndex>(minSeq);
+        return minSeq == std::numeric_limits<LedgerIndex>::max()
+            ? std::nullopt
+            : std::optional<LedgerIndex>(minSeq);
 #endif
     }
 
-    std::optional<LedgerIndex> getMaxLedgerSeq() override {
+    std::optional<LedgerIndex>
+    getMaxLedgerSeq() override
+    {
 #if RDB_CONCURRENT
         std::optional<LedgerIndex> maxSeq;
         ledgers_.visit_all([&maxSeq](auto const& pair) {
-            if (!maxSeq || pair.first > *maxSeq) {
+            if (!maxSeq || pair.first > *maxSeq)
+            {
                 maxSeq = pair.first;
             }
         });
@@ -151,7 +187,9 @@ public:
         return ledgers_.rbegin()->first;
 #endif
     }
-void deleteTransactionByLedgerSeq(LedgerIndex ledgerSeq) override {
+    void
+    deleteTransactionByLedgerSeq(LedgerIndex ledgerSeq) override
+    {
 #if RDB_CONCURRENT
         ledgers_.visit(ledgerSeq, [this](auto& item) {
             item.second.transactions.visit_all([this](auto const& txPair) {
@@ -168,26 +206,36 @@ void deleteTransactionByLedgerSeq(LedgerIndex ledgerSeq) override {
 #else
         std::unique_lock<std::shared_mutex> lock(mutex_);
         auto it = ledgers_.find(ledgerSeq);
-        if (it != ledgers_.end()) {
-            for (const auto& [txHash, _] : it->second.transactions) {
+        if (it != ledgers_.end())
+        {
+            for (const auto& [txHash, _] : it->second.transactions)
+            {
                 transactionMap_.erase(txHash);
             }
             it->second.transactions.clear();
         }
-        for (auto& [_, accountData] : accountTxMap_) {
+        for (auto& [_, accountData] : accountTxMap_)
+        {
             accountData.ledgerTxMap.erase(ledgerSeq);
             accountData.transactions.erase(
-                std::remove_if(accountData.transactions.begin(), accountData.transactions.end(),
-                    [ledgerSeq](const AccountTx& tx) { return tx.second->getLgrSeq() == ledgerSeq; }),
+                std::remove_if(
+                    accountData.transactions.begin(),
+                    accountData.transactions.end(),
+                    [ledgerSeq](const AccountTx& tx) {
+                        return tx.second->getLgrSeq() == ledgerSeq;
+                    }),
                 accountData.transactions.end());
         }
 #endif
     }
 
-    void deleteBeforeLedgerSeq(LedgerIndex ledgerSeq) override {
+    void
+    deleteBeforeLedgerSeq(LedgerIndex ledgerSeq) override
+    {
 #if RDB_CONCURRENT
         ledgers_.erase_if([this, ledgerSeq](auto const& item) {
-            if (item.first < ledgerSeq) {
+            if (item.first < ledgerSeq)
+            {
                 item.second.transactions.visit_all([this](auto const& txPair) {
                     transactionMap_.erase(txPair.first);
                 });
@@ -205,30 +253,42 @@ void deleteTransactionByLedgerSeq(LedgerIndex ledgerSeq) override {
 #else
         std::unique_lock<std::shared_mutex> lock(mutex_);
         auto it = ledgers_.begin();
-        while (it != ledgers_.end() && it->first < ledgerSeq) {
-            for (const auto& [txHash, _] : it->second.transactions) {
+        while (it != ledgers_.end() && it->first < ledgerSeq)
+        {
+            for (const auto& [txHash, _] : it->second.transactions)
+            {
                 transactionMap_.erase(txHash);
             }
             ledgerHashToSeq_.erase(it->second.info.hash);
             it = ledgers_.erase(it);
         }
-        for (auto& [_, accountData] : accountTxMap_) {
+        for (auto& [_, accountData] : accountTxMap_)
+        {
             auto txIt = accountData.ledgerTxMap.begin();
-            while (txIt != accountData.ledgerTxMap.end() && txIt->first < ledgerSeq) {
+            while (txIt != accountData.ledgerTxMap.end() &&
+                   txIt->first < ledgerSeq)
+            {
                 txIt = accountData.ledgerTxMap.erase(txIt);
             }
             accountData.transactions.erase(
-                std::remove_if(accountData.transactions.begin(), accountData.transactions.end(),
-                    [ledgerSeq](const AccountTx& tx) { return tx.second->getLgrSeq() < ledgerSeq; }),
+                std::remove_if(
+                    accountData.transactions.begin(),
+                    accountData.transactions.end(),
+                    [ledgerSeq](const AccountTx& tx) {
+                        return tx.second->getLgrSeq() < ledgerSeq;
+                    }),
                 accountData.transactions.end());
         }
 #endif
     }
 
-    void deleteTransactionsBeforeLedgerSeq(LedgerIndex ledgerSeq) override {
+    void
+    deleteTransactionsBeforeLedgerSeq(LedgerIndex ledgerSeq) override
+    {
 #if RDB_CONCURRENT
         ledgers_.visit_all([this, ledgerSeq](auto& item) {
-            if (item.first < ledgerSeq) {
+            if (item.first < ledgerSeq)
+            {
                 item.second.transactions.visit_all([this](auto const& txPair) {
                     transactionMap_.erase(txPair.first);
                 });
@@ -243,28 +303,40 @@ void deleteTransactionByLedgerSeq(LedgerIndex ledgerSeq) override {
         });
 #else
         std::unique_lock<std::shared_mutex> lock(mutex_);
-        for (auto& [seq, ledgerData] : ledgers_) {
-            if (seq < ledgerSeq) {
-                for (const auto& [txHash, _] : ledgerData.transactions) {
+        for (auto& [seq, ledgerData] : ledgers_)
+        {
+            if (seq < ledgerSeq)
+            {
+                for (const auto& [txHash, _] : ledgerData.transactions)
+                {
                     transactionMap_.erase(txHash);
                 }
                 ledgerData.transactions.clear();
             }
         }
-        for (auto& [_, accountData] : accountTxMap_) {
+        for (auto& [_, accountData] : accountTxMap_)
+        {
             auto txIt = accountData.ledgerTxMap.begin();
-            while (txIt != accountData.ledgerTxMap.end() && txIt->first < ledgerSeq) {
+            while (txIt != accountData.ledgerTxMap.end() &&
+                   txIt->first < ledgerSeq)
+            {
                 txIt = accountData.ledgerTxMap.erase(txIt);
             }
             accountData.transactions.erase(
-                std::remove_if(accountData.transactions.begin(), accountData.transactions.end(),
-                    [ledgerSeq](const AccountTx& tx) { return tx.second->getLgrSeq() < ledgerSeq; }),
+                std::remove_if(
+                    accountData.transactions.begin(),
+                    accountData.transactions.end(),
+                    [ledgerSeq](const AccountTx& tx) {
+                        return tx.second->getLgrSeq() < ledgerSeq;
+                    }),
                 accountData.transactions.end());
         }
 #endif
     }
 
-    void deleteAccountTransactionsBeforeLedgerSeq(LedgerIndex ledgerSeq) override {
+    void
+    deleteAccountTransactionsBeforeLedgerSeq(LedgerIndex ledgerSeq) override
+    {
 #if RDB_CONCURRENT
         accountTxMap_.visit_all([ledgerSeq](auto& item) {
             item.second.transactions.erase_if([ledgerSeq](auto const& tx) {
@@ -273,19 +345,28 @@ void deleteTransactionByLedgerSeq(LedgerIndex ledgerSeq) override {
         });
 #else
         std::unique_lock<std::shared_mutex> lock(mutex_);
-        for (auto& [_, accountData] : accountTxMap_) {
+        for (auto& [_, accountData] : accountTxMap_)
+        {
             auto txIt = accountData.ledgerTxMap.begin();
-            while (txIt != accountData.ledgerTxMap.end() && txIt->first < ledgerSeq) {
+            while (txIt != accountData.ledgerTxMap.end() &&
+                   txIt->first < ledgerSeq)
+            {
                 txIt = accountData.ledgerTxMap.erase(txIt);
             }
             accountData.transactions.erase(
-                std::remove_if(accountData.transactions.begin(), accountData.transactions.end(),
-                    [ledgerSeq](const AccountTx& tx) { return tx.second->getLgrSeq() < ledgerSeq; }),
+                std::remove_if(
+                    accountData.transactions.begin(),
+                    accountData.transactions.end(),
+                    [ledgerSeq](const AccountTx& tx) {
+                        return tx.second->getLgrSeq() < ledgerSeq;
+                    }),
                 accountData.transactions.end());
         }
 #endif
     }
-std::size_t getTransactionCount() override {
+    std::size_t
+    getTransactionCount() override
+    {
 #if RDB_CONCURRENT
         return transactionMap_.size();
 #else
@@ -294,7 +375,9 @@ std::size_t getTransactionCount() override {
 #endif
     }
 
-    std::size_t getAccountTransactionCount() override {
+    std::size_t
+    getAccountTransactionCount() override
+    {
 #if RDB_CONCURRENT
         std::size_t count = 0;
         accountTxMap_.visit_all([&count](auto const& item) {
@@ -304,22 +387,28 @@ std::size_t getTransactionCount() override {
 #else
         std::shared_lock<std::shared_mutex> lock(mutex_);
         std::size_t count = 0;
-        for (const auto& [_, accountData] : accountTxMap_) {
+        for (const auto& [_, accountData] : accountTxMap_)
+        {
             count += accountData.transactions.size();
         }
         return count;
 #endif
     }
 
-    CountMinMax getLedgerCountMinMax() override {
+    CountMinMax
+    getLedgerCountMinMax() override
+    {
 #if RDB_CONCURRENT
         CountMinMax result{0, 0, 0};
         ledgers_.visit_all([&result](auto const& item) {
             result.numberOfRows++;
-            if (result.minLedgerSequence == 0 || item.first < result.minLedgerSequence) {
+            if (result.minLedgerSequence == 0 ||
+                item.first < result.minLedgerSequence)
+            {
                 result.minLedgerSequence = item.first;
             }
-            if (item.first > result.maxLedgerSequence) {
+            if (item.first > result.maxLedgerSequence)
+            {
                 result.maxLedgerSequence = item.first;
             }
         });
@@ -329,21 +418,24 @@ std::size_t getTransactionCount() override {
         if (ledgers_.empty())
             return {0, 0, 0};
         return {
-            ledgers_.size(),
-            ledgers_.begin()->first,
-            ledgers_.rbegin()->first
-        };
+            ledgers_.size(), ledgers_.begin()->first, ledgers_.rbegin()->first};
 #endif
     }
 
-    bool saveValidatedLedger(std::shared_ptr<Ledger const> const& ledger, bool current) override {
+    bool
+    saveValidatedLedger(
+        std::shared_ptr<Ledger const> const& ledger,
+        bool current) override
+    {
 #if RDB_CONCURRENT
-        try {
+        try
+        {
             LedgerData ledgerData;
             ledgerData.info = ledger->info();
 
             auto aLedger = std::make_shared<AcceptedLedger>(ledger, app_);
-            for (auto const& acceptedLedgerTx : *aLedger) {
+            for (auto const& acceptedLedgerTx : *aLedger)
+            {
                 auto const& txn = acceptedLedgerTx->getTxn();
                 auto const& meta = acceptedLedgerTx->getMeta();
                 auto const& id = txn->getTransactionID();
@@ -356,11 +448,13 @@ std::size_t getTransactionCount() override {
                 ledgerData.transactions.emplace(id, accTx);
                 transactionMap_.emplace(id, accTx);
 
-                for (auto const& account : meta.getAffectedAccounts()) {
+                for (auto const& account : meta.getAffectedAccounts())
+                {
                     accountTxMap_.visit(account, [&](auto& data) {
                         data.second.transactions.emplace(
                             std::make_pair(
-                                ledger->info().seq, acceptedLedgerTx->getTxnSeq()),
+                                ledger->info().seq,
+                                acceptedLedgerTx->getTxnSeq()),
                             accTx);
                     });
                 }
@@ -369,12 +463,15 @@ std::size_t getTransactionCount() override {
             ledgers_.emplace(ledger->info().seq, std::move(ledgerData));
             ledgerHashToSeq_.emplace(ledger->info().hash, ledger->info().seq);
 
-            if (current) {
-                auto const cutoffSeq = ledger->info().seq > app_.config().LEDGER_HISTORY
+            if (current)
+            {
+                auto const cutoffSeq =
+                    ledger->info().seq > app_.config().LEDGER_HISTORY
                     ? ledger->info().seq - app_.config().LEDGER_HISTORY
                     : 0;
 
-                if (cutoffSeq > 0) {
+                if (cutoffSeq > 0)
+                {
                     const std::size_t BATCH_SIZE = 128;
                     std::size_t deleted = 0;
 
@@ -382,10 +479,12 @@ std::size_t getTransactionCount() override {
                         if (deleted >= BATCH_SIZE)
                             return false;
 
-                        if (item.first < cutoffSeq) {
-                            item.second.transactions.visit_all([this](auto const& txPair) {
-                                transactionMap_.erase(txPair.first);
-                            });
+                        if (item.first < cutoffSeq)
+                        {
+                            item.second.transactions.visit_all(
+                                [this](auto const& txPair) {
+                                    transactionMap_.erase(txPair.first);
+                                });
                             ledgerHashToSeq_.erase(item.second.info.hash);
                             deleted++;
                             return true;
@@ -393,11 +492,13 @@ std::size_t getTransactionCount() override {
                         return false;
                     });
 
-                    if (deleted > 0) {
+                    if (deleted > 0)
+                    {
                         accountTxMap_.visit_all([cutoffSeq](auto& item) {
-                            item.second.transactions.erase_if([cutoffSeq](auto const& tx) {
-                                return tx.first.first < cutoffSeq;
-                            });
+                            item.second.transactions.erase_if(
+                                [cutoffSeq](auto const& tx) {
+                                    return tx.first.first < cutoffSeq;
+                                });
                         });
                     }
 
@@ -407,7 +508,8 @@ std::size_t getTransactionCount() override {
 
             return true;
         }
-        catch (std::exception const&) {
+        catch (std::exception const&)
+        {
             deleteTransactionByLedgerSeq(ledger->info().seq);
             return false;
         }
@@ -416,129 +518,153 @@ std::size_t getTransactionCount() override {
         LedgerData ledgerData;
         ledgerData.info = ledger->info();
         auto aLedger = std::make_shared<AcceptedLedger>(ledger, app_);
-        
-        for (auto const& acceptedLedgerTx : *aLedger) {
+
+        for (auto const& acceptedLedgerTx : *aLedger)
+        {
             auto const& txn = acceptedLedgerTx->getTxn();
             auto const& meta = acceptedLedgerTx->getMeta();
             auto const& id = txn->getTransactionID();
             std::string reason;
-            
+
             auto accTx = std::make_pair(
                 std::make_shared<ripple::Transaction>(txn, reason, app_),
-                std::make_shared<ripple::TxMeta>(meta)
-            );
-            
+                std::make_shared<ripple::TxMeta>(meta));
+
             ledgerData.transactions.emplace(id, accTx);
             transactionMap_.emplace(id, accTx);
-            
-            for (auto const& account : meta.getAffectedAccounts()) {
+
+            for (auto const& account : meta.getAffectedAccounts())
+            {
                 if (accountTxMap_.find(account) == accountTxMap_.end())
                     accountTxMap_[account] = AccountTxData();
                 auto& accountData = accountTxMap_[account];
                 accountData.transactions.push_back(accTx);
-                accountData.ledgerTxMap[ledger->info().seq][acceptedLedgerTx->getTxnSeq()] =
+                accountData.ledgerTxMap[ledger->info().seq]
+                                       [acceptedLedgerTx->getTxnSeq()] =
                     accountData.transactions.size() - 1;
             }
         }
-        
+
         ledgers_[ledger->info().seq] = std::move(ledgerData);
         ledgerHashToSeq_[ledger->info().hash] = ledger->info().seq;
 
-        if (current) {
-            auto const cutoffSeq = ledger->info().seq > app_.config().LEDGER_HISTORY
+        if (current)
+        {
+            auto const cutoffSeq =
+                ledger->info().seq > app_.config().LEDGER_HISTORY
                 ? ledger->info().seq - app_.config().LEDGER_HISTORY
                 : 0;
-                
-            if (cutoffSeq > 0) {
+
+            if (cutoffSeq > 0)
+            {
                 const std::size_t BATCH_SIZE = 128;
                 std::size_t deleted = 0;
-                
+
                 std::vector<std::uint32_t> ledgersToDelete;
-                for (const auto& item : ledgers_) {
+                for (const auto& item : ledgers_)
+                {
                     if (deleted >= BATCH_SIZE)
                         break;
-                    if (item.first < cutoffSeq) {
+                    if (item.first < cutoffSeq)
+                    {
                         ledgersToDelete.push_back(item.first);
                         deleted++;
                     }
                 }
-                
-                for (auto seq : ledgersToDelete) {
+
+                for (auto seq : ledgersToDelete)
+                {
                     auto& ledgerToDelete = ledgers_[seq];
-                    
-                    for (const auto& txPair : ledgerToDelete.transactions) {
+
+                    for (const auto& txPair : ledgerToDelete.transactions)
+                    {
                         transactionMap_.erase(txPair.first);
                     }
-                    
+
                     ledgerHashToSeq_.erase(ledgerToDelete.info.hash);
                     ledgers_.erase(seq);
                 }
-                
-                if (deleted > 0) {
-                    for (auto& [account, data] : accountTxMap_) {
+
+                if (deleted > 0)
+                {
+                    for (auto& [account, data] : accountTxMap_)
+                    {
                         auto it = data.ledgerTxMap.begin();
-                        while (it != data.ledgerTxMap.end()) {
-                            if (it->first < cutoffSeq) {
-                                for (const auto& seqPair : it->second) {
-                                    if (seqPair.second < data.transactions.size()) {
-                                        auto& txPair = data.transactions[seqPair.second];
+                        while (it != data.ledgerTxMap.end())
+                        {
+                            if (it->first < cutoffSeq)
+                            {
+                                for (const auto& seqPair : it->second)
+                                {
+                                    if (seqPair.second <
+                                        data.transactions.size())
+                                    {
+                                        auto& txPair =
+                                            data.transactions[seqPair.second];
                                         txPair.first.reset();
                                         txPair.second.reset();
                                     }
                                 }
                                 it = data.ledgerTxMap.erase(it);
-                            } else {
+                            }
+                            else
+                            {
                                 ++it;
                             }
                         }
-                        
+
                         data.transactions.erase(
                             std::remove_if(
                                 data.transactions.begin(),
                                 data.transactions.end(),
-                                [](const auto& tx) { return !tx.first && !tx.second; }
-                            ),
-                            data.transactions.end()
-                        );
-                        
-                        for (auto& [ledgerSeq, txMap] : data.ledgerTxMap) {
-                            for (auto& [txSeq, index] : txMap) {
+                                [](const auto& tx) {
+                                    return !tx.first && !tx.second;
+                                }),
+                            data.transactions.end());
+
+                        for (auto& [ledgerSeq, txMap] : data.ledgerTxMap)
+                        {
+                            for (auto& [txSeq, index] : txMap)
+                            {
                                 auto newIndex = std::distance(
                                     data.transactions.begin(),
                                     std::find(
                                         data.transactions.begin(),
                                         data.transactions.end(),
-                                        data.transactions[index]
-                                    )
-                                );
+                                        data.transactions[index]));
                                 index = newIndex;
                             }
                         }
                     }
-                    
+
                     app_.getLedgerMaster().clearPriorLedgers(cutoffSeq);
                 }
             }
         }
-        
+
         return true;
 #endif
     }
-AccountTxs getOldestAccountTxs(AccountTxOptions const& options) override {
+    AccountTxs
+    getOldestAccountTxs(AccountTxOptions const& options) override
+    {
 #if RDB_CONCURRENT
         AccountTxs result;
         accountTxMap_.visit(options.account, [&](auto const& item) {
             item.second.transactions.visit_all([&](auto const& tx) {
                 if (tx.first.first >= options.minLedger &&
-                    tx.first.first <= options.maxLedger) {
+                    tx.first.first <= options.maxLedger)
+                {
                     result.push_back(tx.second);
                 }
             });
         });
-        std::sort(result.begin(), result.end(), [](auto const& a, auto const& b) {
-            return a.second->getLgrSeq() < b.second->getLgrSeq();
-        });
-        if (!options.bUnlimited && result.size() > options.limit) {
+        std::sort(
+            result.begin(), result.end(), [](auto const& a, auto const& b) {
+                return a.second->getLgrSeq() < b.second->getLgrSeq();
+            });
+        if (!options.bUnlimited && result.size() > options.limit)
+        {
             result.resize(options.limit);
         }
         return result;
@@ -554,9 +680,12 @@ AccountTxs getOldestAccountTxs(AccountTxOptions const& options) override {
         auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
 
         std::size_t skipped = 0;
-        for (; txIt != txEnd && result.size() < options.limit; ++txIt) {
-            for (const auto& [txSeq, txIndex] : txIt->second) {
-                if (skipped < options.offset) {
+        for (; txIt != txEnd && result.size() < options.limit; ++txIt)
+        {
+            for (const auto& [txSeq, txIndex] : txIt->second)
+            {
+                if (skipped < options.offset)
+                {
                     ++skipped;
                     continue;
                 }
@@ -570,21 +699,26 @@ AccountTxs getOldestAccountTxs(AccountTxOptions const& options) override {
 #endif
     }
 
-    AccountTxs getNewestAccountTxs(AccountTxOptions const& options) override {
+    AccountTxs
+    getNewestAccountTxs(AccountTxOptions const& options) override
+    {
 #if RDB_CONCURRENT
         AccountTxs result;
         accountTxMap_.visit(options.account, [&](auto const& item) {
             item.second.transactions.visit_all([&](auto const& tx) {
                 if (tx.first.first >= options.minLedger &&
-                    tx.first.first <= options.maxLedger) {
+                    tx.first.first <= options.maxLedger)
+                {
                     result.push_back(tx.second);
                 }
             });
         });
-        std::sort(result.begin(), result.end(), [](auto const& a, auto const& b) {
-            return a.second->getLgrSeq() > b.second->getLgrSeq();
-        });
-        if (!options.bUnlimited && result.size() > options.limit) {
+        std::sort(
+            result.begin(), result.end(), [](auto const& a, auto const& b) {
+                return a.second->getLgrSeq() > b.second->getLgrSeq();
+            });
+        if (!options.bUnlimited && result.size() > options.limit)
+        {
             result.resize(options.limit);
         }
         return result;
@@ -601,13 +735,21 @@ AccountTxs getOldestAccountTxs(AccountTxOptions const& options) override {
 
         std::vector<AccountTx> tempResult;
         std::size_t skipped = 0;
-        for (auto rIt = std::make_reverse_iterator(txEnd); rIt != std::make_reverse_iterator(txIt); ++rIt) {
-            for (auto innerRIt = rIt->second.rbegin(); innerRIt != rIt->second.rend(); ++innerRIt) {
-                if (skipped < options.offset) {
+        for (auto rIt = std::make_reverse_iterator(txEnd);
+             rIt != std::make_reverse_iterator(txIt);
+             ++rIt)
+        {
+            for (auto innerRIt = rIt->second.rbegin();
+                 innerRIt != rIt->second.rend();
+                 ++innerRIt)
+            {
+                if (skipped < options.offset)
+                {
                     ++skipped;
                     continue;
                 }
-                tempResult.push_back(accountData.transactions[innerRIt->second]);
+                tempResult.push_back(
+                    accountData.transactions[innerRIt->second]);
                 if (tempResult.size() >= options.limit && !options.bUnlimited)
                     break;
             }
@@ -621,15 +763,18 @@ AccountTxs getOldestAccountTxs(AccountTxOptions const& options) override {
     }
 
     std::pair<AccountTxs, std::optional<AccountTxMarker>>
-    oldestAccountTxPage(AccountTxPageOptions const& options) override {
+    oldestAccountTxPage(AccountTxPageOptions const& options) override
+    {
 #if RDB_CONCURRENT
         AccountTxs result;
         std::optional<AccountTxMarker> marker;
         accountTxMap_.visit(options.account, [&](auto const& item) {
-            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>> txs;
+            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>>
+                txs;
             item.second.transactions.visit_all([&](auto const& tx) {
                 if (tx.first.first >= options.minLedger &&
-                    tx.first.first <= options.maxLedger) {
+                    tx.first.first <= options.maxLedger)
+                {
                     txs.emplace_back(tx);
                 }
             });
@@ -638,20 +783,23 @@ AccountTxs getOldestAccountTxs(AccountTxOptions const& options) override {
             });
 
             auto it = txs.begin();
-            if (options.marker) {
+            if (options.marker)
+            {
                 it = std::find_if(txs.begin(), txs.end(), [&](auto const& tx) {
                     return tx.first.first == options.marker->ledgerSeq &&
-                           tx.first.second == options.marker->txnSeq;
+                        tx.first.second == options.marker->txnSeq;
                 });
                 if (it != txs.end())
                     ++it;
             }
 
-            for (; it != txs.end() && result.size() < options.limit; ++it) {
+            for (; it != txs.end() && result.size() < options.limit; ++it)
+            {
                 result.push_back(it->second);
             }
 
-            if (it != txs.end()) {
+            if (it != txs.end())
+            {
                 marker = AccountTxMarker{it->first.first, it->first.second};
             }
         });
@@ -671,10 +819,14 @@ AccountTxs getOldestAccountTxs(AccountTxOptions const& options) override {
         bool lookingForMarker = options.marker.has_value();
         std::size_t count = 0;
 
-        for (; txIt != txEnd && count < options.limit; ++txIt) {
-            for (const auto& [txSeq, txIndex] : txIt->second) {
-                if (lookingForMarker) {
-                    if (txIt->first == options.marker->ledgerSeq && txSeq == options.marker->txnSeq)
+        for (; txIt != txEnd && count < options.limit; ++txIt)
+        {
+            for (const auto& [txSeq, txIndex] : txIt->second)
+            {
+                if (lookingForMarker)
+                {
+                    if (txIt->first == options.marker->ledgerSeq &&
+                        txSeq == options.marker->txnSeq)
                         lookingForMarker = false;
                     else
                         continue;
@@ -683,7 +835,8 @@ AccountTxs getOldestAccountTxs(AccountTxOptions const& options) override {
                 result.push_back(accountData.transactions[txIndex]);
                 ++count;
 
-                if (count >= options.limit) {
+                if (count >= options.limit)
+                {
                     marker = AccountTxMarker{txIt->first, txSeq};
                     break;
                 }
@@ -693,16 +846,19 @@ AccountTxs getOldestAccountTxs(AccountTxOptions const& options) override {
         return {result, marker};
 #endif
     }
-std::pair<AccountTxs, std::optional<AccountTxMarker>>
-    newestAccountTxPage(AccountTxPageOptions const& options) override {
+    std::pair<AccountTxs, std::optional<AccountTxMarker>>
+    newestAccountTxPage(AccountTxPageOptions const& options) override
+    {
 #if RDB_CONCURRENT
         AccountTxs result;
         std::optional<AccountTxMarker> marker;
         accountTxMap_.visit(options.account, [&](auto const& item) {
-            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>> txs;
+            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>>
+                txs;
             item.second.transactions.visit_all([&](auto const& tx) {
                 if (tx.first.first >= options.minLedger &&
-                    tx.first.first <= options.maxLedger) {
+                    tx.first.first <= options.maxLedger)
+                {
                     txs.emplace_back(tx);
                 }
             });
@@ -711,20 +867,23 @@ std::pair<AccountTxs, std::optional<AccountTxMarker>>
             });
 
             auto it = txs.begin();
-            if (options.marker) {
+            if (options.marker)
+            {
                 it = std::find_if(txs.begin(), txs.end(), [&](auto const& tx) {
                     return tx.first.first == options.marker->ledgerSeq &&
-                           tx.first.second == options.marker->txnSeq;
+                        tx.first.second == options.marker->txnSeq;
                 });
                 if (it != txs.end())
                     ++it;
             }
 
-            for (; it != txs.end() && result.size() < options.limit; ++it) {
+            for (; it != txs.end() && result.size() < options.limit; ++it)
+            {
                 result.push_back(it->second);
             }
 
-            if (it != txs.end()) {
+            if (it != txs.end())
+            {
                 marker = AccountTxMarker{it->first.first, it->first.second};
             }
         });
@@ -744,10 +903,18 @@ std::pair<AccountTxs, std::optional<AccountTxMarker>>
         bool lookingForMarker = options.marker.has_value();
         std::size_t count = 0;
 
-        for (auto rIt = std::make_reverse_iterator(txEnd); rIt != std::make_reverse_iterator(txIt) && count < options.limit; ++rIt) {
-            for (auto innerRIt = rIt->second.rbegin(); innerRIt != rIt->second.rend(); ++innerRIt) {
-                if (lookingForMarker) {
-                    if (rIt->first == options.marker->ledgerSeq && innerRIt->first == options.marker->txnSeq)
+        for (auto rIt = std::make_reverse_iterator(txEnd);
+             rIt != std::make_reverse_iterator(txIt) && count < options.limit;
+             ++rIt)
+        {
+            for (auto innerRIt = rIt->second.rbegin();
+                 innerRIt != rIt->second.rend();
+                 ++innerRIt)
+            {
+                if (lookingForMarker)
+                {
+                    if (rIt->first == options.marker->ledgerSeq &&
+                        innerRIt->first == options.marker->txnSeq)
                         lookingForMarker = false;
                     else
                         continue;
@@ -756,7 +923,8 @@ std::pair<AccountTxs, std::optional<AccountTxMarker>>
                 result.push_back(accountData.transactions[innerRIt->second]);
                 ++count;
 
-                if (count >= options.limit) {
+                if (count >= options.limit)
+                {
                     marker = AccountTxMarker{rIt->first, innerRIt->first};
                     break;
                 }
@@ -767,7 +935,9 @@ std::pair<AccountTxs, std::optional<AccountTxMarker>>
 #endif
     }
 
-    std::optional<LedgerInfo> getLedgerInfoByIndex(LedgerIndex ledgerSeq) override {
+    std::optional<LedgerInfo>
+    getLedgerInfoByIndex(LedgerIndex ledgerSeq) override
+    {
 #if RDB_CONCURRENT
         std::optional<LedgerInfo> result;
         ledgers_.visit(ledgerSeq, [&result](auto const& item) {
@@ -783,11 +953,14 @@ std::pair<AccountTxs, std::optional<AccountTxMarker>>
 #endif
     }
 
-    std::optional<LedgerInfo> getNewestLedgerInfo() override {
+    std::optional<LedgerInfo>
+    getNewestLedgerInfo() override
+    {
 #if RDB_CONCURRENT
         std::optional<LedgerInfo> result;
         ledgers_.visit_all([&result](auto const& item) {
-            if (!result || item.second.info.seq > result->seq) {
+            if (!result || item.second.info.seq > result->seq)
+            {
                 result = item.second.info;
             }
         });
@@ -800,11 +973,15 @@ std::pair<AccountTxs, std::optional<AccountTxMarker>>
 #endif
     }
 
-    std::optional<LedgerInfo> getLimitedOldestLedgerInfo(LedgerIndex ledgerFirstIndex) override {
+    std::optional<LedgerInfo>
+    getLimitedOldestLedgerInfo(LedgerIndex ledgerFirstIndex) override
+    {
 #if RDB_CONCURRENT
         std::optional<LedgerInfo> result;
         ledgers_.visit_all([&](auto const& item) {
-            if (item.first >= ledgerFirstIndex && (!result || item.first < result->seq)) {
+            if (item.first >= ledgerFirstIndex &&
+                (!result || item.first < result->seq))
+            {
                 result = item.second.info;
             }
         });
@@ -818,11 +995,15 @@ std::pair<AccountTxs, std::optional<AccountTxMarker>>
 #endif
     }
 
-    std::optional<LedgerInfo> getLimitedNewestLedgerInfo(LedgerIndex ledgerFirstIndex) override {
+    std::optional<LedgerInfo>
+    getLimitedNewestLedgerInfo(LedgerIndex ledgerFirstIndex) override
+    {
 #if RDB_CONCURRENT
         std::optional<LedgerInfo> result;
         ledgers_.visit_all([&](auto const& item) {
-            if (item.first >= ledgerFirstIndex && (!result || item.first > result->seq)) {
+            if (item.first >= ledgerFirstIndex &&
+                (!result || item.first > result->seq))
+            {
                 result = item.second.info;
             }
         });
@@ -836,7 +1017,9 @@ std::pair<AccountTxs, std::optional<AccountTxMarker>>
 #endif
     }
 
-    std::optional<LedgerInfo> getLedgerInfoByHash(uint256 const& ledgerHash) override {
+    std::optional<LedgerInfo>
+    getLedgerInfoByHash(uint256 const& ledgerHash) override
+    {
 #if RDB_CONCURRENT
         std::optional<LedgerInfo> result;
         ledgerHashToSeq_.visit(ledgerHash, [this, &result](auto const& item) {
@@ -853,7 +1036,9 @@ std::pair<AccountTxs, std::optional<AccountTxMarker>>
         return std::nullopt;
 #endif
     }
-uint256 getHashByIndex(LedgerIndex ledgerIndex) override {
+    uint256
+    getHashByIndex(LedgerIndex ledgerIndex) override
+    {
 #if RDB_CONCURRENT
         uint256 result;
         ledgers_.visit(ledgerIndex, [&result](auto const& item) {
@@ -869,38 +1054,38 @@ uint256 getHashByIndex(LedgerIndex ledgerIndex) override {
 #endif
     }
 
-    std::optional<LedgerHashPair> getHashesByIndex(LedgerIndex ledgerIndex) override {
+    std::optional<LedgerHashPair>
+    getHashesByIndex(LedgerIndex ledgerIndex) override
+    {
 #if RDB_CONCURRENT
         std::optional<LedgerHashPair> result;
         ledgers_.visit(ledgerIndex, [&result](auto const& item) {
             result = LedgerHashPair{
-                item.second.info.hash,
-                item.second.info.parentHash
-            };
+                item.second.info.hash, item.second.info.parentHash};
         });
         return result;
 #else
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = ledgers_.find(ledgerIndex);
-        if (it != ledgers_.end()) {
+        if (it != ledgers_.end())
+        {
             return LedgerHashPair{
-                it->second.info.hash,
-                it->second.info.parentHash
-            };
+                it->second.info.hash, it->second.info.parentHash};
         }
         return std::nullopt;
 #endif
     }
 
-    std::map<LedgerIndex, LedgerHashPair> getHashesByIndex(LedgerIndex minSeq, LedgerIndex maxSeq) override {
+    std::map<LedgerIndex, LedgerHashPair>
+    getHashesByIndex(LedgerIndex minSeq, LedgerIndex maxSeq) override
+    {
 #if RDB_CONCURRENT
         std::map<LedgerIndex, LedgerHashPair> result;
         ledgers_.visit_all([&](auto const& item) {
-            if (item.first >= minSeq && item.first <= maxSeq) {
+            if (item.first >= minSeq && item.first <= maxSeq)
+            {
                 result[item.first] = LedgerHashPair{
-                    item.second.info.hash,
-                    item.second.info.parentHash
-                };
+                    item.second.info.hash, item.second.info.parentHash};
             }
         });
         return result;
@@ -909,11 +1094,10 @@ uint256 getHashByIndex(LedgerIndex ledgerIndex) override {
         std::map<LedgerIndex, LedgerHashPair> result;
         auto it = ledgers_.lower_bound(minSeq);
         auto end = ledgers_.upper_bound(maxSeq);
-        for (; it != end; ++it) {
+        for (; it != end; ++it)
+        {
             result[it->first] = LedgerHashPair{
-                it->second.info.hash,
-                it->second.info.parentHash
-            };
+                it->second.info.hash, it->second.info.parentHash};
         }
         return result;
 #endif
@@ -923,15 +1107,20 @@ uint256 getHashByIndex(LedgerIndex ledgerIndex) override {
     getTransaction(
         uint256 const& id,
         std::optional<ClosedInterval<std::uint32_t>> const& range,
-        error_code_i& ec) override {
+        error_code_i& ec) override
+    {
 #if RDB_CONCURRENT
         std::variant<AccountTx, TxSearched> result = TxSearched::unknown;
         transactionMap_.visit(id, [&](auto const& item) {
             auto const& tx = item.second;
-            if (!range || (range->lower() <= tx.second->getLgrSeq() &&
-                         tx.second->getLgrSeq() <= range->upper())) {
+            if (!range ||
+                (range->lower() <= tx.second->getLgrSeq() &&
+                 tx.second->getLgrSeq() <= range->upper()))
+            {
                 result = tx;
-            } else {
+            }
+            else
+            {
                 result = TxSearched::all;
             }
         });
@@ -939,16 +1128,22 @@ uint256 getHashByIndex(LedgerIndex ledgerIndex) override {
 #else
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = transactionMap_.find(id);
-        if (it != transactionMap_.end()) {
+        if (it != transactionMap_.end())
+        {
             const auto& [txn, txMeta] = it->second;
-            if (!range || (range->lower() <= txMeta->getLgrSeq() && txMeta->getLgrSeq() <= range->upper()))
+            if (!range ||
+                (range->lower() <= txMeta->getLgrSeq() &&
+                 txMeta->getLgrSeq() <= range->upper()))
                 return it->second;
         }
 
-        if (range) {
+        if (range)
+        {
             bool allPresent = true;
-            for (LedgerIndex seq = range->lower(); seq <= range->upper(); ++seq) {
-                if (ledgers_.find(seq) == ledgers_.end()) {
+            for (LedgerIndex seq = range->lower(); seq <= range->upper(); ++seq)
+            {
+                if (ledgers_.find(seq) == ledgers_.end())
+                {
                     allPresent = false;
                     break;
                 }
@@ -960,19 +1155,26 @@ uint256 getHashByIndex(LedgerIndex ledgerIndex) override {
 #endif
     }
 
-    bool ledgerDbHasSpace(Config const& config) override {
+    bool
+    ledgerDbHasSpace(Config const& config) override
+    {
         return true;  // In-memory database always has space
     }
 
-    bool transactionDbHasSpace(Config const& config) override {
+    bool
+    transactionDbHasSpace(Config const& config) override
+    {
         return true;  // In-memory database always has space
     }
 
-    std::uint32_t getKBUsedAll() override {
+    std::uint32_t
+    getKBUsedAll() override
+    {
 #if RDB_CONCURRENT
         std::uint32_t size = sizeof(*this);
         size += ledgers_.size() * (sizeof(LedgerIndex) + sizeof(LedgerData));
-        size += ledgerHashToSeq_.size() * (sizeof(uint256) + sizeof(LedgerIndex));
+        size +=
+            ledgerHashToSeq_.size() * (sizeof(uint256) + sizeof(LedgerIndex));
         size += transactionMap_.size() * (sizeof(uint256) + sizeof(AccountTx));
         accountTxMap_.visit_all([&size](auto const& item) {
             size += sizeof(AccountID) + sizeof(AccountTxData);
@@ -983,36 +1185,48 @@ uint256 getHashByIndex(LedgerIndex ledgerIndex) override {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         std::uint32_t size = sizeof(*this);
         size += ledgers_.size() * (sizeof(LedgerIndex) + sizeof(LedgerData));
-        size += ledgerHashToSeq_.size() * (sizeof(uint256) + sizeof(LedgerIndex));
+        size +=
+            ledgerHashToSeq_.size() * (sizeof(uint256) + sizeof(LedgerIndex));
         size += transactionMap_.size() * (sizeof(uint256) + sizeof(AccountTx));
-        for (const auto& [_, accountData] : accountTxMap_) {
+        for (const auto& [_, accountData] : accountTxMap_)
+        {
             size += sizeof(AccountID) + sizeof(AccountTxData);
             size += accountData.transactions.size() * sizeof(AccountTx);
-            for (const auto& [_, innerMap] : accountData.ledgerTxMap) {
-                size += sizeof(uint32_t) + innerMap.size() * (sizeof(uint32_t) + sizeof(size_t));
+            for (const auto& [_, innerMap] : accountData.ledgerTxMap)
+            {
+                size += sizeof(uint32_t) +
+                    innerMap.size() * (sizeof(uint32_t) + sizeof(size_t));
             }
         }
         return size / 1024;
 #endif
     }
 
-    std::uint32_t getKBUsedLedger() override {
+    std::uint32_t
+    getKBUsedLedger() override
+    {
 #if RDB_CONCURRENT
-        std::uint32_t size = ledgers_.size() * (sizeof(LedgerIndex) + sizeof(LedgerData));
-        size += ledgerHashToSeq_.size() * (sizeof(uint256) + sizeof(LedgerIndex));
+        std::uint32_t size =
+            ledgers_.size() * (sizeof(LedgerIndex) + sizeof(LedgerData));
+        size +=
+            ledgerHashToSeq_.size() * (sizeof(uint256) + sizeof(LedgerIndex));
         return size / 1024;
 #else
         std::shared_lock<std::shared_mutex> lock(mutex_);
         std::uint32_t size = 0;
         size += ledgers_.size() * (sizeof(LedgerIndex) + sizeof(LedgerData));
-        size += ledgerHashToSeq_.size() * (sizeof(uint256) + sizeof(LedgerIndex));
+        size +=
+            ledgerHashToSeq_.size() * (sizeof(uint256) + sizeof(LedgerIndex));
         return size / 1024;
 #endif
     }
 
-    std::uint32_t getKBUsedTransaction() override {
+    std::uint32_t
+    getKBUsedTransaction() override
+    {
 #if RDB_CONCURRENT
-        std::uint32_t size = transactionMap_.size() * (sizeof(uint256) + sizeof(AccountTx));
+        std::uint32_t size =
+            transactionMap_.size() * (sizeof(uint256) + sizeof(AccountTx));
         accountTxMap_.visit_all([&size](auto const& item) {
             size += sizeof(AccountID) + sizeof(AccountTxData);
             size += item.second.transactions.size() * sizeof(AccountTx);
@@ -1022,38 +1236,44 @@ uint256 getHashByIndex(LedgerIndex ledgerIndex) override {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         std::uint32_t size = 0;
         size += transactionMap_.size() * (sizeof(uint256) + sizeof(AccountTx));
-        for (const auto& [_, accountData] : accountTxMap_) {
+        for (const auto& [_, accountData] : accountTxMap_)
+        {
             size += sizeof(AccountID) + sizeof(AccountTxData);
             size += accountData.transactions.size() * sizeof(AccountTx);
-            for (const auto& [_, innerMap] : accountData.ledgerTxMap) {
-                size += sizeof(uint32_t) + innerMap.size() * (sizeof(uint32_t) + sizeof(size_t));
+            for (const auto& [_, innerMap] : accountData.ledgerTxMap)
+            {
+                size += sizeof(uint32_t) +
+                    innerMap.size() * (sizeof(uint32_t) + sizeof(size_t));
             }
         }
         return size / 1024;
 #endif
     }
 
-    void closeLedgerDB() override {
+    void
+    closeLedgerDB() override
+    {
         // No-op for in-memory database
     }
 
-    void closeTransactionDB() override {
+    void
+    closeTransactionDB() override
+    {
         // No-op for in-memory database
     }
 
-    ~MemoryDatabase() {
+    ~MemoryDatabase()
+    {
 #if RDB_CONCURRENT
         // Concurrent maps need visit_all
-        accountTxMap_.visit_all([](auto& pair) {
-            pair.second.transactions.clear();
-        });
+        accountTxMap_.visit_all(
+            [](auto& pair) { pair.second.transactions.clear(); });
         accountTxMap_.clear();
 
         transactionMap_.clear();
 
-        ledgers_.visit_all([](auto& pair) {
-            pair.second.transactions.clear();
-        });
+        ledgers_.visit_all(
+            [](auto& pair) { pair.second.transactions.clear(); });
         ledgers_.clear();
 
         ledgerHashToSeq_.clear();
@@ -1061,7 +1281,8 @@ uint256 getHashByIndex(LedgerIndex ledgerIndex) override {
         // Regular maps can use standard clear
         accountTxMap_.clear();
         transactionMap_.clear();
-        for (auto& ledger : ledgers_) {
+        for (auto& ledger : ledgers_)
+        {
             ledger.second.transactions.clear();
         }
         ledgers_.clear();
@@ -1069,11 +1290,14 @@ uint256 getHashByIndex(LedgerIndex ledgerIndex) override {
 #endif
     }
 
-std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) override {
+    std::vector<std::shared_ptr<Transaction>>
+    getTxHistory(LedgerIndex startIndex) override
+    {
 #if RDB_CONCURRENT
         std::vector<std::shared_ptr<Transaction>> result;
         transactionMap_.visit_all([&](auto const& item) {
-            if (item.second.second->getLgrSeq() >= startIndex) {
+            if (item.second.second->getLgrSeq() >= startIndex)
+            {
                 result.push_back(item.second.first);
             }
         });
@@ -1081,7 +1305,8 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
             result.begin(), result.end(), [](auto const& a, auto const& b) {
                 return a->getLedger() > b->getLedger();
             });
-        if (result.size() > 20) {
+        if (result.size() > 20)
+        {
             result.resize(20);
         }
         return result;
@@ -1090,8 +1315,10 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
         std::vector<std::shared_ptr<Transaction>> result;
         auto it = ledgers_.lower_bound(startIndex);
         int count = 0;
-        while (it != ledgers_.end() && count < 20) {
-            for (const auto& [txHash, accountTx] : it->second.transactions) {
+        while (it != ledgers_.end() && count < 20)
+        {
+            for (const auto& [txHash, accountTx] : it->second.transactions)
+            {
                 result.push_back(accountTx.first);
                 if (++count >= 20)
                     break;
@@ -1102,24 +1329,33 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
 #endif
     }
 
-    MetaTxsList getOldestAccountTxsB(AccountTxOptions const& options) override {
+    MetaTxsList
+    getOldestAccountTxsB(AccountTxOptions const& options) override
+    {
 #if RDB_CONCURRENT
         MetaTxsList result;
         accountTxMap_.visit(options.account, [&](auto const& item) {
             item.second.transactions.visit_all([&](auto const& tx) {
                 if (tx.first.first >= options.minLedger &&
-                    tx.first.first <= options.maxLedger) {
+                    tx.first.first <= options.maxLedger)
+                {
                     result.emplace_back(
-                        tx.second.first->getSTransaction()->getSerializer().peekData(),
-                        tx.second.second->getAsObject().getSerializer().peekData(),
+                        tx.second.first->getSTransaction()
+                            ->getSerializer()
+                            .peekData(),
+                        tx.second.second->getAsObject()
+                            .getSerializer()
+                            .peekData(),
                         tx.first.first);
                 }
             });
         });
-        std::sort(result.begin(), result.end(), [](auto const& a, auto const& b) {
-            return std::get<2>(a) < std::get<2>(b);
-        });
-        if (!options.bUnlimited && result.size() > options.limit) {
+        std::sort(
+            result.begin(), result.end(), [](auto const& a, auto const& b) {
+                return std::get<2>(a) < std::get<2>(b);
+            });
+        if (!options.bUnlimited && result.size() > options.limit)
+        {
             result.resize(options.limit);
         }
         return result;
@@ -1135,9 +1371,12 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
         auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
 
         std::size_t skipped = 0;
-        for (; txIt != txEnd && result.size() < options.limit; ++txIt) {
-            for (const auto& [txSeq, txIndex] : txIt->second) {
-                if (skipped < options.offset) {
+        for (; txIt != txEnd && result.size() < options.limit; ++txIt)
+        {
+            for (const auto& [txSeq, txIndex] : txIt->second)
+            {
+                if (skipped < options.offset)
+                {
                     ++skipped;
                     continue;
                 }
@@ -1145,8 +1384,7 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
                 result.emplace_back(
                     txn->getSTransaction()->getSerializer().peekData(),
                     txMeta->getAsObject().getSerializer().peekData(),
-                    txIt->first
-                );
+                    txIt->first);
                 if (result.size() >= options.limit && !options.bUnlimited)
                     break;
             }
@@ -1156,24 +1394,33 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
 #endif
     }
 
-    MetaTxsList getNewestAccountTxsB(AccountTxOptions const& options) override {
+    MetaTxsList
+    getNewestAccountTxsB(AccountTxOptions const& options) override
+    {
 #if RDB_CONCURRENT
         MetaTxsList result;
         accountTxMap_.visit(options.account, [&](auto const& item) {
             item.second.transactions.visit_all([&](auto const& tx) {
                 if (tx.first.first >= options.minLedger &&
-                    tx.first.first <= options.maxLedger) {
+                    tx.first.first <= options.maxLedger)
+                {
                     result.emplace_back(
-                        tx.second.first->getSTransaction()->getSerializer().peekData(),
-                        tx.second.second->getAsObject().getSerializer().peekData(),
+                        tx.second.first->getSTransaction()
+                            ->getSerializer()
+                            .peekData(),
+                        tx.second.second->getAsObject()
+                            .getSerializer()
+                            .peekData(),
                         tx.first.first);
                 }
             });
         });
-        std::sort(result.begin(), result.end(), [](auto const& a, auto const& b) {
-            return std::get<2>(a) > std::get<2>(b);
-        });
-        if (!options.bUnlimited && result.size() > options.limit) {
+        std::sort(
+            result.begin(), result.end(), [](auto const& a, auto const& b) {
+                return std::get<2>(a) > std::get<2>(b);
+            });
+        if (!options.bUnlimited && result.size() > options.limit)
+        {
             result.resize(options.limit);
         }
         return result;
@@ -1190,18 +1437,25 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
 
         std::vector<txnMetaLedgerType> tempResult;
         std::size_t skipped = 0;
-        for (auto rIt = std::make_reverse_iterator(txEnd); rIt != std::make_reverse_iterator(txIt); ++rIt) {
-            for (auto innerRIt = rIt->second.rbegin(); innerRIt != rIt->second.rend(); ++innerRIt) {
-                if (skipped < options.offset) {
+        for (auto rIt = std::make_reverse_iterator(txEnd);
+             rIt != std::make_reverse_iterator(txIt);
+             ++rIt)
+        {
+            for (auto innerRIt = rIt->second.rbegin();
+                 innerRIt != rIt->second.rend();
+                 ++innerRIt)
+            {
+                if (skipped < options.offset)
+                {
                     ++skipped;
                     continue;
                 }
-                const auto& [txn, txMeta] = accountData.transactions[innerRIt->second];
+                const auto& [txn, txMeta] =
+                    accountData.transactions[innerRIt->second];
                 tempResult.emplace_back(
                     txn->getSTransaction()->getSerializer().peekData(),
                     txMeta->getAsObject().getSerializer().peekData(),
-                    rIt->first
-                );
+                    rIt->first);
                 if (tempResult.size() >= options.limit && !options.bUnlimited)
                     break;
             }
@@ -1215,14 +1469,18 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
     }
 
     std::pair<MetaTxsList, std::optional<AccountTxMarker>>
-    oldestAccountTxPageB(AccountTxPageOptions const& options) override {
+    oldestAccountTxPageB(AccountTxPageOptions const& options) override
+    {
 #if RDB_CONCURRENT
         MetaTxsList result;
         std::optional<AccountTxMarker> marker;
         accountTxMap_.visit(options.account, [&](auto const& item) {
-            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>> txs;
+            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>>
+                txs;
             item.second.transactions.visit_all([&](auto const& tx) {
-                if (tx.first.first >= options.minLedger && tx.first.first <= options.maxLedger) {
+                if (tx.first.first >= options.minLedger &&
+                    tx.first.first <= options.maxLedger)
+                {
                     txs.emplace_back(tx);
                 }
             });
@@ -1231,23 +1489,28 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
             });
 
             auto it = txs.begin();
-            if (options.marker) {
+            if (options.marker)
+            {
                 it = std::find_if(txs.begin(), txs.end(), [&](auto const& tx) {
                     return tx.first.first == options.marker->ledgerSeq &&
-                           tx.first.second == options.marker->txnSeq;
+                        tx.first.second == options.marker->txnSeq;
                 });
                 if (it != txs.end())
                     ++it;
             }
 
-            for (; it != txs.end() && result.size() < options.limit; ++it) {
+            for (; it != txs.end() && result.size() < options.limit; ++it)
+            {
                 result.emplace_back(
-                    it->second.first->getSTransaction()->getSerializer().peekData(),
+                    it->second.first->getSTransaction()
+                        ->getSerializer()
+                        .peekData(),
                     it->second.second->getAsObject().getSerializer().peekData(),
                     it->first.first);
             }
 
-            if (it != txs.end()) {
+            if (it != txs.end())
+            {
                 marker = AccountTxMarker{it->first.first, it->first.second};
             }
         });
@@ -1267,10 +1530,14 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
         bool lookingForMarker = options.marker.has_value();
         std::size_t count = 0;
 
-        for (; txIt != txEnd && count < options.limit; ++txIt) {
-            for (const auto& [txSeq, txIndex] : txIt->second) {
-                if (lookingForMarker) {
-                    if (txIt->first == options.marker->ledgerSeq && txSeq == options.marker->txnSeq)
+        for (; txIt != txEnd && count < options.limit; ++txIt)
+        {
+            for (const auto& [txSeq, txIndex] : txIt->second)
+            {
+                if (lookingForMarker)
+                {
+                    if (txIt->first == options.marker->ledgerSeq &&
+                        txSeq == options.marker->txnSeq)
                         lookingForMarker = false;
                     else
                         continue;
@@ -1280,11 +1547,11 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
                 result.emplace_back(
                     txn->getSTransaction()->getSerializer().peekData(),
                     txMeta->getAsObject().getSerializer().peekData(),
-                    txIt->first
-                );
+                    txIt->first);
                 ++count;
 
-                if (count >= options.limit) {
+                if (count >= options.limit)
+                {
                     marker = AccountTxMarker{txIt->first, txSeq};
                     break;
                 }
@@ -1296,14 +1563,18 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
     }
 
     std::pair<MetaTxsList, std::optional<AccountTxMarker>>
-    newestAccountTxPageB(AccountTxPageOptions const& options) override {
+    newestAccountTxPageB(AccountTxPageOptions const& options) override
+    {
 #if RDB_CONCURRENT
         MetaTxsList result;
         std::optional<AccountTxMarker> marker;
         accountTxMap_.visit(options.account, [&](auto const& item) {
-            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>> txs;
+            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>>
+                txs;
             item.second.transactions.visit_all([&](auto const& tx) {
-                if (tx.first.first >= options.minLedger && tx.first.first <= options.maxLedger) {
+                if (tx.first.first >= options.minLedger &&
+                    tx.first.first <= options.maxLedger)
+                {
                     txs.emplace_back(tx);
                 }
             });
@@ -1312,23 +1583,28 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
             });
 
             auto it = txs.begin();
-            if (options.marker) {
+            if (options.marker)
+            {
                 it = std::find_if(txs.begin(), txs.end(), [&](auto const& tx) {
                     return tx.first.first == options.marker->ledgerSeq &&
-                           tx.first.second == options.marker->txnSeq;
+                        tx.first.second == options.marker->txnSeq;
                 });
                 if (it != txs.end())
                     ++it;
             }
 
-            for (; it != txs.end() && result.size() < options.limit; ++it) {
+            for (; it != txs.end() && result.size() < options.limit; ++it)
+            {
                 result.emplace_back(
-                    it->second.first->getSTransaction()->getSerializer().peekData(),
+                    it->second.first->getSTransaction()
+                        ->getSerializer()
+                        .peekData(),
                     it->second.second->getAsObject().getSerializer().peekData(),
                     it->first.first);
             }
 
-            if (it != txs.end()) {
+            if (it != txs.end())
+            {
                 marker = AccountTxMarker{it->first.first, it->first.second};
             }
         });
@@ -1348,24 +1624,33 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
         bool lookingForMarker = options.marker.has_value();
         std::size_t count = 0;
 
-        for (auto rIt = std::make_reverse_iterator(txEnd); rIt != std::make_reverse_iterator(txIt) && count < options.limit; ++rIt) {
-            for (auto innerRIt = rIt->second.rbegin(); innerRIt != rIt->second.rend(); ++innerRIt) {
-                if (lookingForMarker) {
-                    if (rIt->first == options.marker->ledgerSeq && innerRIt->first == options.marker->txnSeq)
+        for (auto rIt = std::make_reverse_iterator(txEnd);
+             rIt != std::make_reverse_iterator(txIt) && count < options.limit;
+             ++rIt)
+        {
+            for (auto innerRIt = rIt->second.rbegin();
+                 innerRIt != rIt->second.rend();
+                 ++innerRIt)
+            {
+                if (lookingForMarker)
+                {
+                    if (rIt->first == options.marker->ledgerSeq &&
+                        innerRIt->first == options.marker->txnSeq)
                         lookingForMarker = false;
                     else
                         continue;
                 }
 
-                const auto& [txn, txMeta] = accountData.transactions[innerRIt->second];
+                const auto& [txn, txMeta] =
+                    accountData.transactions[innerRIt->second];
                 result.emplace_back(
                     txn->getSTransaction()->getSerializer().peekData(),
                     txMeta->getAsObject().getSerializer().peekData(),
-                    rIt->first
-                );
+                    rIt->first);
                 ++count;
 
-                if (count >= options.limit) {
+                if (count >= options.limit)
+                {
                     marker = AccountTxMarker{rIt->first, innerRIt->first};
                     break;
                 }
@@ -1375,14 +1660,14 @@ std::vector<std::shared_ptr<Transaction>> getTxHistory(LedgerIndex startIndex) o
         return {result, marker};
 #endif
     }
-
 };
 
 // Factory function
 std::unique_ptr<SQLiteDatabase>
-getMemoryDatabase(Application& app, Config const& config, JobQueue& jobQueue) {
+getMemoryDatabase(Application& app, Config const& config, JobQueue& jobQueue)
+{
     return std::make_unique<MemoryDatabase>(app, config, jobQueue);
 }
 
-} // namespace ripple
-#endif // RIPPLE_APP_RDB_BACKEND_MEMORYDATABASE_H_INCLUDED
+}  // namespace ripple
+#endif  // RIPPLE_APP_RDB_BACKEND_MEMORYDATABASE_H_INCLUDED
