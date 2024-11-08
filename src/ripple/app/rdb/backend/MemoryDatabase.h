@@ -270,8 +270,10 @@ public:
                                 // Remove the corresponding transactions
                                 for (const auto& seqPair : it->second) {
                                     if (seqPair.second < data.transactions.size()) {
-                                        data.transactions[seqPair.second] = std::make_pair(
-                                            nullptr, nullptr);  // Clear the shared_ptr
+                                        auto& txPair = data.transactions[seqPair.second];
+                                        txPair.first.reset();
+                                        txPair.second.reset();
+                                        data.transactions.erase(seqPair.second);
                                     }
                                 }
                                 it = data.ledgerTxMap.erase(it);
@@ -780,6 +782,17 @@ std::vector<AccountTx> tempResult;
     void closeTransactionDB() override {
         // No-op for in-memory database
     }
+
+~MemoryDatabase() {
+    // Regular maps can use standard clear
+    accountTxMap_.clear();
+    transactionMap_.clear();
+    for (auto& ledger : ledgers_) {
+        ledger.second.transactions.clear();
+    }
+    ledgers_.clear();
+    ledgerHashToSeq_.clear();
+}
 };
 
 // Factory function
@@ -1020,6 +1033,8 @@ public:
         std::shared_ptr<Ledger const> const& ledger,
         bool current) override
     {
+        try {
+
         LedgerData ledgerData;
         ledgerData.info = ledger->info();
 
@@ -1105,6 +1120,13 @@ public:
         }
 
         return true;
+
+        }
+        catch (std::exception const& e) {
+            // Cleanup any partial insertions
+            deleteTransactionByLedgerSeq(ledger->info().seq);
+            return false;
+        }        
     }
 
 
@@ -1607,6 +1629,25 @@ public:
     {
         // No-op for in-memory database
     }
+
+// Concurrent version
+~MemoryDatabase() {
+    // Concurrent maps need visit_all
+    accountTxMap_.visit_all([](auto& pair) {
+        pair.second.transactions.clear();
+    });
+    accountTxMap_.clear();
+
+    transactionMap_.clear();
+
+    ledgers_.visit_all([](auto& pair) {
+        pair.second.transactions.clear();
+    });
+    ledgers_.clear();
+
+    ledgerHashToSeq_.clear();
+}
+
 };
 
 // Factory function
