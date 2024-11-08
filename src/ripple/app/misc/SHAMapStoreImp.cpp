@@ -379,7 +379,7 @@ SHAMapStoreImp::run()
 
             try
             {
-                validatedLedger->stateMap().snapShot(isMem)->visitNodes(
+                validatedLedger->stateMap().snapShot(false)->visitNodes(
                     std::bind(
                         &SHAMapStoreImp::copyNode,
                         this,

@@ -47,6 +47,8 @@ public:
         {
             entries.emplace(entry.endpoint, entry.valence);
         }
+
+        std::cout << "peer finder mem map size: " << entries.size() << "\n";
     }
 };
 
