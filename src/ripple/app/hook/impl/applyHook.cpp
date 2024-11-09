@@ -5484,7 +5484,7 @@ DEFINE_HOOK_FUNCTION(int64_t, float_divide, int64_t float1, int64_t float2)
     HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
                    // hookCtx on current stack
 
-    bool const fixV3 = view.rules().enabled(fixXahauV3);
+    bool const fixV3 = view.rules().enabled(fixFloatDivide);
     return float_divide_internal(float1, float2, fixV3);
 
     HOOK_TEARDOWN();
@@ -5505,7 +5505,7 @@ DEFINE_HOOK_FUNCTION(int64_t, float_invert, int64_t float1)
     if (float1 == float_one_internal)
         return float_one_internal;
 
-    bool const fixV3 = view.rules().enabled(fixXahauV3);
+    bool const fixV3 = view.rules().enabled(fixFloatDivide);
     return float_divide_internal(float_one_internal, float1, fixV3);
 
     HOOK_TEARDOWN();
