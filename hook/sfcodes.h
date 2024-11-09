@@ -213,7 +213,7 @@
 #define sfHookGrant ((14U << 16U) + 24U)
 #define sfGenesisMint ((14U << 16U) + 96U)
 #define sfActiveValidator ((14U << 16U) + 95U)
-#define sfImport7Key ((14U << 16U) + 94U)
+#define sfImportVLKey ((14U << 16U) + 94U)
 #define sfHookEmission ((14U << 16U) + 93U)
 #define sfMintURIToken ((14U << 16U) + 92U)
 #define sfAmountEntry ((14U << 16U) + 91U)
