@@ -96,7 +96,6 @@ public:
         table_.clear();
 #endif
         isOpen_ = false;
-        std::cout << "memdb " << name_ << " is closed.\n";
     }
 
     Status
@@ -162,10 +161,7 @@ public:
             return;
 
         if (!object)
-        {
-            std::cout << "mapping null object\n";
             return;
-        }
 
         EncodedBlob encoded(object);
         nudb::detail::buffer bf;

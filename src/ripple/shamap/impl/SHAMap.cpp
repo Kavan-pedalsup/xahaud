@@ -274,7 +274,7 @@ SHAMap::fetchNodeNT(SHAMapHash const& hash, SHAMapSyncFilter* filter) const
 {
     using namespace std::chrono;
     auto start = high_resolution_clock::now();
-    auto timeout = nanoseconds(600);
+    auto timeout = nanoseconds(50);
 
     while (true)
     {

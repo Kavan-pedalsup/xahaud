@@ -119,7 +119,7 @@ SHAMapStoreImp::SHAMapStoreImp(
     get_if_exists(section, "online_delete", deleteInterval_);
 
     bool const isMem = config.mem_backend();
-        
+
     if (deleteInterval_ || isMem)
     {
         if (app_.config().reporting())
@@ -130,7 +130,7 @@ SHAMapStoreImp::SHAMapStoreImp(
         }
 
         if (isMem)
-            deleteInterval_ = config.LEDGER_HISTORY; 
+            deleteInterval_ = config.LEDGER_HISTORY;
 
         // Configuration that affects the behavior of online delete
         get_if_exists(section, "delete_batch", deleteBatch_);
@@ -201,7 +201,7 @@ SHAMapStoreImp::makeNodeStore(int readThreads)
                 "online_delete info from config");
         }
         SavedState state = state_db_.getState();
-        
+
         auto writableBackend = makeBackendRotating(state.writableDb);
         auto archiveBackend = makeBackendRotating(state.archiveDb);
         if (!state.writableDb.size())
@@ -302,12 +302,9 @@ SHAMapStoreImp::run()
 
     bool const isMem = app_.config().mem_backend();
 
-    std::cout << "SHAMapStoreImp: isMem = " << (isMem ? "true" : "false") << "\n";
-
-    std::cout << "SHAMapStoreImp: lastRotated = " << lastRotated << "\n";
     if (advisoryDelete_)
         canDelete_ = state_db_.getCanDelete();
-    
+
     while (true)
     {
         healthy_ = true;
@@ -398,7 +395,7 @@ SHAMapStoreImp::run()
                 return;
             // Only log if we completed without a "health" abort
             JLOG(journal_.warn()) << "copied ledger " << validatedSeq
-                                   << " nodecount " << nodeCount;
+                                  << " nodecount " << nodeCount;
 
             JLOG(journal_.warn()) << "freshening caches";
             freshenCaches();
