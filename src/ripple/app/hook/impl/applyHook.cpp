@@ -5458,12 +5458,12 @@ float_divide_internal(int64_t float1, int64_t float2, bool hasFix)
         if (hasFix)
         {
             for (; man1 >= man2; man1 -= man2, ++i)
-            ;
+                ;
         }
         else
         {
             for (; man1 > man2; man1 -= man2, ++i)
-            ;
+                ;
         }
 
         man3 *= 10;
