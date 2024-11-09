@@ -11,7 +11,7 @@ cat $RIPPLED_ROOT/protocol/impl/SField.cpp | grep -E '^CONSTRUCT_' |
     sed 's/UINT128/4/g' |
     sed 's/UINT256/5/g' |
     sed 's/AMOUNT/6/g' |
-    sed 's/VL/7/g' |
+    sed 's/VL/7/g' | sed 's/Import7/ImportVL/g' |
     sed 's/ACCOUNT/8/g' |
     sed 's/OBJECT/14/g' |
     sed 's/ARRAY/15/g' |
