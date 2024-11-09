@@ -361,7 +361,7 @@ extern uint256 const fixNSDelete;
 extern uint256 const fix240819;
 extern uint256 const fixPageCap;
 extern uint256 const fix240911;
-extern uint256 const fixXahauV3;
+extern uint256 const fixFloatDivide;
 
 }  // namespace ripple
 
