@@ -233,6 +233,6 @@
 #define sfHookGrants ((15U << 16U) + 20U)
 #define sfGenesisMints ((15U << 16U) + 96U)
 #define sfActiveValidators ((15U << 16U) + 95U)
-#define sfImport7Keys ((15U << 16U) + 94U)
+#define sfImportVLKeys ((15U << 16U) + 94U)
 #define sfHookEmissions ((15U << 16U) + 93U)
 #define sfAmounts ((15U << 16U) + 92U)
