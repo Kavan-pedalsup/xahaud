@@ -40,7 +40,6 @@ class NetworkOPs;
 class SHAMapStoreImp : public SHAMapStore
 {
 private:
-
     class SavedStateDB
     {
     public:

@@ -25,6 +25,7 @@
 #include <ripple/basics/base_uint.h>
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/beast/utility/Journal.h>
+#include <ripple/core/ConfigSections.h>
 #include <ripple/protocol/PublicKey.h>
 #include <ripple/protocol/SystemParameters.h>  // VFALCO Breaks levelization
 #include <boost/beast/core/string.hpp>
@@ -39,7 +40,6 @@
 #include <type_traits>
 #include <unordered_set>
 #include <vector>
-#include <ripple/core/ConfigSections.h>
 
 namespace ripple {
 
@@ -354,11 +354,12 @@ public:
     bool
     mem_backend() const
     {
-        static bool const isMem = 
-        (!section(SECTION_RELATIONAL_DB).empty() &&
-              boost::beast::iequals(get(section(SECTION_RELATIONAL_DB), "backend"), "memory")) ||
+        static bool const isMem =
+            (!section(SECTION_RELATIONAL_DB).empty() &&
+             boost::beast::iequals(
+                 get(section(SECTION_RELATIONAL_DB), "backend"), "memory")) ||
             (!section("node_db").empty() &&
-              boost::beast::iequals(get(section("node_db"), "type"), "memory"));
+             boost::beast::iequals(get(section("node_db"), "type"), "memory"));
 
         return isMem;
     }
