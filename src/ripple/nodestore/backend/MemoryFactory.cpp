@@ -182,10 +182,6 @@ public:
         std::lock_guard lock(mutex_);
         table_[object->getHash()] = std::move(compressed);
 #endif
-
-        static int counter = 0;
-        if (counter++ % 1000 == 0)
-            std::cout << "map size: " << size() << "\n";
     }
 
     void

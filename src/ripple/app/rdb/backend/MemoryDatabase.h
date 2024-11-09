@@ -645,295 +645,6 @@ public:
         return true;
 #endif
     }
-    AccountTxs
-    getOldestAccountTxs(AccountTxOptions const& options) override
-    {
-#if RDB_CONCURRENT
-        AccountTxs result;
-        accountTxMap_.visit(options.account, [&](auto const& item) {
-            item.second.transactions.visit_all([&](auto const& tx) {
-                if (tx.first.first >= options.minLedger &&
-                    tx.first.first <= options.maxLedger)
-                {
-                    result.push_back(tx.second);
-                }
-            });
-        });
-        std::sort(
-            result.begin(), result.end(), [](auto const& a, auto const& b) {
-                return a.second->getLgrSeq() < b.second->getLgrSeq();
-            });
-        if (!options.bUnlimited && result.size() > options.limit)
-        {
-            result.resize(options.limit);
-        }
-        return result;
-#else
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        auto it = accountTxMap_.find(options.account);
-        if (it == accountTxMap_.end())
-            return {};
-
-        AccountTxs result;
-        const auto& accountData = it->second;
-        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
-        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
-
-        std::size_t skipped = 0;
-        for (; txIt != txEnd && result.size() < options.limit; ++txIt)
-        {
-            for (const auto& [txSeq, txIndex] : txIt->second)
-            {
-                if (skipped < options.offset)
-                {
-                    ++skipped;
-                    continue;
-                }
-                result.push_back(accountData.transactions[txIndex]);
-                if (result.size() >= options.limit && !options.bUnlimited)
-                    break;
-            }
-        }
-
-        return result;
-#endif
-    }
-
-    AccountTxs
-    getNewestAccountTxs(AccountTxOptions const& options) override
-    {
-#if RDB_CONCURRENT
-        AccountTxs result;
-        accountTxMap_.visit(options.account, [&](auto const& item) {
-            item.second.transactions.visit_all([&](auto const& tx) {
-                if (tx.first.first >= options.minLedger &&
-                    tx.first.first <= options.maxLedger)
-                {
-                    result.push_back(tx.second);
-                }
-            });
-        });
-        std::sort(
-            result.begin(), result.end(), [](auto const& a, auto const& b) {
-                return a.second->getLgrSeq() > b.second->getLgrSeq();
-            });
-        if (!options.bUnlimited && result.size() > options.limit)
-        {
-            result.resize(options.limit);
-        }
-        return result;
-#else
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        auto it = accountTxMap_.find(options.account);
-        if (it == accountTxMap_.end())
-            return {};
-
-        AccountTxs result;
-        const auto& accountData = it->second;
-        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
-        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
-
-        std::vector<AccountTx> tempResult;
-        std::size_t skipped = 0;
-        for (auto rIt = std::make_reverse_iterator(txEnd);
-             rIt != std::make_reverse_iterator(txIt);
-             ++rIt)
-        {
-            for (auto innerRIt = rIt->second.rbegin();
-                 innerRIt != rIt->second.rend();
-                 ++innerRIt)
-            {
-                if (skipped < options.offset)
-                {
-                    ++skipped;
-                    continue;
-                }
-                tempResult.push_back(
-                    accountData.transactions[innerRIt->second]);
-                if (tempResult.size() >= options.limit && !options.bUnlimited)
-                    break;
-            }
-            if (tempResult.size() >= options.limit && !options.bUnlimited)
-                break;
-        }
-
-        result.insert(result.end(), tempResult.rbegin(), tempResult.rend());
-        return result;
-#endif
-    }
-
-    std::pair<AccountTxs, std::optional<AccountTxMarker>>
-    oldestAccountTxPage(AccountTxPageOptions const& options) override
-    {
-#if RDB_CONCURRENT
-        AccountTxs result;
-        std::optional<AccountTxMarker> marker;
-        accountTxMap_.visit(options.account, [&](auto const& item) {
-            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>>
-                txs;
-            item.second.transactions.visit_all([&](auto const& tx) {
-                if (tx.first.first >= options.minLedger &&
-                    tx.first.first <= options.maxLedger)
-                {
-                    txs.emplace_back(tx);
-                }
-            });
-            std::sort(txs.begin(), txs.end(), [](auto const& a, auto const& b) {
-                return a.first < b.first;
-            });
-
-            auto it = txs.begin();
-            if (options.marker)
-            {
-                it = std::find_if(txs.begin(), txs.end(), [&](auto const& tx) {
-                    return tx.first.first == options.marker->ledgerSeq &&
-                        tx.first.second == options.marker->txnSeq;
-                });
-                if (it != txs.end())
-                    ++it;
-            }
-
-            for (; it != txs.end() && result.size() < options.limit; ++it)
-            {
-                result.push_back(it->second);
-            }
-
-            if (it != txs.end())
-            {
-                marker = AccountTxMarker{it->first.first, it->first.second};
-            }
-        });
-        return {result, marker};
-#else
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        auto it = accountTxMap_.find(options.account);
-        if (it == accountTxMap_.end())
-            return {{}, std::nullopt};
-
-        AccountTxs result;
-        const auto& accountData = it->second;
-        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
-        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
-
-        std::optional<AccountTxMarker> marker;
-        bool lookingForMarker = options.marker.has_value();
-        std::size_t count = 0;
-
-        for (; txIt != txEnd && count < options.limit; ++txIt)
-        {
-            for (const auto& [txSeq, txIndex] : txIt->second)
-            {
-                if (lookingForMarker)
-                {
-                    if (txIt->first == options.marker->ledgerSeq &&
-                        txSeq == options.marker->txnSeq)
-                        lookingForMarker = false;
-                    else
-                        continue;
-                }
-
-                result.push_back(accountData.transactions[txIndex]);
-                ++count;
-
-                if (count >= options.limit)
-                {
-                    marker = AccountTxMarker{txIt->first, txSeq};
-                    break;
-                }
-            }
-        }
-
-        return {result, marker};
-#endif
-    }
-    std::pair<AccountTxs, std::optional<AccountTxMarker>>
-    newestAccountTxPage(AccountTxPageOptions const& options) override
-    {
-#if RDB_CONCURRENT
-        AccountTxs result;
-        std::optional<AccountTxMarker> marker;
-        accountTxMap_.visit(options.account, [&](auto const& item) {
-            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>>
-                txs;
-            item.second.transactions.visit_all([&](auto const& tx) {
-                if (tx.first.first >= options.minLedger &&
-                    tx.first.first <= options.maxLedger)
-                {
-                    txs.emplace_back(tx);
-                }
-            });
-            std::sort(txs.begin(), txs.end(), [](auto const& a, auto const& b) {
-                return a.first > b.first;
-            });
-
-            auto it = txs.begin();
-            if (options.marker)
-            {
-                it = std::find_if(txs.begin(), txs.end(), [&](auto const& tx) {
-                    return tx.first.first == options.marker->ledgerSeq &&
-                        tx.first.second == options.marker->txnSeq;
-                });
-                if (it != txs.end())
-                    ++it;
-            }
-
-            for (; it != txs.end() && result.size() < options.limit; ++it)
-            {
-                result.push_back(it->second);
-            }
-
-            if (it != txs.end())
-            {
-                marker = AccountTxMarker{it->first.first, it->first.second};
-            }
-        });
-        return {result, marker};
-#else
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        auto it = accountTxMap_.find(options.account);
-        if (it == accountTxMap_.end())
-            return {{}, std::nullopt};
-
-        AccountTxs result;
-        const auto& accountData = it->second;
-        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
-        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
-
-        std::optional<AccountTxMarker> marker;
-        bool lookingForMarker = options.marker.has_value();
-        std::size_t count = 0;
-
-        for (auto rIt = std::make_reverse_iterator(txEnd);
-             rIt != std::make_reverse_iterator(txIt) && count < options.limit;
-             ++rIt)
-        {
-            for (auto innerRIt = rIt->second.rbegin();
-                 innerRIt != rIt->second.rend();
-                 ++innerRIt)
-            {
-                if (lookingForMarker)
-                {
-                    if (rIt->first == options.marker->ledgerSeq &&
-                        innerRIt->first == options.marker->txnSeq)
-                        lookingForMarker = false;
-                    else
-                        continue;
-                }
-
-                result.push_back(accountData.transactions[innerRIt->second]);
-                ++count;
-
-                if (count >= options.limit)
-                {
-                    marker = AccountTxMarker{rIt->first, innerRIt->first};
-                    break;
-                }
-            }
-        }
-
-        return {result, marker};
-#endif
-    }
 
     std::optional<LedgerInfo>
     getLedgerInfoByIndex(LedgerIndex ledgerSeq) override
@@ -1328,6 +1039,125 @@ public:
         return result;
 #endif
     }
+    // Helper function to handle limits
+    template <typename Container>
+    void
+    applyLimit(Container& container, std::size_t limit, bool bUnlimited)
+    {
+        if (!bUnlimited && limit > 0 && container.size() > limit)
+        {
+            container.resize(limit);
+        }
+    }
+
+    AccountTxs
+    getOldestAccountTxs(AccountTxOptions const& options) override
+    {
+#if RDB_CONCURRENT
+        AccountTxs result;
+        accountTxMap_.visit(options.account, [&](auto const& item) {
+            item.second.transactions.visit_all([&](auto const& tx) {
+                if (tx.first.first >= options.minLedger &&
+                    tx.first.first <= options.maxLedger)
+                {
+                    result.push_back(tx.second);
+                }
+            });
+        });
+        std::sort(
+            result.begin(), result.end(), [](auto const& a, auto const& b) {
+                return a.second->getLgrSeq() < b.second->getLgrSeq();
+            });
+        applyLimit(result, options.limit, options.bUnlimited);
+        return result;
+#else
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        auto it = accountTxMap_.find(options.account);
+        if (it == accountTxMap_.end())
+            return {};
+
+        AccountTxs result;
+        const auto& accountData = it->second;
+        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
+        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
+
+        std::size_t skipped = 0;
+        for (; txIt != txEnd &&
+             (options.bUnlimited || result.size() < options.limit);
+             ++txIt)
+        {
+            for (const auto& [txSeq, txIndex] : txIt->second)
+            {
+                if (skipped < options.offset)
+                {
+                    ++skipped;
+                    continue;
+                }
+                result.push_back(accountData.transactions[txIndex]);
+                if (!options.bUnlimited && result.size() >= options.limit)
+                    break;
+            }
+        }
+
+        return result;
+#endif
+    }
+
+    AccountTxs
+    getNewestAccountTxs(AccountTxOptions const& options) override
+    {
+#if RDB_CONCURRENT
+        AccountTxs result;
+        accountTxMap_.visit(options.account, [&](auto const& item) {
+            item.second.transactions.visit_all([&](auto const& tx) {
+                if (tx.first.first >= options.minLedger &&
+                    tx.first.first <= options.maxLedger)
+                {
+                    result.push_back(tx.second);
+                }
+            });
+        });
+        std::sort(
+            result.begin(), result.end(), [](auto const& a, auto const& b) {
+                return a.second->getLgrSeq() > b.second->getLgrSeq();
+            });
+        applyLimit(result, options.limit, options.bUnlimited);
+        return result;
+#else
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        auto it = accountTxMap_.find(options.account);
+        if (it == accountTxMap_.end())
+            return {};
+
+        AccountTxs result;
+        const auto& accountData = it->second;
+        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
+        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
+
+        std::size_t skipped = 0;
+        for (auto rIt = std::make_reverse_iterator(txEnd);
+             rIt != std::make_reverse_iterator(txIt) &&
+             (options.bUnlimited || result.size() < options.limit);
+             ++rIt)
+        {
+            for (auto innerRIt = rIt->second.rbegin();
+                 innerRIt != rIt->second.rend();
+                 ++innerRIt)
+            {
+                if (skipped < options.offset)
+                {
+                    ++skipped;
+                    continue;
+                }
+                result.push_back(accountData.transactions[innerRIt->second]);
+                if (!options.bUnlimited && result.size() >= options.limit)
+                    break;
+            }
+        }
+
+        return result;
+#endif
+    }
 
     MetaTxsList
     getOldestAccountTxsB(AccountTxOptions const& options) override
@@ -1354,10 +1184,7 @@ public:
             result.begin(), result.end(), [](auto const& a, auto const& b) {
                 return std::get<2>(a) < std::get<2>(b);
             });
-        if (!options.bUnlimited && result.size() > options.limit)
-        {
-            result.resize(options.limit);
-        }
+        applyLimit(result, options.limit, options.bUnlimited);
         return result;
 #else
         std::shared_lock<std::shared_mutex> lock(mutex_);
@@ -1371,7 +1198,9 @@ public:
         auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
 
         std::size_t skipped = 0;
-        for (; txIt != txEnd && result.size() < options.limit; ++txIt)
+        for (; txIt != txEnd &&
+             (options.bUnlimited || result.size() < options.limit);
+             ++txIt)
         {
             for (const auto& [txSeq, txIndex] : txIt->second)
             {
@@ -1385,7 +1214,7 @@ public:
                     txn->getSTransaction()->getSerializer().peekData(),
                     txMeta->getAsObject().getSerializer().peekData(),
                     txIt->first);
-                if (result.size() >= options.limit && !options.bUnlimited)
+                if (!options.bUnlimited && result.size() >= options.limit)
                     break;
             }
         }
@@ -1419,10 +1248,7 @@ public:
             result.begin(), result.end(), [](auto const& a, auto const& b) {
                 return std::get<2>(a) > std::get<2>(b);
             });
-        if (!options.bUnlimited && result.size() > options.limit)
-        {
-            result.resize(options.limit);
-        }
+        applyLimit(result, options.limit, options.bUnlimited);
         return result;
 #else
         std::shared_lock<std::shared_mutex> lock(mutex_);
@@ -1435,10 +1261,10 @@ public:
         auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
         auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
 
-        std::vector<txnMetaLedgerType> tempResult;
         std::size_t skipped = 0;
         for (auto rIt = std::make_reverse_iterator(txEnd);
-             rIt != std::make_reverse_iterator(txIt);
+             rIt != std::make_reverse_iterator(txIt) &&
+             (options.bUnlimited || result.size() < options.limit);
              ++rIt)
         {
             for (auto innerRIt = rIt->second.rbegin();
@@ -1452,28 +1278,25 @@ public:
                 }
                 const auto& [txn, txMeta] =
                     accountData.transactions[innerRIt->second];
-                tempResult.emplace_back(
+                result.emplace_back(
                     txn->getSTransaction()->getSerializer().peekData(),
                     txMeta->getAsObject().getSerializer().peekData(),
                     rIt->first);
-                if (tempResult.size() >= options.limit && !options.bUnlimited)
+                if (!options.bUnlimited && result.size() >= options.limit)
                     break;
             }
-            if (tempResult.size() >= options.limit && !options.bUnlimited)
-                break;
         }
 
-        result.insert(result.end(), tempResult.rbegin(), tempResult.rend());
         return result;
 #endif
     }
-
-    std::pair<MetaTxsList, std::optional<AccountTxMarker>>
-    oldestAccountTxPageB(AccountTxPageOptions const& options) override
+    std::pair<AccountTxs, std::optional<AccountTxMarker>>
+    oldestAccountTxPage(AccountTxPageOptions const& options) override
     {
 #if RDB_CONCURRENT
-        MetaTxsList result;
+        AccountTxs result;
         std::optional<AccountTxMarker> marker;
+
         accountTxMap_.visit(options.account, [&](auto const& item) {
             std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>>
                 txs;
@@ -1484,6 +1307,7 @@ public:
                     txs.emplace_back(tx);
                 }
             });
+
             std::sort(txs.begin(), txs.end(), [](auto const& a, auto const& b) {
                 return a.first < b.first;
             });
@@ -1499,14 +1323,11 @@ public:
                     ++it;
             }
 
-            for (; it != txs.end() && result.size() < options.limit; ++it)
+            for (; it != txs.end() &&
+                 (options.limit == 0 || result.size() < options.limit);
+                 ++it)
             {
-                result.emplace_back(
-                    it->second.first->getSTransaction()
-                        ->getSerializer()
-                        .peekData(),
-                    it->second.second->getAsObject().getSerializer().peekData(),
-                    it->first.first);
+                result.push_back(it->second);
             }
 
             if (it != txs.end())
@@ -1514,6 +1335,7 @@ public:
                 marker = AccountTxMarker{it->first.first, it->first.second};
             }
         });
+
         return {result, marker};
 #else
         std::shared_lock<std::shared_mutex> lock(mutex_);
@@ -1521,16 +1343,17 @@ public:
         if (it == accountTxMap_.end())
             return {{}, std::nullopt};
 
-        MetaTxsList result;
+        AccountTxs result;
+        std::optional<AccountTxMarker> marker;
         const auto& accountData = it->second;
         auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
         auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
 
-        std::optional<AccountTxMarker> marker;
         bool lookingForMarker = options.marker.has_value();
         std::size_t count = 0;
 
-        for (; txIt != txEnd && count < options.limit; ++txIt)
+        for (; txIt != txEnd && (options.limit == 0 || count < options.limit);
+             ++txIt)
         {
             for (const auto& [txSeq, txIndex] : txIt->second)
             {
@@ -1539,8 +1362,193 @@ public:
                     if (txIt->first == options.marker->ledgerSeq &&
                         txSeq == options.marker->txnSeq)
                         lookingForMarker = false;
-                    else
-                        continue;
+                    continue;
+                }
+
+                result.push_back(accountData.transactions[txIndex]);
+                ++count;
+
+                if (options.limit > 0 && count >= options.limit)
+                {
+                    marker = AccountTxMarker{txIt->first, txSeq};
+                    break;
+                }
+            }
+        }
+
+        return {result, marker};
+#endif
+    }
+
+    std::pair<AccountTxs, std::optional<AccountTxMarker>>
+    newestAccountTxPage(AccountTxPageOptions const& options) override
+    {
+#if RDB_CONCURRENT
+        AccountTxs result;
+        std::optional<AccountTxMarker> marker;
+
+        accountTxMap_.visit(options.account, [&](auto const& item) {
+            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>>
+                txs;
+            item.second.transactions.visit_all([&](auto const& tx) {
+                if (tx.first.first >= options.minLedger &&
+                    tx.first.first <= options.maxLedger)
+                {
+                    txs.emplace_back(tx);
+                }
+            });
+
+            std::sort(txs.begin(), txs.end(), [](auto const& a, auto const& b) {
+                return a.first > b.first;
+            });
+
+            auto it = txs.begin();
+            if (options.marker)
+            {
+                it = std::find_if(txs.begin(), txs.end(), [&](auto const& tx) {
+                    return tx.first.first == options.marker->ledgerSeq &&
+                        tx.first.second == options.marker->txnSeq;
+                });
+                if (it != txs.end())
+                    ++it;
+            }
+
+            for (; it != txs.end() &&
+                 (options.limit == 0 || result.size() < options.limit);
+                 ++it)
+            {
+                result.push_back(it->second);
+            }
+
+            if (it != txs.end())
+            {
+                marker = AccountTxMarker{it->first.first, it->first.second};
+            }
+        });
+
+        return {result, marker};
+#else
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        auto it = accountTxMap_.find(options.account);
+        if (it == accountTxMap_.end())
+            return {{}, std::nullopt};
+
+        AccountTxs result;
+        std::optional<AccountTxMarker> marker;
+        const auto& accountData = it->second;
+        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
+        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
+
+        bool lookingForMarker = options.marker.has_value();
+        std::size_t count = 0;
+
+        for (auto rIt = std::make_reverse_iterator(txEnd);
+             rIt != std::make_reverse_iterator(txIt) &&
+             (options.limit == 0 || count < options.limit);
+             ++rIt)
+        {
+            for (auto innerRIt = rIt->second.rbegin();
+                 innerRIt != rIt->second.rend();
+                 ++innerRIt)
+            {
+                if (lookingForMarker)
+                {
+                    if (rIt->first == options.marker->ledgerSeq &&
+                        innerRIt->first == options.marker->txnSeq)
+                        lookingForMarker = false;
+                    continue;
+                }
+
+                result.push_back(accountData.transactions[innerRIt->second]);
+                ++count;
+
+                if (options.limit > 0 && count >= options.limit)
+                {
+                    marker = AccountTxMarker{rIt->first, innerRIt->first};
+                    break;
+                }
+            }
+        }
+
+        return {result, marker};
+#endif
+    }
+
+    std::pair<MetaTxsList, std::optional<AccountTxMarker>>
+    oldestAccountTxPageB(AccountTxPageOptions const& options) override
+    {
+#if RDB_CONCURRENT
+        MetaTxsList result;
+        std::optional<AccountTxMarker> marker;
+
+        accountTxMap_.visit(options.account, [&](auto const& item) {
+            std::vector<std::tuple<uint32_t, uint32_t, AccountTx>> txs;
+            item.second.transactions.visit_all([&](auto const& tx) {
+                if (tx.first.first >= options.minLedger &&
+                    tx.first.first <= options.maxLedger)
+                {
+                    txs.emplace_back(
+                        tx.first.first, tx.first.second, tx.second);
+                }
+            });
+
+            std::sort(txs.begin(), txs.end());
+
+            auto it = txs.begin();
+            if (options.marker)
+            {
+                it = std::find_if(txs.begin(), txs.end(), [&](auto const& tx) {
+                    return std::get<0>(tx) == options.marker->ledgerSeq &&
+                        std::get<1>(tx) == options.marker->txnSeq;
+                });
+                if (it != txs.end())
+                    ++it;
+            }
+
+            for (; it != txs.end() &&
+                 (options.limit == 0 || result.size() < options.limit);
+                 ++it)
+            {
+                const auto& [_, __, tx] = *it;
+                result.emplace_back(
+                    tx.first->getSTransaction()->getSerializer().peekData(),
+                    tx.second->getAsObject().getSerializer().peekData(),
+                    std::get<0>(*it));
+            }
+
+            if (it != txs.end())
+            {
+                marker = AccountTxMarker{std::get<0>(*it), std::get<1>(*it)};
+            }
+        });
+
+        return {result, marker};
+#else
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        auto it = accountTxMap_.find(options.account);
+        if (it == accountTxMap_.end())
+            return {{}, std::nullopt};
+
+        MetaTxsList result;
+        std::optional<AccountTxMarker> marker;
+        const auto& accountData = it->second;
+        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
+        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
+
+        bool lookingForMarker = options.marker.has_value();
+        std::size_t count = 0;
+
+        for (; txIt != txEnd && (options.limit == 0 || count < options.limit);
+             ++txIt)
+        {
+            for (const auto& [txSeq, txIndex] : txIt->second)
+            {
+                if (lookingForMarker)
+                {
+                    if (txIt->first == options.marker->ledgerSeq &&
+                        txSeq == options.marker->txnSeq)
+                        lookingForMarker = false;
+                    continue;
                 }
 
                 const auto& [txn, txMeta] = accountData.transactions[txIndex];
@@ -1550,7 +1558,7 @@ public:
                     txIt->first);
                 ++count;
 
-                if (count >= options.limit)
+                if (options.limit > 0 && count >= options.limit)
                 {
                     marker = AccountTxMarker{txIt->first, txSeq};
                     break;
@@ -1568,46 +1576,48 @@ public:
 #if RDB_CONCURRENT
         MetaTxsList result;
         std::optional<AccountTxMarker> marker;
+
         accountTxMap_.visit(options.account, [&](auto const& item) {
-            std::vector<std::pair<std::pair<uint32_t, uint32_t>, AccountTx>>
-                txs;
+            std::vector<std::tuple<uint32_t, uint32_t, AccountTx>> txs;
             item.second.transactions.visit_all([&](auto const& tx) {
                 if (tx.first.first >= options.minLedger &&
                     tx.first.first <= options.maxLedger)
                 {
-                    txs.emplace_back(tx);
+                    txs.emplace_back(
+                        tx.first.first, tx.first.second, tx.second);
                 }
             });
-            std::sort(txs.begin(), txs.end(), [](auto const& a, auto const& b) {
-                return a.first > b.first;
-            });
+
+            std::sort(txs.begin(), txs.end(), std::greater<>());
 
             auto it = txs.begin();
             if (options.marker)
             {
                 it = std::find_if(txs.begin(), txs.end(), [&](auto const& tx) {
-                    return tx.first.first == options.marker->ledgerSeq &&
-                        tx.first.second == options.marker->txnSeq;
+                    return std::get<0>(tx) == options.marker->ledgerSeq &&
+                        std::get<1>(tx) == options.marker->txnSeq;
                 });
                 if (it != txs.end())
                     ++it;
             }
 
-            for (; it != txs.end() && result.size() < options.limit; ++it)
+            for (; it != txs.end() &&
+                 (options.limit == 0 || result.size() < options.limit);
+                 ++it)
             {
+                const auto& [_, __, tx] = *it;
                 result.emplace_back(
-                    it->second.first->getSTransaction()
-                        ->getSerializer()
-                        .peekData(),
-                    it->second.second->getAsObject().getSerializer().peekData(),
-                    it->first.first);
+                    tx.first->getSTransaction()->getSerializer().peekData(),
+                    tx.second->getAsObject().getSerializer().peekData(),
+                    std::get<0>(*it));
             }
 
             if (it != txs.end())
             {
-                marker = AccountTxMarker{it->first.first, it->first.second};
+                marker = AccountTxMarker{std::get<0>(*it), std::get<1>(*it)};
             }
         });
+
         return {result, marker};
 #else
         std::shared_lock<std::shared_mutex> lock(mutex_);
@@ -1616,16 +1626,17 @@ public:
             return {{}, std::nullopt};
 
         MetaTxsList result;
+        std::optional<AccountTxMarker> marker;
         const auto& accountData = it->second;
         auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
         auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
 
-        std::optional<AccountTxMarker> marker;
         bool lookingForMarker = options.marker.has_value();
         std::size_t count = 0;
 
         for (auto rIt = std::make_reverse_iterator(txEnd);
-             rIt != std::make_reverse_iterator(txIt) && count < options.limit;
+             rIt != std::make_reverse_iterator(txIt) &&
+             (options.limit == 0 || count < options.limit);
              ++rIt)
         {
             for (auto innerRIt = rIt->second.rbegin();
@@ -1637,8 +1648,7 @@ public:
                     if (rIt->first == options.marker->ledgerSeq &&
                         innerRIt->first == options.marker->txnSeq)
                         lookingForMarker = false;
-                    else
-                        continue;
+                    continue;
                 }
 
                 const auto& [txn, txMeta] =
@@ -1649,7 +1659,7 @@ public:
                     rIt->first);
                 ++count;
 
-                if (count >= options.limit)
+                if (options.limit > 0 && count >= options.limit)
                 {
                     marker = AccountTxMarker{rIt->first, innerRIt->first};
                     break;
