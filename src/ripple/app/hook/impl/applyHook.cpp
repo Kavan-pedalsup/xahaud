@@ -5486,8 +5486,8 @@ DEFINE_HOOK_FUNCTION(int64_t, float_divide, int64_t float1, int64_t float2)
     HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
                    // hookCtx on current stack
 
-    bool const fixV3 = view.rules().enabled(fixFloatDivide);
-    return float_divide_internal(float1, float2, fixV3);
+    bool const hasFix = view.rules().enabled(fixFloatDivide);
+    return float_divide_internal(float1, float2, hasFix);
 
     HOOK_TEARDOWN();
 }
