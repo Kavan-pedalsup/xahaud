@@ -363,7 +363,8 @@ public:
                   get(section("node_db"), "type"), "memory") ||
               boost::beast::iequals(
                   get(section("node_db"), "type"), "flatmap")));
-        // RHNOTE: testmemory type is not selected for here because it breaks tests
+        // RHNOTE: testmemory type is not selected for here because it breaks
+        // tests
         return isMem;
     }
 
