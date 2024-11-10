@@ -355,11 +355,18 @@ public:
     mem_backend() const
     {
         static bool const isMem =
-            (!section(SECTION_RELATIONAL_DB).empty() &&
-             boost::beast::iequals(
-                 get(section(SECTION_RELATIONAL_DB), "backend"), "memory")) ||
-            (!section("node_db").empty() &&
-             boost::beast::iequals(get(section("node_db"), "type"), "memory"));
+            ((!section(SECTION_RELATIONAL_DB).empty() &&
+              boost::beast::iequals(
+                  get(section(SECTION_RELATIONAL_DB), "backend"), "memory")) ||
+             (!section("node_db").empty() &&
+              boost::beast::iequals(
+                  get(section("node_db"), "type"), "memory"))) ||
+            ((!section(SECTION_RELATIONAL_DB).empty() &&
+              boost::beast::iequals(
+                  get(section(SECTION_RELATIONAL_DB), "backend"), "flatmap")) ||
+             (!section("node_db").empty() &&
+              boost::beast::iequals(
+                  get(section("node_db"), "type"), "flatmap")));
 
         return isMem;
     }

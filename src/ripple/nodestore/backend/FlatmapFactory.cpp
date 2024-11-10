@@ -13,7 +13,7 @@
 namespace ripple {
 namespace NodeStore {
 
-class MemoryBackend : public Backend
+class FlatmapBackend : public Backend
 {
 private:
     std::string name_;
@@ -31,16 +31,15 @@ private:
         }
     };
 
-    using DataStore =
-        std::map<uint256, std::vector<std::uint8_t>>;  // Store compressed blob
-                                                       // data
-    mutable std::recursive_mutex
-        mutex_;  // Only needed for std::map implementation
+    using DataStore = boost::unordered::concurrent_flat_map<
+        uint256,
+        std::vector<std::uint8_t>,  // Store compressed blob data
+        base_uint_hasher>;
 
     DataStore table_;
 
 public:
-    MemoryBackend(
+    FlatmapBackend(
         size_t keyBytes,
         Section const& keyValues,
         beast::Journal journal)
@@ -51,7 +50,7 @@ public:
             name_ = "node_db";
     }
 
-    ~MemoryBackend() override
+    ~FlatmapBackend() override
     {
         close();
     }
@@ -65,7 +64,6 @@ public:
     void
     open(bool createIfMissing) override
     {
-        std::lock_guard lock(mutex_);
         if (isOpen_)
             Throw<std::runtime_error>("already open");
         isOpen_ = true;
@@ -80,7 +78,6 @@ public:
     void
     close() override
     {
-        std::lock_guard lock(mutex_);
         table_.clear();
         isOpen_ = false;
     }
@@ -93,19 +90,19 @@ public:
 
         uint256 const hash(uint256::fromVoid(key));
 
-        std::lock_guard lock(mutex_);
-        auto it = table_.find(hash);
-        if (it == table_.end())
-            return notFound;
-
-        nudb::detail::buffer bf;
-        auto const result =
-            nodeobject_decompress(it->second.data(), it->second.size(), bf);
-        DecodedBlob decoded(hash.data(), result.first, result.second);
-        if (!decoded.wasOk())
-            return dataCorrupt;
-        *pObject = decoded.createObject();
-        return ok;
+        bool found = table_.visit(hash, [&](const auto& key_value_pair) {
+            nudb::detail::buffer bf;
+            auto const result = nodeobject_decompress(
+                key_value_pair.second.data(), key_value_pair.second.size(), bf);
+            DecodedBlob decoded(hash.data(), result.first, result.second);
+            if (!decoded.wasOk())
+            {
+                *pObject = nullptr;
+                return;
+            }
+            *pObject = decoded.createObject();
+        });
+        return found ? (*pObject ? ok : dataCorrupt) : notFound;
     }
 
     std::pair<std::vector<std::shared_ptr<NodeObject>>, Status>
@@ -143,8 +140,7 @@ public:
             static_cast<const std::uint8_t*>(result.first),
             static_cast<const std::uint8_t*>(result.first) + result.second);
 
-        std::lock_guard lock(mutex_);
-        table_[object->getHash()] = std::move(compressed);
+        table_.insert_or_assign(object->getHash(), std::move(compressed));
     }
 
     void
@@ -165,9 +161,7 @@ public:
         if (!isOpen_)
             return;
 
-        std::lock_guard lock(mutex_);
-        for (const auto& entry : table_)
-        {
+        table_.visit_all([&f](const auto& entry) {
             nudb::detail::buffer bf;
             auto const result = nodeobject_decompress(
                 entry.second.data(), entry.second.size(), bf);
@@ -175,7 +169,7 @@ public:
                 entry.first.data(), result.first, result.second);
             if (decoded.wasOk())
                 f(decoded.createObject());
-        }
+        });
     }
 
     int
@@ -200,20 +194,19 @@ private:
     size_t
     size() const
     {
-        std::lock_guard lock(mutex_);
         return table_.size();
     }
 };
 
-class MemoryFactory : public Factory
+class FlatmapFactory : public Factory
 {
 public:
-    MemoryFactory()
+    FlatmapFactory()
     {
         Manager::instance().insert(*this);
     }
 
-    ~MemoryFactory() override
+    ~FlatmapFactory() override
     {
         Manager::instance().erase(*this);
     }
@@ -221,7 +214,7 @@ public:
     std::string
     getName() const override
     {
-        return "Memory";
+        return "Flatmap";
     }
 
     std::unique_ptr<Backend>
@@ -232,11 +225,11 @@ public:
         Scheduler& scheduler,
         beast::Journal journal) override
     {
-        return std::make_unique<MemoryBackend>(keyBytes, keyValues, journal);
+        return std::make_unique<FlatmapBackend>(keyBytes, keyValues, journal);
     }
 };
 
-static MemoryFactory memoryFactory;
+static FlatmapFactory flatmapFactory;
 
 }  // namespace NodeStore
 }  // namespace ripple
