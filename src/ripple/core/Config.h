@@ -362,10 +362,8 @@ public:
              (boost::beast::iequals(
                   get(section("node_db"), "type"), "memory") ||
               boost::beast::iequals(
-                  get(section("node_db"), "type"), "flatmap") ||
-              boost::beast::iequals(
-                  get(section("node_db"), "type"), "testmemory")));
-
+                  get(section("node_db"), "type"), "flatmap")));
+        // RHNOTE: testmemory type is not selected for here because it breaks tests
         return isMem;
     }
 
