@@ -350,7 +350,7 @@ public:
 
         auto cachedData = entry.lock();
 
-        if (cachedData /* && entry.ptr*/)
+        if (cachedData)
         {
             if (replace(entry.ptr))
             {
