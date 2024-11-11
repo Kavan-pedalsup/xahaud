@@ -25,6 +25,7 @@
 #include <ripple/basics/base_uint.h>
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/beast/utility/Journal.h>
+#include <ripple/core/ConfigSections.h>
 #include <ripple/protocol/PublicKey.h>
 #include <ripple/protocol/SystemParameters.h>  // VFALCO Breaks levelization
 #include <boost/beast/core/string.hpp>
@@ -349,6 +350,21 @@ public:
     reporting() const
     {
         return RUN_REPORTING;
+    }
+    bool
+    mem_backend() const
+    {
+        static bool const isMem =
+            (!section(SECTION_RELATIONAL_DB).empty() &&
+             boost::beast::iequals(
+                 get(section(SECTION_RELATIONAL_DB), "backend"), "rwdb")) ||
+            (!section("node_db").empty() &&
+             (boost::beast::iequals(get(section("node_db"), "type"), "rwdb") ||
+              boost::beast::iequals(
+                  get(section("node_db"), "type"), "flatmap")));
+        // RHNOTE: memory type is not selected for here because it breaks
+        // tests
+        return isMem;
     }
 
     bool

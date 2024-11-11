@@ -118,7 +118,9 @@ SHAMapStoreImp::SHAMapStoreImp(
 
     get_if_exists(section, "online_delete", deleteInterval_);
 
-    if (deleteInterval_)
+    bool const isMem = config.mem_backend();
+
+    if (deleteInterval_ || isMem)
     {
         if (app_.config().reporting())
         {
@@ -126,6 +128,9 @@ SHAMapStoreImp::SHAMapStoreImp(
                 "Reporting does not support online_delete. Remove "
                 "online_delete info from config");
         }
+
+        if (isMem)
+            deleteInterval_ = config.LEDGER_HISTORY;
 
         // Configuration that affects the behavior of online delete
         get_if_exists(section, "delete_batch", deleteBatch_);
@@ -162,7 +167,8 @@ SHAMapStoreImp::SHAMapStoreImp(
         }
 
         state_db_.init(config, dbName_);
-        dbPaths();
+        if (!isMem)
+            dbPaths();
     }
 }
 
@@ -195,6 +201,7 @@ SHAMapStoreImp::makeNodeStore(int readThreads)
                 "online_delete info from config");
         }
         SavedState state = state_db_.getState();
+
         auto writableBackend = makeBackendRotating(state.writableDb);
         auto archiveBackend = makeBackendRotating(state.archiveDb);
         if (!state.writableDb.size())
@@ -293,6 +300,8 @@ SHAMapStoreImp::run()
     fullBelowCache_ = &(*app_.getNodeFamily().getFullBelowCache(0));
     treeNodeCache_ = &(*app_.getNodeFamily().getTreeNodeCache(0));
 
+    bool const isMem = app_.config().mem_backend();
+
     if (advisoryDelete_)
         canDelete_ = state_db_.getCanDelete();
 
@@ -351,7 +360,7 @@ SHAMapStoreImp::run()
         // will delete up to (not including) lastRotated
         if (readyToRotate && !waitForImport)
         {
-            JLOG(journal_.warn())
+            JLOG(journal_.debug())
                 << "rotating  validatedSeq " << validatedSeq << " lastRotated "
                 << lastRotated << " deleteInterval " << deleteInterval_
                 << " canDelete_ " << canDelete_ << " state "
@@ -395,7 +404,7 @@ SHAMapStoreImp::run()
             // Only log if we completed without a "health" abort
             JLOG(journal_.debug()) << validatedSeq << " freshened caches";
 
-            JLOG(journal_.trace()) << "Making a new backend";
+            JLOG(journal_.debug()) << "Making a new backend";
             auto newBackend = makeBackendRotating();
             JLOG(journal_.debug())
                 << validatedSeq << " new backend " << newBackend->getName();
