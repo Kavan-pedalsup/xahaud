@@ -219,7 +219,7 @@ private:
     run()
     {
         beast::setCurrentThreadName("LedgerCleaner");
-        JLOG(j_.warn()) << "Started ledger cleaner";
+        JLOG(j_.debug()) << "Started ledger cleaner";
 
         while (true)
         {
@@ -392,7 +392,7 @@ private:
 
             if (app_.getFeeTrack().isLoadedLocal())
             {
-                JLOG(j_.warn())
+                JLOG(j_.debug())
                     << "Ledger Cleaner: Waiting for load to subside";
                 std::this_thread::sleep_for(std::chrono::seconds(5));
                 continue;

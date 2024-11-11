@@ -352,7 +352,7 @@ SHAMapStoreImp::run()
 
         if (waitForImport)
         {
-            JLOG(journal_.warn())
+            JLOG(journal_.info())
                 << "NOT rotating validatedSeq " << validatedSeq
                 << " as rotation would interfere with ShardStore import";
         }
@@ -360,7 +360,7 @@ SHAMapStoreImp::run()
         // will delete up to (not including) lastRotated
         if (readyToRotate && !waitForImport)
         {
-            JLOG(journal_.warn())
+            JLOG(journal_.debug())
                 << "rotating  validatedSeq " << validatedSeq << " lastRotated "
                 << lastRotated << " deleteInterval " << deleteInterval_
                 << " canDelete_ " << canDelete_ << " state "
@@ -371,7 +371,7 @@ SHAMapStoreImp::run()
             if (healthWait() == stopping)
                 return;
 
-            JLOG(journal_.warn()) << "copying ledger " << validatedSeq;
+            JLOG(journal_.debug()) << "copying ledger " << validatedSeq;
             std::uint64_t nodeCount = 0;
 
             try
@@ -394,19 +394,19 @@ SHAMapStoreImp::run()
             if (healthWait() == stopping)
                 return;
             // Only log if we completed without a "health" abort
-            JLOG(journal_.warn()) << "copied ledger " << validatedSeq
+            JLOG(journal_.debug()) << "copied ledger " << validatedSeq
                                   << " nodecount " << nodeCount;
 
-            JLOG(journal_.warn()) << "freshening caches";
+            JLOG(journal_.debug()) << "freshening caches";
             freshenCaches();
             if (healthWait() == stopping)
                 return;
             // Only log if we completed without a "health" abort
-            JLOG(journal_.warn()) << validatedSeq << " freshened caches";
+            JLOG(journal_.debug()) << validatedSeq << " freshened caches";
 
-            JLOG(journal_.warn()) << "Making a new backend";
+            JLOG(journal_.debug()) << "Making a new backend";
             auto newBackend = makeBackendRotating();
-            JLOG(journal_.warn())
+            JLOG(journal_.debug())
                 << validatedSeq << " new backend " << newBackend->getName();
 
             clearCaches(validatedSeq);
