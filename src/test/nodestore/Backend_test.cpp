@@ -82,6 +82,8 @@ public:
             }
         }
 
+        // Memory backend does not keep table/data after close
+        if (type != "memory")
         {
             // Re-open the backend
             std::unique_ptr<Backend> backend = Manager::instance().make_Backend(
@@ -105,6 +107,8 @@ public:
     {
         std::uint64_t const seedValue = 50;
 
+        testBackend("testmemory", seedValue);
+        testBackend("memory", seedValue);
         testBackend("nudb", seedValue);
 
 #if RIPPLE_ROCKSDB_AVAILABLE
@@ -117,7 +121,7 @@ public:
     }
 };
 
-BEAST_DEFINE_TESTSUITE(Backend, ripple_core, ripple);
+BEAST_DEFINE_TESTSUITE(Backend, NodeStore, ripple);
 
 }  // namespace NodeStore
 }  // namespace ripple

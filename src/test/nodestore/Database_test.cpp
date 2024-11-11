@@ -659,6 +659,8 @@ public:
 
         testConfig();
 
+        testNodeStore("testmemory", false, seedValue);
+
         testNodeStore("memory", false, seedValue);
 
         // Persistent backend tests
