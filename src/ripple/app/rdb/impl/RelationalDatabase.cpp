@@ -40,7 +40,7 @@ RelationalDatabase::init(
 {
     bool use_sqlite = false;
     bool use_postgres = false;
-    bool use_memory = false;
+    bool use_memdb = false;
     bool use_flatmap = false;
 
     if (config.reporting())
@@ -56,9 +56,9 @@ RelationalDatabase::init(
             {
                 use_sqlite = true;
             }
-            else if (boost::iequals(get(rdb_section, "backend"), "memory"))
+            else if (boost::iequals(get(rdb_section, "backend"), "memdb"))
             {
-                use_memory = true;
+                use_memdb = true;
             }
             else if (boost::iequals(get(rdb_section, "backend"), "flatmap"))
             {
@@ -85,7 +85,7 @@ RelationalDatabase::init(
     {
         return getPostgresDatabase(app, config, jobQueue);
     }
-    else if (use_memory)
+    else if (use_memdb)
     {
         return getMemoryDatabase(app, config, jobQueue);
     }

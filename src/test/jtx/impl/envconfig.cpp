@@ -49,7 +49,7 @@ setupConfigForUnitTests(Config& cfg)
     cfg.FEES.account_reserve = XRP(200).value().xrp().drops();
     cfg.FEES.owner_reserve = XRP(50).value().xrp().drops();
 
-    cfg.overwrite(ConfigSection::nodeDatabase(), "type", "testmemory");
+    cfg.overwrite(ConfigSection::nodeDatabase(), "type", "memory");
     cfg.overwrite(ConfigSection::nodeDatabase(), "path", "main");
     cfg.deprecatedClearSection(ConfigSection::importNodeDatabase());
     cfg.legacy("database_path", "");

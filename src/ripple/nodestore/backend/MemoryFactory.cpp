@@ -1,43 +1,89 @@
+//------------------------------------------------------------------------------
+/*
+    This file is part of rippled: https://github.com/ripple/rippled
+    Copyright (c) 2012, 2013 Ripple Labs Inc.
+
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose  with  or without fee is hereby granted, provided that the above
+    copyright notice and this permission notice appear in all copies.
+
+    THE  SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH  REGARD  TO  THIS  SOFTWARE  INCLUDING  ALL  IMPLIED  WARRANTIES  OF
+    MERCHANTABILITY  AND  FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+    ANY  SPECIAL ,  DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER  RESULTING  FROM  LOSS  OF USE, DATA OR PROFITS, WHETHER IN AN
+    ACTION  OF  CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+*/
+//==============================================================================
+
 #include <ripple/basics/contract.h>
 #include <ripple/nodestore/Factory.h>
 #include <ripple/nodestore/Manager.h>
-#include <ripple/nodestore/impl/DecodedBlob.h>
-#include <ripple/nodestore/impl/EncodedBlob.h>
-#include <ripple/nodestore/impl/codec.h>
 #include <boost/beast/core/string.hpp>
 #include <boost/core/ignore_unused.hpp>
-#include <boost/unordered/concurrent_flat_map.hpp>
+#include <map>
 #include <memory>
 #include <mutex>
 
 namespace ripple {
 namespace NodeStore {
 
+struct MemoryDB
+{
+    explicit MemoryDB() = default;
+
+    std::mutex mutex;
+    bool open = false;
+    std::map<uint256 const, std::shared_ptr<NodeObject>> table;
+};
+
+class MemoryFactory : public Factory
+{
+private:
+    std::mutex mutex_;
+    std::map<std::string, MemoryDB, boost::beast::iless> map_;
+
+public:
+    MemoryFactory();
+    ~MemoryFactory() override;
+
+    std::string
+    getName() const override;
+
+    std::unique_ptr<Backend>
+    createInstance(
+        size_t keyBytes,
+        Section const& keyValues,
+        std::size_t burstSize,
+        Scheduler& scheduler,
+        beast::Journal journal) override;
+
+    MemoryDB&
+    open(std::string const& path)
+    {
+        std::lock_guard _(mutex_);
+        auto const result = map_.emplace(
+            std::piecewise_construct, std::make_tuple(path), std::make_tuple());
+        MemoryDB& db = result.first->second;
+        if (db.open)
+            Throw<std::runtime_error>("already open");
+        return db;
+    }
+};
+
+static MemoryFactory memoryFactory;
+
+//------------------------------------------------------------------------------
+
 class MemoryBackend : public Backend
 {
 private:
+    using Map = std::map<uint256 const, std::shared_ptr<NodeObject>>;
+
     std::string name_;
-    beast::Journal journal_;
-    bool isOpen_{false};
-
-    struct base_uint_hasher
-    {
-        using result_type = std::size_t;
-
-        result_type
-        operator()(base_uint<256> const& value) const
-        {
-            return hardened_hash<>{}(value);
-        }
-    };
-
-    using DataStore =
-        std::map<uint256, std::vector<std::uint8_t>>;  // Store compressed blob
-                                                       // data
-    mutable std::recursive_mutex
-        mutex_;  // Only needed for std::map implementation
-
-    DataStore table_;
+    beast::Journal const journal_;
+    MemoryDB* db_{nullptr};
 
 public:
     MemoryBackend(
@@ -46,9 +92,9 @@ public:
         beast::Journal journal)
         : name_(get(keyValues, "path")), journal_(journal)
     {
-        boost::ignore_unused(journal_);
+        boost::ignore_unused(journal_);  // Keep unused journal_ just in case.
         if (name_.empty())
-            name_ = "node_db";
+            Throw<std::runtime_error>("Missing path in TestMemory backend");
     }
 
     ~MemoryBackend() override
@@ -65,46 +111,38 @@ public:
     void
     open(bool createIfMissing) override
     {
-        std::lock_guard lock(mutex_);
-        if (isOpen_)
-            Throw<std::runtime_error>("already open");
-        isOpen_ = true;
+        db_ = &memoryFactory.open(name_);
     }
 
     bool
     isOpen() override
     {
-        return isOpen_;
+        return static_cast<bool>(db_);
     }
 
     void
     close() override
     {
-        std::lock_guard lock(mutex_);
-        table_.clear();
-        isOpen_ = false;
+        db_ = nullptr;
     }
+
+    //--------------------------------------------------------------------------
 
     Status
     fetch(void const* key, std::shared_ptr<NodeObject>* pObject) override
     {
-        if (!isOpen_)
-            return notFound;
-
+        assert(db_);
         uint256 const hash(uint256::fromVoid(key));
 
-        std::lock_guard lock(mutex_);
-        auto it = table_.find(hash);
-        if (it == table_.end())
-            return notFound;
+        std::lock_guard _(db_->mutex);
 
-        nudb::detail::buffer bf;
-        auto const result =
-            nodeobject_decompress(it->second.data(), it->second.size(), bf);
-        DecodedBlob decoded(hash.data(), result.first, result.second);
-        if (!decoded.wasOk())
-            return dataCorrupt;
-        *pObject = decoded.createObject();
+        Map::iterator iter = db_->table.find(hash);
+        if (iter == db_->table.end())
+        {
+            pObject->reset();
+            return notFound;
+        }
+        *pObject = iter->second;
         return ok;
     }
 
@@ -122,29 +160,16 @@ public:
             else
                 results.push_back(nObj);
         }
+
         return {results, ok};
     }
 
     void
     store(std::shared_ptr<NodeObject> const& object) override
     {
-        if (!isOpen_)
-            return;
-
-        if (!object)
-            return;
-
-        EncodedBlob encoded(object);
-        nudb::detail::buffer bf;
-        auto const result =
-            nodeobject_compress(encoded.getData(), encoded.getSize(), bf);
-
-        std::vector<std::uint8_t> compressed(
-            static_cast<const std::uint8_t*>(result.first),
-            static_cast<const std::uint8_t*>(result.first) + result.second);
-
-        std::lock_guard lock(mutex_);
-        table_[object->getHash()] = std::move(compressed);
+        assert(db_);
+        std::lock_guard _(db_->mutex);
+        db_->table.emplace(object->getHash(), object);
     }
 
     void
@@ -162,20 +187,9 @@ public:
     void
     for_each(std::function<void(std::shared_ptr<NodeObject>)> f) override
     {
-        if (!isOpen_)
-            return;
-
-        std::lock_guard lock(mutex_);
-        for (const auto& entry : table_)
-        {
-            nudb::detail::buffer bf;
-            auto const result = nodeobject_decompress(
-                entry.second.data(), entry.second.size(), bf);
-            DecodedBlob decoded(
-                entry.first.data(), result.first, result.second);
-            if (decoded.wasOk())
-                f(decoded.createObject());
-        }
+        assert(db_);
+        for (auto const& e : db_->table)
+            f(e.second);
     }
 
     int
@@ -187,7 +201,6 @@ public:
     void
     setDeletePath() override
     {
-        close();
     }
 
     int
@@ -195,48 +208,36 @@ public:
     {
         return 0;
     }
-
-private:
-    size_t
-    size() const
-    {
-        std::lock_guard lock(mutex_);
-        return table_.size();
-    }
 };
 
-class MemoryFactory : public Factory
+//------------------------------------------------------------------------------
+
+MemoryFactory::MemoryFactory()
 {
-public:
-    MemoryFactory()
-    {
-        Manager::instance().insert(*this);
-    }
+    Manager::instance().insert(*this);
+}
 
-    ~MemoryFactory() override
-    {
-        Manager::instance().erase(*this);
-    }
+MemoryFactory::~MemoryFactory()
+{
+    Manager::instance().erase(*this);
+}
 
-    std::string
-    getName() const override
-    {
-        return "Memory";
-    }
+std::string
+MemoryFactory::getName() const
+{
+    return "Memory";
+}
 
-    std::unique_ptr<Backend>
-    createInstance(
-        size_t keyBytes,
-        Section const& keyValues,
-        std::size_t burstSize,
-        Scheduler& scheduler,
-        beast::Journal journal) override
-    {
-        return std::make_unique<MemoryBackend>(keyBytes, keyValues, journal);
-    }
-};
-
-static MemoryFactory memoryFactory;
+std::unique_ptr<Backend>
+MemoryFactory::createInstance(
+    size_t keyBytes,
+    Section const& keyValues,
+    std::size_t,
+    Scheduler& scheduler,
+    beast::Journal journal)
+{
+    return std::make_unique<MemoryBackend>(keyBytes, keyValues, journal);
+}
 
 }  // namespace NodeStore
 }  // namespace ripple

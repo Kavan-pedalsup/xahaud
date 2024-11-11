@@ -357,13 +357,13 @@ public:
         static bool const isMem =
             (!section(SECTION_RELATIONAL_DB).empty() &&
              boost::beast::iequals(
-                 get(section(SECTION_RELATIONAL_DB), "backend"), "memory")) ||
+                 get(section(SECTION_RELATIONAL_DB), "backend"), "memdb")) ||
             (!section("node_db").empty() &&
              (boost::beast::iequals(
-                  get(section("node_db"), "type"), "memory") ||
+                  get(section("node_db"), "type"), "memdb") ||
               boost::beast::iequals(
                   get(section("node_db"), "type"), "flatmap")));
-        // RHNOTE: testmemory type is not selected for here because it breaks
+        // RHNOTE: memory type is not selected for here because it breaks
         // tests
         return isMem;
     }

@@ -107,8 +107,8 @@ public:
     {
         std::uint64_t const seedValue = 50;
 
-        testBackend("testmemory", seedValue);
         testBackend("memory", seedValue);
+        testBackend("memdb", seedValue);
         testBackend("nudb", seedValue);
 
 #if RIPPLE_ROCKSDB_AVAILABLE
