@@ -20,7 +20,7 @@
 #include <ripple/app/main/Application.h>
 #include <ripple/app/rdb/RelationalDatabase.h>
 #include <ripple/app/rdb/backend/FlatmapDatabase.h>
-#include <ripple/app/rdb/backend/MemoryDatabase.h>
+#include <ripple/app/rdb/backend/RWDBDatabase.h>
 #include <ripple/core/ConfigSections.h>
 #include <ripple/nodestore/DatabaseShard.h>
 
@@ -40,7 +40,7 @@ RelationalDatabase::init(
 {
     bool use_sqlite = false;
     bool use_postgres = false;
-    bool use_memdb = false;
+    bool use_rwdb = false;
     bool use_flatmap = false;
 
     if (config.reporting())
@@ -56,9 +56,9 @@ RelationalDatabase::init(
             {
                 use_sqlite = true;
             }
-            else if (boost::iequals(get(rdb_section, "backend"), "memdb"))
+            else if (boost::iequals(get(rdb_section, "backend"), "rwdb"))
             {
-                use_memdb = true;
+                use_rwdb = true;
             }
             else if (boost::iequals(get(rdb_section, "backend"), "flatmap"))
             {
@@ -85,9 +85,9 @@ RelationalDatabase::init(
     {
         return getPostgresDatabase(app, config, jobQueue);
     }
-    else if (use_memdb)
+    else if (use_rwdb)
     {
-        return getMemoryDatabase(app, config, jobQueue);
+        return getRWDBDatabase(app, config, jobQueue);
     }
     else if (use_flatmap)
     {

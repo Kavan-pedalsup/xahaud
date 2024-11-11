@@ -82,8 +82,8 @@ public:
             }
         }
 
-        // Memory backend does not keep table/data after close
-        if (type != "memory")
+        // rwdb backend does not keep table/data after close
+        if (type != "rwdb")
         {
             // Re-open the backend
             std::unique_ptr<Backend> backend = Manager::instance().make_Backend(
@@ -108,7 +108,7 @@ public:
         std::uint64_t const seedValue = 50;
 
         testBackend("memory", seedValue);
-        testBackend("memdb", seedValue);
+        testBackend("rwdb", seedValue);
         testBackend("nudb", seedValue);
 
 #if RIPPLE_ROCKSDB_AVAILABLE

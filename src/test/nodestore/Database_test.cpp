@@ -661,7 +661,7 @@ public:
 
         testNodeStore("memory", false, seedValue);
 
-        testNodeStore("memdb", false, seedValue);
+        testNodeStore("rwdb", false, seedValue);
 
         // Persistent backend tests
         {

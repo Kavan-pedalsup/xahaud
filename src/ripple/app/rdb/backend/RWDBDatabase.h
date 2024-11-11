@@ -14,7 +14,7 @@
 
 namespace ripple {
 
-class MemoryDatabase : public SQLiteDatabase
+class RWDBDatabase : public SQLiteDatabase
 {
 private:
     struct LedgerData
@@ -31,8 +31,6 @@ private:
     };
 
     Application& app_;
-    Config const& config_;
-    JobQueue& jobQueue_;
 
     mutable std::shared_mutex mutex_;
 
@@ -42,8 +40,8 @@ private:
     std::map<AccountID, AccountTxData> accountTxMap_;
 
 public:
-    MemoryDatabase(Application& app, Config const& config, JobQueue& jobQueue)
-        : app_(app), config_(config), jobQueue_(jobQueue)
+    RWDBDatabase(Application& app, Config const& config, JobQueue& jobQueue)
+        : app_(app)
     {
     }
 
@@ -568,7 +566,7 @@ public:
         // No-op for in-memory database
     }
 
-    ~MemoryDatabase()
+    ~RWDBDatabase()
     {
         // Regular maps can use standard clear
         accountTxMap_.clear();
@@ -957,9 +955,9 @@ public:
 
 // Factory function
 std::unique_ptr<SQLiteDatabase>
-getMemoryDatabase(Application& app, Config const& config, JobQueue& jobQueue)
+getRWDBDatabase(Application& app, Config const& config, JobQueue& jobQueue)
 {
-    return std::make_unique<MemoryDatabase>(app, config, jobQueue);
+    return std::make_unique<RWDBDatabase>(app, config, jobQueue);
 }
 
 }  // namespace ripple

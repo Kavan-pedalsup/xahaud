@@ -13,7 +13,7 @@
 namespace ripple {
 namespace NodeStore {
 
-class MemDBBackend : public Backend
+class RWDBBackend : public Backend
 {
 private:
     std::string name_;
@@ -40,7 +40,7 @@ private:
     DataStore table_;
 
 public:
-    MemDBBackend(
+    RWDBBackend(
         size_t keyBytes,
         Section const& keyValues,
         beast::Journal journal)
@@ -51,7 +51,7 @@ public:
             name_ = "node_db";
     }
 
-    ~MemDBBackend() override
+    ~RWDBBackend() override
     {
         close();
     }
@@ -205,15 +205,15 @@ private:
     }
 };
 
-class MemDBFactory : public Factory
+class RWDBFactory : public Factory
 {
 public:
-    MemDBFactory()
+    RWDBFactory()
     {
         Manager::instance().insert(*this);
     }
 
-    ~MemDBFactory() override
+    ~RWDBFactory() override
     {
         Manager::instance().erase(*this);
     }
@@ -221,7 +221,7 @@ public:
     std::string
     getName() const override
     {
-        return "MemDB";
+        return "RWDB";
     }
 
     std::unique_ptr<Backend>
@@ -232,9 +232,11 @@ public:
         Scheduler& scheduler,
         beast::Journal journal) override
     {
-        return std::make_unique<MemDBBackend>(keyBytes, keyValues, journal);
+        return std::make_unique<RWDBBackend>(keyBytes, keyValues, journal);
     }
 };
+
+static RWDBFactory rwDBFactory;
 
 }  // namespace NodeStore
 }  // namespace ripple
