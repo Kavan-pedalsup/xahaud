@@ -4,6 +4,7 @@
 #include <ripple/app/ledger/AcceptedLedger.h>
 #include <ripple/app/ledger/LedgerMaster.h>
 #include <ripple/app/ledger/TransactionMaster.h>
+#include <ripple/app/misc/impl/AccountTxPaging.h>
 #include <ripple/app/rdb/backend/SQLiteDatabase.h>
 #include <algorithm>
 #include <map>
@@ -242,6 +243,7 @@ public:
         std::unique_lock<std::shared_mutex> lock(mutex_);
         LedgerData ledgerData;
         ledgerData.info = ledger->info();
+        auto seq = ledger->info().seq;
         auto aLedger = std::make_shared<AcceptedLedger>(ledger, app_);
 
         for (auto const& acceptedLedgerTx : *aLedger)
@@ -268,6 +270,11 @@ public:
                                        [acceptedLedgerTx->getTxnSeq()] =
                     accountData.transactions.size() - 1;
             }
+            app_.getMasterTransaction().inLedger(
+                id,
+                seq,
+                acceptedLedgerTx->getTxnSeq(),
+                app_.config().NETWORK_ID);
         }
 
         ledgers_[ledger->info().seq] = std::move(ledgerData);
@@ -470,7 +477,13 @@ public:
             if (!range ||
                 (range->lower() <= txMeta->getLgrSeq() &&
                  txMeta->getLgrSeq() <= range->upper()))
+            {
+                std::uint32_t const inLedger =
+                    rangeCheckedCast<std::uint32_t>(txMeta->getLgrSeq());
+                it->second.first->setStatus(COMMITTED);
+                it->second.first->setLedger(inLedger);
                 return it->second;
+            }
         }
 
         if (range)
@@ -590,6 +603,10 @@ public:
         {
             for (const auto& [txHash, accountTx] : it->second.transactions)
             {
+                std::uint32_t const inLedger = rangeCheckedCast<std::uint32_t>(
+                    accountTx.second->getLgrSeq());
+                accountTx.first->setStatus(COMMITTED);
+                accountTx.first->setLedger(inLedger);
                 result.push_back(accountTx.first);
                 if (++count >= 20)
                     break;
@@ -634,7 +651,12 @@ public:
                     ++skipped;
                     continue;
                 }
-                result.push_back(accountData.transactions[txIndex]);
+                AccountTx const accountTx = accountData.transactions[txIndex];
+                std::uint32_t const inLedger = rangeCheckedCast<std::uint32_t>(
+                    accountTx.second->getLgrSeq());
+                accountTx.first->setStatus(COMMITTED);
+                accountTx.first->setLedger(inLedger);
+                result.push_back(accountTx);
                 if (!options.bUnlimited && result.size() >= options.limit)
                     break;
             }
@@ -671,7 +693,12 @@ public:
                     ++skipped;
                     continue;
                 }
-                result.push_back(accountData.transactions[innerRIt->second]);
+                AccountTx const accountTx =
+                    accountData.transactions[innerRIt->second];
+                std::uint32_t const inLedger = rangeCheckedCast<std::uint32_t>(
+                    accountTx.second->getLgrSeq());
+                accountTx.first->setLedger(inLedger);
+                result.push_back(accountTx);
                 if (!options.bUnlimited && result.size() >= options.limit)
                     break;
             }
@@ -768,6 +795,10 @@ public:
             return {{}, std::nullopt};
 
         AccountTxs result;
+
+        auto onUnsavedLedger =
+            std::bind(saveLedgerAsync, std::ref(app_), std::placeholders::_1);
+
         std::optional<AccountTxMarker> marker;
         const auto& accountData = it->second;
         auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
@@ -775,6 +806,12 @@ public:
 
         bool lookingForMarker = options.marker.has_value();
         std::size_t count = 0;
+        std::uint32_t findLedger = 0, findSeq = 0;
+        if (lookingForMarker)
+        {
+            findLedger = options.marker->ledgerSeq;
+            findSeq = options.marker->txnSeq;
+        }
 
         for (; txIt != txEnd && (options.limit == 0 || count < options.limit);
              ++txIt)
@@ -783,13 +820,25 @@ public:
             {
                 if (lookingForMarker)
                 {
-                    if (txIt->first == options.marker->ledgerSeq &&
-                        txSeq == options.marker->txnSeq)
+                    if (findLedger == txIt->first && findSeq == txSeq)
                         lookingForMarker = false;
                     continue;
                 }
-
-                result.push_back(accountData.transactions[txIndex]);
+                std::uint32_t const ledgerSeq = txIt->first;
+                onUnsavedLedger(ledgerSeq);
+                convertBlobsToTxResult(
+                    result,
+                    rangeCheckedCast<std::uint32_t>(ledgerSeq),
+                    "COMMITTED",
+                    accountData.transactions[txIndex]
+                        .first->getSTransaction()
+                        ->getSerializer()
+                        .peekData(),
+                    accountData.transactions[txIndex]
+                        .second->getAsObject()
+                        .getSerializer()
+                        .peekData(),
+                    app_);
                 ++count;
 
                 if (options.limit > 0 && count >= options.limit)
@@ -812,6 +861,10 @@ public:
             return {{}, std::nullopt};
 
         AccountTxs result;
+
+        auto onUnsavedLedger =
+            std::bind(saveLedgerAsync, std::ref(app_), std::placeholders::_1);
+
         std::optional<AccountTxMarker> marker;
         const auto& accountData = it->second;
         auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
@@ -819,6 +872,12 @@ public:
 
         bool lookingForMarker = options.marker.has_value();
         std::size_t count = 0;
+        std::uint32_t findLedger = 0, findSeq = 0;
+        if (lookingForMarker)
+        {
+            findLedger = options.marker->ledgerSeq;
+            findSeq = options.marker->txnSeq;
+        }
 
         for (auto rIt = std::make_reverse_iterator(txEnd);
              rIt != std::make_reverse_iterator(txIt) &&
@@ -831,13 +890,25 @@ public:
             {
                 if (lookingForMarker)
                 {
-                    if (rIt->first == options.marker->ledgerSeq &&
-                        innerRIt->first == options.marker->txnSeq)
+                    if (findLedger == rIt->first && findSeq == innerRIt->first)
                         lookingForMarker = false;
                     continue;
                 }
-
-                result.push_back(accountData.transactions[innerRIt->second]);
+                std::uint32_t const ledgerSeq = txIt->first;
+                onUnsavedLedger(ledgerSeq);
+                convertBlobsToTxResult(
+                    result,
+                    rangeCheckedCast<std::uint32_t>(ledgerSeq),
+                    "COMMITTED",
+                    accountData.transactions[innerRIt->second]
+                        .first->getSTransaction()
+                        ->getSerializer()
+                        .peekData(),
+                    accountData.transactions[innerRIt->second]
+                        .second->getAsObject()
+                        .getSerializer()
+                        .peekData(),
+                    app_);
                 ++count;
 
                 if (options.limit > 0 && count >= options.limit)
@@ -860,6 +931,10 @@ public:
             return {{}, std::nullopt};
 
         MetaTxsList result;
+
+        auto onUnsavedLedger =
+            std::bind(saveLedgerAsync, std::ref(app_), std::placeholders::_1);
+
         std::optional<AccountTxMarker> marker;
         const auto& accountData = it->second;
         auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
@@ -867,6 +942,12 @@ public:
 
         bool lookingForMarker = options.marker.has_value();
         std::size_t count = 0;
+        std::uint32_t findLedger = 0, findSeq = 0;
+        if (lookingForMarker)
+        {
+            findLedger = options.marker->ledgerSeq;
+            findSeq = options.marker->txnSeq;
+        }
 
         for (; txIt != txEnd && (options.limit == 0 || count < options.limit);
              ++txIt)
@@ -875,13 +956,14 @@ public:
             {
                 if (lookingForMarker)
                 {
-                    if (txIt->first == options.marker->ledgerSeq &&
-                        txSeq == options.marker->txnSeq)
+                    if (findLedger == txIt->first && findSeq == txSeq)
                         lookingForMarker = false;
                     continue;
                 }
 
                 const auto& [txn, txMeta] = accountData.transactions[txIndex];
+                std::uint32_t const ledgerSeq = txIt->first;
+                onUnsavedLedger(ledgerSeq);
                 result.emplace_back(
                     txn->getSTransaction()->getSerializer().peekData(),
                     txMeta->getAsObject().getSerializer().peekData(),
@@ -908,6 +990,10 @@ public:
             return {{}, std::nullopt};
 
         MetaTxsList result;
+
+        auto onUnsavedLedger =
+            std::bind(saveLedgerAsync, std::ref(app_), std::placeholders::_1);
+
         std::optional<AccountTxMarker> marker;
         const auto& accountData = it->second;
         auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
@@ -915,6 +1001,12 @@ public:
 
         bool lookingForMarker = options.marker.has_value();
         std::size_t count = 0;
+        std::uint32_t findLedger = 0, findSeq = 0;
+        if (lookingForMarker)
+        {
+            findLedger = options.marker->ledgerSeq;
+            findSeq = options.marker->txnSeq;
+        }
 
         for (auto rIt = std::make_reverse_iterator(txEnd);
              rIt != std::make_reverse_iterator(txIt) &&
@@ -927,14 +1019,15 @@ public:
             {
                 if (lookingForMarker)
                 {
-                    if (rIt->first == options.marker->ledgerSeq &&
-                        innerRIt->first == options.marker->txnSeq)
+                    if (findLedger == rIt->first && findSeq == innerRIt->first)
                         lookingForMarker = false;
                     continue;
                 }
 
                 const auto& [txn, txMeta] =
                     accountData.transactions[innerRIt->second];
+                std::uint32_t const ledgerSeq = txIt->first;
+                onUnsavedLedger(ledgerSeq);
                 result.emplace_back(
                     txn->getSTransaction()->getSerializer().peekData(),
                     txMeta->getAsObject().getSerializer().peekData(),
