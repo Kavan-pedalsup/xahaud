@@ -3,6 +3,8 @@
 
 #include <ripple/app/ledger/AcceptedLedger.h>
 #include <ripple/app/ledger/LedgerMaster.h>
+#include <ripple/app/ledger/LedgerToJson.h>
+#include <ripple/app/ledger/PendingSaves.h>
 #include <ripple/app/ledger/TransactionMaster.h>
 #include <ripple/app/misc/impl/AccountTxPaging.h>
 #include <ripple/app/rdb/backend/SQLiteDatabase.h>
@@ -115,6 +117,7 @@ public:
                     }),
                 accountData.transactions.end());
         }
+        ledgers_.erase(ledgerSeq);
     }
 
     void
@@ -243,8 +246,60 @@ public:
         std::unique_lock<std::shared_mutex> lock(mutex_);
         LedgerData ledgerData;
         ledgerData.info = ledger->info();
+        auto j = app_.journal("Ledger");
         auto seq = ledger->info().seq;
-        auto aLedger = std::make_shared<AcceptedLedger>(ledger, app_);
+        // auto aLedger = std::make_shared<AcceptedLedger>(ledger, app_);
+
+        JLOG(j.trace()) << "saveValidatedLedger "
+                        << (current ? "" : "fromAcquire ") << seq;
+
+        if (!ledger->info().accountHash.isNonZero())
+        {
+            JLOG(j.fatal()) << "AH is zero: " << getJson({*ledger, {}});
+            assert(false);
+        }
+
+        if (ledger->info().accountHash !=
+            ledger->stateMap().getHash().as_uint256())
+        {
+            JLOG(j.fatal()) << "sAL: " << ledger->info().accountHash
+                            << " != " << ledger->stateMap().getHash();
+            JLOG(j.fatal())
+                << "saveAcceptedLedger: seq=" << seq << ", current=" << current;
+            assert(false);
+        }
+
+        assert(ledger->info().txHash == ledger->txMap().getHash().as_uint256());
+
+        // Save the ledger header in the hashed object store
+        {
+            Serializer s(128);
+            s.add32(HashPrefix::ledgerMaster);
+            addRaw(ledger->info(), s);
+            app_.getNodeStore().store(
+                hotLEDGER, std::move(s.modData()), ledger->info().hash, seq);
+        }
+
+        std::shared_ptr<AcceptedLedger> aLedger;
+        try
+        {
+            aLedger = app_.getAcceptedLedgerCache().fetch(ledger->info().hash);
+            if (!aLedger)
+            {
+                aLedger = std::make_shared<AcceptedLedger>(ledger, app_);
+                app_.getAcceptedLedgerCache().canonicalize_replace_client(
+                    ledger->info().hash, aLedger);
+            }
+        }
+        catch (std::exception const&)
+        {
+            JLOG(j.warn()) << "An accepted ledger was missing nodes";
+            app_.getLedgerMaster().failedSave(seq, ledger->info().hash);
+            // Clients can now trust the database for information about this
+            // ledger sequence.
+            app_.pendingSaves().finishWork(seq);
+            return false;
+        }
 
         for (auto const& acceptedLedgerTx : *aLedger)
         {
@@ -474,30 +529,24 @@ public:
         if (it != transactionMap_.end())
         {
             const auto& [txn, txMeta] = it->second;
-            if (!range ||
-                (range->lower() <= txMeta->getLgrSeq() &&
-                 txMeta->getLgrSeq() <= range->upper()))
-            {
-                std::uint32_t const inLedger =
-                    rangeCheckedCast<std::uint32_t>(txMeta->getLgrSeq());
-                it->second.first->setStatus(COMMITTED);
-                it->second.first->setLedger(inLedger);
-                return it->second;
-            }
+            std::uint32_t inLedger =
+                rangeCheckedCast<std::uint32_t>(txMeta->getLgrSeq());
+            it->second.first->setStatus(COMMITTED);
+            it->second.first->setLedger(inLedger);
+            return it->second;
         }
 
         if (range)
         {
-            bool allPresent = true;
-            for (LedgerIndex seq = range->lower(); seq <= range->upper(); ++seq)
+            std::size_t count = 0;
+            for (LedgerIndex seq = range->first(); seq <= range->last(); ++seq)
             {
-                if (ledgers_.find(seq) == ledgers_.end())
-                {
-                    allPresent = false;
-                    break;
-                }
+                if (ledgers_.find(seq) != ledgers_.end())
+                    ++count;
             }
-            return allPresent ? TxSearched::all : TxSearched::some;
+            return (count == (range->last() - range->first() + 1))
+                ? TxSearched::all
+                : TxSearched::some;
         }
 
         return TxSearched::unknown;
