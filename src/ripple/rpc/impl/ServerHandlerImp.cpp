@@ -396,7 +396,7 @@ ServerHandlerImp::onUDPMessage(
             std::shared_ptr<JobQueue::Coro> const& coro) {
             // Process the request similar to WebSocket but with UDP context
             Role const role = Role::ADMIN;  // UDP-RPC is admin-only
-            auto const jr = this->processRaw(jv, role, coro);
+            auto const jr = this->processRaw(jv, role, coro, sendResponse);
 
             std::string const response = to_string(jr);
             JLOG(m_journal.trace())
@@ -461,7 +461,9 @@ Json::Value
 ServerHandlerImp::processRaw(
     Json::Value const& jv,
     Role const& role,
-    std::shared_ptr<JobQueue::Coro> const& coro)
+    std::shared_ptr<JobQueue::Coro> const& coro,
+    std::optional<std::function<void(std::string const&)>>
+        sendResponse /* used for subscriptions */)
 {
     // Requests without "command" are invalid.
     Json::Value jr(Json::objectValue);
@@ -507,6 +509,11 @@ ServerHandlerImp::processRaw(
         {
             Resource::Consumer c;
             Resource::Charge loadType = Resource::feeReferenceRPC;
+            std::shared_ptr<InfoSub> is;
+
+            if (sendResponse.has_value())
+                is = std::make_shared<UDPInfoSub>(m_networkOPs, *sendResponse);
+
             RPC::JsonContext context{
                 {app_.journal("RPCHandler"),
                  app_,
@@ -516,7 +523,7 @@ ServerHandlerImp::processRaw(
                  c,
                  role,
                  coro,
-                 {},
+                 is,
                  apiVersion},
                 jv};
 

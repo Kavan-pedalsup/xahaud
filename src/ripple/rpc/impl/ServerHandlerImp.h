@@ -24,6 +24,7 @@
 #include <ripple/core/JobQueue.h>
 #include <ripple/json/Output.h>
 #include <ripple/rpc/RPCHandler.h>
+#include <ripple/rpc/impl/UDPInfoSub.h>
 #include <ripple/rpc/impl/WSInfoSub.h>
 #include <ripple/server/Server.h>
 #include <ripple/server/Session.h>
@@ -187,7 +188,8 @@ private:
     processRaw(
         Json::Value const& jv,
         Role const& role,
-        std::shared_ptr<JobQueue::Coro> const& coro);
+        std::shared_ptr<JobQueue::Coro> const& coro,
+        std::optional<std::function<void(std::string const&)>> sendResponse);
 
     void
     processSession(

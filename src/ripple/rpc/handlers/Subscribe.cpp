@@ -42,7 +42,7 @@ doSubscribe(RPC::JsonContext& context)
     if (!context.infoSub && !context.params.isMember(jss::url))
     {
         // Must be a JSON-RPC call.
-        JLOG(context.j.info()) << "doSubscribe: RPC subscribe requires a url";
+        JLOG(context.j.warn()) << "doSubscribe: RPC subscribe requires a url";
         return rpcError(rpcINVALID_PARAMS);
     }
 
