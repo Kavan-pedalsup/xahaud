@@ -165,6 +165,12 @@ public:
         std::vector<boost::asio::const_buffer> const& buffers);
 
     void
+    onUDPMessage(
+        std::string const& message,
+        boost::asio::ip::tcp::endpoint const& remoteEndpoint,
+        std::function<void(std::string const&)> sendResponse);
+
+    void
     onClose(Session& session, boost::system::error_code const&);
 
     void
@@ -176,6 +182,12 @@ private:
         std::shared_ptr<WSSession> const& session,
         std::shared_ptr<JobQueue::Coro> const& coro,
         Json::Value const& jv);
+
+    Json::Value
+    processRaw(
+        Json::Value const& jv,
+        Role const& role,
+        std::shared_ptr<JobQueue::Coro> const& coro);
 
     void
     processSession(
