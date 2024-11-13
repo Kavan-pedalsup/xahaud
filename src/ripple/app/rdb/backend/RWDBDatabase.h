@@ -646,24 +646,40 @@ public:
     {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         std::vector<std::shared_ptr<Transaction>> result;
-        auto it = ledgers_.lower_bound(startIndex);
-        int count = 0;
-        while (it != ledgers_.end() && count < 20)
+
+        int skipped = 0;
+        int collected = 0;
+
+        for (auto it = ledgers_.rbegin(); it != ledgers_.rend(); ++it)
         {
-            for (const auto& [txHash, accountTx] : it->second.transactions)
+            const auto& transactions = it->second.transactions;
+            for (const auto& [txHash, accountTx] : transactions)
             {
+                if (skipped < startIndex)
+                {
+                    ++skipped;
+                    continue;
+                }
+
+                if (collected >= 20)
+                {
+                    break;
+                }
+
                 std::uint32_t const inLedger = rangeCheckedCast<std::uint32_t>(
                     accountTx.second->getLgrSeq());
                 accountTx.first->setStatus(COMMITTED);
                 accountTx.first->setLedger(inLedger);
                 result.push_back(accountTx.first);
-                if (++count >= 20)
-                    break;
+                ++collected;
             }
-            ++it;
+
+            if (collected >= 20)
+                break;
         }
         return result;
     }
+
     // Helper function to handle limits
     template <typename Container>
     void
@@ -835,6 +851,7 @@ public:
 
         return result;
     }
+
     std::pair<AccountTxs, std::optional<AccountTxMarker>>
     oldestAccountTxPage(AccountTxPageOptions const& options) override
     {
@@ -862,17 +879,20 @@ public:
             findSeq = options.marker->txnSeq;
         }
 
-        for (; txIt != txEnd && (options.limit == 0 || count < options.limit);
-             ++txIt)
+        for (; txIt != txEnd; ++txIt)
         {
-            for (const auto& [txSeq, txIndex] : txIt->second)
+            for (auto seqIt = txIt->second.begin(); seqIt != txIt->second.end();
+                 ++seqIt)
             {
+                const auto& [txSeq, txIndex] = *seqIt;
+
                 if (lookingForMarker)
                 {
                     if (findLedger == txIt->first && findSeq == txSeq)
                         lookingForMarker = false;
                     continue;
                 }
+
                 std::uint32_t const ledgerSeq = txIt->first;
                 onUnsavedLedger(ledgerSeq);
                 convertBlobsToTxResult(
@@ -893,8 +913,26 @@ public:
                 if (options.limit > 0 && count >= options.limit)
                 {
                     marker = AccountTxMarker{txIt->first, txSeq};
+                    auto nextSeqIt = seqIt;
+                    ++nextSeqIt;
+                    bool hasMore = (nextSeqIt != txIt->second.end());
+
+                    if (!hasMore)
+                    {
+                        auto nextTxIt = txIt;
+                        ++nextTxIt;
+                        hasMore = (nextTxIt != txEnd);
+                    }
+
+                    if (!hasMore)
+                        marker = std::nullopt;
                     break;
                 }
+            }
+
+            if (options.limit > 0 && count >= options.limit)
+            {
+                break;
             }
         }
 
@@ -928,32 +966,33 @@ public:
             findSeq = options.marker->txnSeq;
         }
 
-        for (auto rIt = std::make_reverse_iterator(txEnd);
-             rIt != std::make_reverse_iterator(txIt) &&
-             (options.limit == 0 || count < options.limit);
-             ++rIt)
+        auto rtxIt = std::make_reverse_iterator(txEnd);
+        auto rtxEnd = std::make_reverse_iterator(txIt);
+        for (; rtxIt != rtxEnd; ++rtxIt)
         {
-            for (auto innerRIt = rIt->second.rbegin();
-                 innerRIt != rIt->second.rend();
+            for (auto innerRIt = rtxIt->second.rbegin();
+                 innerRIt != rtxIt->second.rend();
                  ++innerRIt)
             {
+                const auto& [txSeq, txIndex] = *innerRIt;
+
                 if (lookingForMarker)
                 {
-                    if (findLedger == rIt->first && findSeq == innerRIt->first)
+                    if (findLedger == rtxIt->first && findSeq == txSeq)
                         lookingForMarker = false;
                     continue;
                 }
-                std::uint32_t const ledgerSeq = txIt->first;
+                std::uint32_t const ledgerSeq = rtxIt->first;
                 onUnsavedLedger(ledgerSeq);
                 convertBlobsToTxResult(
                     result,
                     rangeCheckedCast<std::uint32_t>(ledgerSeq),
                     "COMMITTED",
-                    accountData.transactions[innerRIt->second]
+                    accountData.transactions[txIndex]
                         .first->getSTransaction()
                         ->getSerializer()
                         .peekData(),
-                    accountData.transactions[innerRIt->second]
+                    accountData.transactions[txIndex]
                         .second->getAsObject()
                         .getSerializer()
                         .peekData(),
@@ -962,9 +1001,28 @@ public:
 
                 if (options.limit > 0 && count >= options.limit)
                 {
-                    marker = AccountTxMarker{rIt->first, innerRIt->first};
+                    marker = AccountTxMarker{rtxIt->first, txSeq};
+                    auto nextSeqIt = innerRIt;
+                    ++nextSeqIt;
+                    bool hasMore = (nextSeqIt != rtxIt->second.rend());
+
+                    if (!hasMore)
+                    {
+                        auto nextTxIt = rtxIt;
+                        ++nextTxIt;
+                        hasMore = (nextTxIt != rtxEnd);
+                    }
+
+                    if (!hasMore)
+                        marker = std::nullopt;
+
                     break;
                 }
+            }
+
+            if (options.limit > 0 && count >= options.limit)
+            {
+                break;
             }
         }
 
