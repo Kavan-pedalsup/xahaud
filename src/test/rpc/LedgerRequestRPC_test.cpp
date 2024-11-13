@@ -310,6 +310,7 @@ public:
         using namespace std::chrono_literals;
         Env env{*this, envconfig([](std::unique_ptr<Config> cfg) {
                     cfg->NODE_SIZE = 0;
+                    cfg->LEDGER_HISTORY = 256 + 10;
                     return cfg;
                 })};
         Account const gw{"gateway"};
