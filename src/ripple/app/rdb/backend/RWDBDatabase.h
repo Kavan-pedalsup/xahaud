@@ -290,10 +290,12 @@ public:
                 {
                     if (accountTxMap_.find(account) == accountTxMap_.end())
                         accountTxMap_[account] = AccountTxData();
-                    
+
                     auto& accountData = accountTxMap_[account];
                     accountData.transactions.push_back(accTx);
-                    accountData.ledgerTxMap[seq] [acceptedLedgerTx->getTxnSeq()] = accountData.transactions.size() - 1;
+                    accountData
+                        .ledgerTxMap[seq][acceptedLedgerTx->getTxnSeq()] =
+                        accountData.transactions.size() - 1;
                 }
 
                 app_.getMasterTransaction().inLedger(
