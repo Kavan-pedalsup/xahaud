@@ -37,7 +37,6 @@ class Transaction_test : public beast::unit_test::suite
         using namespace test::jtx;
         return envconfig([&](std::unique_ptr<Config> cfg) {
             cfg->NETWORK_ID = networkID;
-            cfg->LEDGER_HISTORY = 800;
             return cfg;
         });
     }
@@ -57,10 +56,7 @@ class Transaction_test : public beast::unit_test::suite
         const char* EXCESSIVE =
             RPC::get_error_info(rpcEXCESSIVE_LGR_RANGE).token;
 
-        Env env{*this, envconfig([](std::unique_ptr<Config> cfg) {
-            cfg->LEDGER_HISTORY = 800;
-            return cfg;
-        }), features};
+        Env env{*this, features};
         auto const alice = Account("alice");
         env.fund(XRP(1000), alice);
         env.close();
