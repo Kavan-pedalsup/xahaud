@@ -852,304 +852,270 @@ public:
         return result;
     }
 
-    std::pair<AccountTxs, std::optional<AccountTxMarker>>
-    oldestAccountTxPage(AccountTxPageOptions const& options) override
+    std::pair<std::optional<RelationalDatabase::AccountTxMarker>, int>
+    accountTxPage(
+        std::function<void(std::uint32_t)> const& onUnsavedLedger,
+        std::function<
+            void(std::uint32_t, std::string const&, Blob&&, Blob&&)> const&
+            onTransaction,
+        RelationalDatabase::AccountTxPageOptions const& options,
+        int limit_used,
+        std::uint32_t page_length,
+        bool forward)
     {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = accountTxMap_.find(options.account);
         if (it == accountTxMap_.end())
-            return {{}, std::nullopt};
+            return {std::nullopt, 0};
 
-        AccountTxs result;
-
-        auto onUnsavedLedger =
-            std::bind(saveLedgerAsync, std::ref(app_), std::placeholders::_1);
-
-        std::optional<AccountTxMarker> marker;
-        const auto& accountData = it->second;
-        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
-        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
+        int total = 0;
 
         bool lookingForMarker = options.marker.has_value();
-        std::size_t count = 0;
+
+        std::uint32_t numberOfResults;
+
+        if (options.limit == 0 || options.limit == UINT32_MAX ||
+            (options.limit > page_length && !options.bAdmin))
+            numberOfResults = page_length;
+        else
+            numberOfResults = options.limit;
+
+        if (numberOfResults < limit_used)
+            return {options.marker, -1};
+        numberOfResults -= limit_used;
+
+        // As an account can have many thousands of transactions, there is a
+        // limit placed on the amount of transactions returned. If the limit is
+        // reached before the result set has been exhausted (we always query for
+        // one more than the limit), then we return an opaque marker that can be
+        // supplied in a subsequent query.
+        std::uint32_t queryLimit = numberOfResults + 1;
         std::uint32_t findLedger = 0, findSeq = 0;
+
         if (lookingForMarker)
         {
             findLedger = options.marker->ledgerSeq;
             findSeq = options.marker->txnSeq;
         }
 
-        for (; txIt != txEnd; ++txIt)
+        std::optional<RelationalDatabase::AccountTxMarker> newmarker;
+        if (limit_used > 0)
+            newmarker = options.marker;
+
+        if (forward)
         {
-            for (auto seqIt = txIt->second.begin(); seqIt != txIt->second.end();
-                 ++seqIt)
+            // Oldest (forward = true)
+            const auto& accountData = it->second;
+            auto txIt = accountData.ledgerTxMap.lower_bound(
+                findLedger == 0 ? options.minLedger : findLedger);
+            auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
+            for (; txIt != txEnd; ++txIt)
             {
-                const auto& [txSeq, txIndex] = *seqIt;
-
-                if (lookingForMarker)
-                {
-                    if (findLedger == txIt->first && findSeq == txSeq)
-                        lookingForMarker = false;
-                    continue;
-                }
-
                 std::uint32_t const ledgerSeq = txIt->first;
-                onUnsavedLedger(ledgerSeq);
-                convertBlobsToTxResult(
-                    result,
-                    rangeCheckedCast<std::uint32_t>(ledgerSeq),
-                    "COMMITTED",
-                    accountData.transactions[txIndex]
-                        .first->getSTransaction()
-                        ->getSerializer()
-                        .peekData(),
-                    accountData.transactions[txIndex]
-                        .second->getAsObject()
-                        .getSerializer()
-                        .peekData(),
-                    app_);
-                ++count;
-
-                if (options.limit > 0 && count >= options.limit)
+                for (auto seqIt = txIt->second.begin();
+                     seqIt != txIt->second.end();
+                     ++seqIt)
                 {
-                    marker = AccountTxMarker{txIt->first, txSeq};
-                    auto nextSeqIt = seqIt;
-                    ++nextSeqIt;
-                    bool hasMore = (nextSeqIt != txIt->second.end());
-
-                    if (!hasMore)
+                    const auto& [txnSeq, index] = *seqIt;
+                    if (lookingForMarker)
                     {
-                        auto nextTxIt = txIt;
-                        ++nextTxIt;
-                        hasMore = (nextTxIt != txEnd);
+                        if (findLedger == ledgerSeq && findSeq == txnSeq)
+                        {
+                            lookingForMarker = false;
+                        }
+                        else
+                            continue;
+                    }
+                    else if (numberOfResults == 0)
+                    {
+                        newmarker = {
+                            rangeCheckedCast<std::uint32_t>(ledgerSeq), txnSeq};
+                        return {newmarker, total};
                     }
 
-                    if (!hasMore)
-                        marker = std::nullopt;
-                    break;
+                    Blob rawTxn = accountData.transactions[index]
+                                      .first->getSTransaction()
+                                      ->getSerializer()
+                                      .peekData();
+                    Blob rawMeta = accountData.transactions[index]
+                                       .second->getAsObject()
+                                       .getSerializer()
+                                       .peekData();
+
+                    if (rawMeta.size() == 0)
+                        onUnsavedLedger(ledgerSeq);
+
+                    onTransaction(
+                        rangeCheckedCast<std::uint32_t>(ledgerSeq),
+                        "COMMITTED",
+                        std::move(rawTxn),
+                        std::move(rawMeta));
+                    --numberOfResults;
+                    ++total;
                 }
             }
-
-            if (options.limit > 0 && count >= options.limit)
+        }
+        else
+        {
+            // Newest (forward = false)
+            const auto& accountData = it->second;
+            auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
+            auto txEnd = accountData.ledgerTxMap.upper_bound(
+                findLedger == 0 ? options.maxLedger : findLedger);
+            auto rtxIt = std::make_reverse_iterator(txEnd);
+            auto rtxEnd = std::make_reverse_iterator(txIt);
+            for (; rtxIt != rtxEnd; ++rtxIt)
             {
-                break;
+                std::uint32_t const ledgerSeq = rtxIt->first;
+                for (auto innerRIt = rtxIt->second.rbegin();
+                     innerRIt != rtxIt->second.rend();
+                     ++innerRIt)
+                {
+                    const auto& [txnSeq, index] = *innerRIt;
+
+                    if (lookingForMarker)
+                    {
+                        if (findLedger == ledgerSeq && findSeq == txnSeq)
+                        {
+                            lookingForMarker = false;
+                        }
+                        else
+                            continue;
+                    }
+                    else if (numberOfResults == 0)
+                    {
+                        newmarker = {
+                            rangeCheckedCast<std::uint32_t>(ledgerSeq), txnSeq};
+                        return {newmarker, total};
+                    }
+
+                    Blob rawTxn = accountData.transactions[index]
+                                      .first->getSTransaction()
+                                      ->getSerializer()
+                                      .peekData();
+                    Blob rawMeta = accountData.transactions[index]
+                                       .second->getAsObject()
+                                       .getSerializer()
+                                       .peekData();
+
+                    if (rawMeta.size() == 0)
+                        onUnsavedLedger(ledgerSeq);
+
+                    onTransaction(
+                        rangeCheckedCast<std::uint32_t>(ledgerSeq),
+                        "COMMITTED",
+                        std::move(rawTxn),
+                        std::move(rawMeta));
+                    --numberOfResults;
+                    ++total;
+                }
             }
         }
+        return {newmarker, total};
+    }
 
-        return {result, marker};
+    std::pair<AccountTxs, std::optional<AccountTxMarker>>
+    oldestAccountTxPage(AccountTxPageOptions const& options) override
+    {
+        // if (!useTxTables_)
+        //     return {};
+
+        static std::uint32_t const page_length(200);
+        auto onUnsavedLedger =
+            std::bind(saveLedgerAsync, std::ref(app_), std::placeholders::_1);
+        AccountTxs ret;
+        Application& app = app_;
+        auto onTransaction = [&ret, &app](
+                                 std::uint32_t ledger_index,
+                                 std::string const& status,
+                                 Blob&& rawTxn,
+                                 Blob&& rawMeta) {
+            convertBlobsToTxResult(
+                ret, ledger_index, status, rawTxn, rawMeta, app);
+        };
+
+        auto newmarker =
+            accountTxPage(
+                onUnsavedLedger, onTransaction, options, 0, page_length, true)
+                .first;
+        return {ret, newmarker};
     }
 
     std::pair<AccountTxs, std::optional<AccountTxMarker>>
     newestAccountTxPage(AccountTxPageOptions const& options) override
     {
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        auto it = accountTxMap_.find(options.account);
-        if (it == accountTxMap_.end())
-            return {{}, std::nullopt};
+        // if (!useTxTables_)
+        //     return {};
 
-        AccountTxs result;
-
+        static std::uint32_t const page_length(200);
         auto onUnsavedLedger =
             std::bind(saveLedgerAsync, std::ref(app_), std::placeholders::_1);
+        AccountTxs ret;
+        Application& app = app_;
+        auto onTransaction = [&ret, &app](
+                                 std::uint32_t ledger_index,
+                                 std::string const& status,
+                                 Blob&& rawTxn,
+                                 Blob&& rawMeta) {
+            convertBlobsToTxResult(
+                ret, ledger_index, status, rawTxn, rawMeta, app);
+        };
 
-        std::optional<AccountTxMarker> marker;
-        const auto& accountData = it->second;
-        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
-        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
-
-        bool lookingForMarker = options.marker.has_value();
-        std::size_t count = 0;
-        std::uint32_t findLedger = 0, findSeq = 0;
-        if (lookingForMarker)
-        {
-            findLedger = options.marker->ledgerSeq;
-            findSeq = options.marker->txnSeq;
-        }
-
-        auto rtxIt = std::make_reverse_iterator(txEnd);
-        auto rtxEnd = std::make_reverse_iterator(txIt);
-        for (; rtxIt != rtxEnd; ++rtxIt)
-        {
-            for (auto innerRIt = rtxIt->second.rbegin();
-                 innerRIt != rtxIt->second.rend();
-                 ++innerRIt)
-            {
-                const auto& [txSeq, txIndex] = *innerRIt;
-
-                if (lookingForMarker)
-                {
-                    if (findLedger == rtxIt->first && findSeq == txSeq)
-                        lookingForMarker = false;
-                    continue;
-                }
-                std::uint32_t const ledgerSeq = rtxIt->first;
-                onUnsavedLedger(ledgerSeq);
-                convertBlobsToTxResult(
-                    result,
-                    rangeCheckedCast<std::uint32_t>(ledgerSeq),
-                    "COMMITTED",
-                    accountData.transactions[txIndex]
-                        .first->getSTransaction()
-                        ->getSerializer()
-                        .peekData(),
-                    accountData.transactions[txIndex]
-                        .second->getAsObject()
-                        .getSerializer()
-                        .peekData(),
-                    app_);
-                ++count;
-
-                if (options.limit > 0 && count >= options.limit)
-                {
-                    marker = AccountTxMarker{rtxIt->first, txSeq};
-                    auto nextSeqIt = innerRIt;
-                    ++nextSeqIt;
-                    bool hasMore = (nextSeqIt != rtxIt->second.rend());
-
-                    if (!hasMore)
-                    {
-                        auto nextTxIt = rtxIt;
-                        ++nextTxIt;
-                        hasMore = (nextTxIt != rtxEnd);
-                    }
-
-                    if (!hasMore)
-                        marker = std::nullopt;
-
-                    break;
-                }
-            }
-
-            if (options.limit > 0 && count >= options.limit)
-            {
-                break;
-            }
-        }
-
-        return {result, marker};
+        auto newmarker =
+            accountTxPage(
+                onUnsavedLedger, onTransaction, options, 0, page_length, false)
+                .first;
+        return {ret, newmarker};
     }
 
     std::pair<MetaTxsList, std::optional<AccountTxMarker>>
     oldestAccountTxPageB(AccountTxPageOptions const& options) override
     {
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        auto it = accountTxMap_.find(options.account);
-        if (it == accountTxMap_.end())
-            return {{}, std::nullopt};
+        // if (!useTxTables_)
+        //     return {};
 
-        MetaTxsList result;
-
+        static std::uint32_t const page_length(500);
         auto onUnsavedLedger =
             std::bind(saveLedgerAsync, std::ref(app_), std::placeholders::_1);
-
-        std::optional<AccountTxMarker> marker;
-        const auto& accountData = it->second;
-        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
-        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
-
-        bool lookingForMarker = options.marker.has_value();
-        std::size_t count = 0;
-        std::uint32_t findLedger = 0, findSeq = 0;
-        if (lookingForMarker)
-        {
-            findLedger = options.marker->ledgerSeq;
-            findSeq = options.marker->txnSeq;
-        }
-
-        for (; txIt != txEnd && (options.limit == 0 || count < options.limit);
-             ++txIt)
-        {
-            for (const auto& [txSeq, txIndex] : txIt->second)
-            {
-                if (lookingForMarker)
-                {
-                    if (findLedger == txIt->first && findSeq == txSeq)
-                        lookingForMarker = false;
-                    continue;
-                }
-
-                const auto& [txn, txMeta] = accountData.transactions[txIndex];
-                std::uint32_t const ledgerSeq = txIt->first;
-                onUnsavedLedger(ledgerSeq);
-                result.emplace_back(
-                    txn->getSTransaction()->getSerializer().peekData(),
-                    txMeta->getAsObject().getSerializer().peekData(),
-                    txIt->first);
-                ++count;
-
-                if (options.limit > 0 && count >= options.limit)
-                {
-                    marker = AccountTxMarker{txIt->first, txSeq};
-                    break;
-                }
-            }
-        }
-
-        return {result, marker};
+        MetaTxsList ret;
+        auto onTransaction = [&ret](
+                                 std::uint32_t ledgerIndex,
+                                 std::string const& status,
+                                 Blob&& rawTxn,
+                                 Blob&& rawMeta) {
+            ret.emplace_back(
+                std::move(rawTxn), std::move(rawMeta), ledgerIndex);
+        };
+        auto newmarker =
+            accountTxPage(
+                onUnsavedLedger, onTransaction, options, 0, page_length, true)
+                .first;
+        return {ret, newmarker};
     }
 
     std::pair<MetaTxsList, std::optional<AccountTxMarker>>
     newestAccountTxPageB(AccountTxPageOptions const& options) override
     {
-        std::shared_lock<std::shared_mutex> lock(mutex_);
-        auto it = accountTxMap_.find(options.account);
-        if (it == accountTxMap_.end())
-            return {{}, std::nullopt};
+        // if (!useTxTables_)
+        //     return {};
 
-        MetaTxsList result;
-
+        static std::uint32_t const page_length(500);
         auto onUnsavedLedger =
             std::bind(saveLedgerAsync, std::ref(app_), std::placeholders::_1);
-
-        std::optional<AccountTxMarker> marker;
-        const auto& accountData = it->second;
-        auto txIt = accountData.ledgerTxMap.lower_bound(options.minLedger);
-        auto txEnd = accountData.ledgerTxMap.upper_bound(options.maxLedger);
-
-        bool lookingForMarker = options.marker.has_value();
-        std::size_t count = 0;
-        std::uint32_t findLedger = 0, findSeq = 0;
-        if (lookingForMarker)
-        {
-            findLedger = options.marker->ledgerSeq;
-            findSeq = options.marker->txnSeq;
-        }
-
-        for (auto rIt = std::make_reverse_iterator(txEnd);
-             rIt != std::make_reverse_iterator(txIt) &&
-             (options.limit == 0 || count < options.limit);
-             ++rIt)
-        {
-            for (auto innerRIt = rIt->second.rbegin();
-                 innerRIt != rIt->second.rend();
-                 ++innerRIt)
-            {
-                if (lookingForMarker)
-                {
-                    if (findLedger == rIt->first && findSeq == innerRIt->first)
-                        lookingForMarker = false;
-                    continue;
-                }
-
-                const auto& [txn, txMeta] =
-                    accountData.transactions[innerRIt->second];
-                std::uint32_t const ledgerSeq = txIt->first;
-                onUnsavedLedger(ledgerSeq);
-                result.emplace_back(
-                    txn->getSTransaction()->getSerializer().peekData(),
-                    txMeta->getAsObject().getSerializer().peekData(),
-                    rIt->first);
-                ++count;
-
-                if (options.limit > 0 && count >= options.limit)
-                {
-                    marker = AccountTxMarker{rIt->first, innerRIt->first};
-                    break;
-                }
-            }
-        }
-
-        return {result, marker};
+        MetaTxsList ret;
+        auto onTransaction = [&ret](
+                                 std::uint32_t ledgerIndex,
+                                 std::string const& status,
+                                 Blob&& rawTxn,
+                                 Blob&& rawMeta) {
+            ret.emplace_back(
+                std::move(rawTxn), std::move(rawMeta), ledgerIndex);
+        };
+        auto newmarker =
+            accountTxPage(
+                onUnsavedLedger, onTransaction, options, 0, page_length, false)
+                .first;
+        return {ret, newmarker};
     }
 };
 
