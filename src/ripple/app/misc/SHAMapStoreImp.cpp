@@ -644,32 +644,32 @@ SHAMapStoreImp::clearPrior(LedgerIndex lastRotated)
     if (!db)
         Throw<std::runtime_error>("Failed to get relational database");
 
-    if (!app_.config().useTxTables())
-        return;
+    if (app_.config().useTxTables())
+    {
+        clearSql(
+            lastRotated,
+            "Transactions",
+            [&db]() -> std::optional<LedgerIndex> {
+                return db->getTransactionsMinLedgerSeq();
+            },
+            [&db](LedgerIndex min) -> void {
+                db->deleteTransactionsBeforeLedgerSeq(min);
+            });
+        if (healthWait() == stopping)
+            return;
 
-    clearSql(
-        lastRotated,
-        "Transactions",
-        [&db]() -> std::optional<LedgerIndex> {
-            return db->getTransactionsMinLedgerSeq();
-        },
-        [&db](LedgerIndex min) -> void {
-            db->deleteTransactionsBeforeLedgerSeq(min);
-        });
-    if (healthWait() == stopping)
-        return;
-
-    clearSql(
-        lastRotated,
-        "AccountTransactions",
-        [&db]() -> std::optional<LedgerIndex> {
-            return db->getAccountTransactionsMinLedgerSeq();
-        },
-        [&db](LedgerIndex min) -> void {
-            db->deleteAccountTransactionsBeforeLedgerSeq(min);
-        });
-    if (healthWait() == stopping)
-        return;
+        clearSql(
+            lastRotated,
+            "AccountTransactions",
+            [&db]() -> std::optional<LedgerIndex> {
+                return db->getAccountTransactionsMinLedgerSeq();
+            },
+            [&db](LedgerIndex min) -> void {
+                db->deleteAccountTransactionsBeforeLedgerSeq(min);
+            });
+        if (healthWait() == stopping)
+            return;
+    }
 
     clearSql(
         lastRotated,

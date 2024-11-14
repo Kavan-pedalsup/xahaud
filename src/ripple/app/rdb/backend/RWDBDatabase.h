@@ -144,6 +144,7 @@ public:
                 transactionMap_.erase(txHash);
             }
             it->second.transactions.clear();
+            ++it;
         }
     }
 
