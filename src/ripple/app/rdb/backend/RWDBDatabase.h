@@ -34,6 +34,7 @@ private:
     };
 
     Application& app_;
+    bool const useTxTables_;
 
     mutable std::shared_mutex mutex_;
 
@@ -44,7 +45,7 @@ private:
 
 public:
     RWDBDatabase(Application& app, Config const& config, JobQueue& jobQueue)
-        : app_(app)
+        : app_(app), useTxTables_(config.useTxTables())
     {
     }
 
@@ -60,6 +61,9 @@ public:
     std::optional<LedgerIndex>
     getTransactionsMinLedgerSeq() override
     {
+        if (!useTxTables_)
+            return {};
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         if (transactionMap_.empty())
             return std::nullopt;
@@ -69,6 +73,9 @@ public:
     std::optional<LedgerIndex>
     getAccountTransactionsMinLedgerSeq() override
     {
+        if (!useTxTables_)
+            return {};
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         if (accountTxMap_.empty())
             return std::nullopt;
@@ -95,6 +102,9 @@ public:
     void
     deleteTransactionByLedgerSeq(LedgerIndex ledgerSeq) override
     {
+        if (!useTxTables_)
+            return;
+
         std::unique_lock<std::shared_mutex> lock(mutex_);
         auto it = ledgers_.find(ledgerSeq);
         if (it != ledgers_.end())
@@ -105,19 +115,6 @@ public:
             }
             it->second.transactions.clear();
         }
-        for (auto& [_, accountData] : accountTxMap_)
-        {
-            accountData.ledgerTxMap.erase(ledgerSeq);
-            accountData.transactions.erase(
-                std::remove_if(
-                    accountData.transactions.begin(),
-                    accountData.transactions.end(),
-                    [ledgerSeq](const AccountTx& tx) {
-                        return tx.second->getLgrSeq() == ledgerSeq;
-                    }),
-                accountData.transactions.end());
-        }
-        ledgers_.erase(ledgerSeq);
     }
 
     void
@@ -127,69 +124,35 @@ public:
         auto it = ledgers_.begin();
         while (it != ledgers_.end() && it->first < ledgerSeq)
         {
-            for (const auto& [txHash, _] : it->second.transactions)
-            {
-                transactionMap_.erase(txHash);
-            }
             ledgerHashToSeq_.erase(it->second.info.hash);
             it = ledgers_.erase(it);
-        }
-        for (auto& [_, accountData] : accountTxMap_)
-        {
-            auto txIt = accountData.ledgerTxMap.begin();
-            while (txIt != accountData.ledgerTxMap.end() &&
-                   txIt->first < ledgerSeq)
-            {
-                txIt = accountData.ledgerTxMap.erase(txIt);
-            }
-            accountData.transactions.erase(
-                std::remove_if(
-                    accountData.transactions.begin(),
-                    accountData.transactions.end(),
-                    [ledgerSeq](const AccountTx& tx) {
-                        return tx.second->getLgrSeq() < ledgerSeq;
-                    }),
-                accountData.transactions.end());
         }
     }
 
     void
     deleteTransactionsBeforeLedgerSeq(LedgerIndex ledgerSeq) override
     {
+        if (!useTxTables_)
+            return;
+
         std::unique_lock<std::shared_mutex> lock(mutex_);
-        for (auto& [seq, ledgerData] : ledgers_)
+        auto it = ledgers_.begin();
+        while (it != ledgers_.end() && it->first < ledgerSeq)
         {
-            if (seq < ledgerSeq)
+            for (const auto& [txHash, _] : it->second.transactions)
             {
-                for (const auto& [txHash, _] : ledgerData.transactions)
-                {
-                    transactionMap_.erase(txHash);
-                }
-                ledgerData.transactions.clear();
+                transactionMap_.erase(txHash);
             }
-        }
-        for (auto& [_, accountData] : accountTxMap_)
-        {
-            auto txIt = accountData.ledgerTxMap.begin();
-            while (txIt != accountData.ledgerTxMap.end() &&
-                   txIt->first < ledgerSeq)
-            {
-                txIt = accountData.ledgerTxMap.erase(txIt);
-            }
-            accountData.transactions.erase(
-                std::remove_if(
-                    accountData.transactions.begin(),
-                    accountData.transactions.end(),
-                    [ledgerSeq](const AccountTx& tx) {
-                        return tx.second->getLgrSeq() < ledgerSeq;
-                    }),
-                accountData.transactions.end());
+            it->second.transactions.clear();
         }
     }
 
     void
     deleteAccountTransactionsBeforeLedgerSeq(LedgerIndex ledgerSeq) override
     {
+        if (!useTxTables_)
+            return;
+
         std::unique_lock<std::shared_mutex> lock(mutex_);
         for (auto& [_, accountData] : accountTxMap_)
         {
@@ -212,6 +175,9 @@ public:
     std::size_t
     getTransactionCount() override
     {
+        if (!useTxTables_)
+            return 0;
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         return transactionMap_.size();
     }
@@ -219,6 +185,9 @@ public:
     std::size_t
     getAccountTransactionCount() override
     {
+        if (!useTxTables_)
+            return 0;
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         std::size_t count = 0;
         for (const auto& [_, accountData] : accountTxMap_)
@@ -248,7 +217,6 @@ public:
         ledgerData.info = ledger->info();
         auto j = app_.journal("Ledger");
         auto seq = ledger->info().seq;
-        // auto aLedger = std::make_shared<AcceptedLedger>(ledger, app_);
 
         JLOG(j.trace()) << "saveValidatedLedger "
                         << (current ? "" : "fromAcquire ") << seq;
@@ -301,134 +269,44 @@ public:
             return false;
         }
 
-        for (auto const& acceptedLedgerTx : *aLedger)
+        // Overwrite Current Ledger Transactions
+        if (useTxTables_)
         {
-            auto const& txn = acceptedLedgerTx->getTxn();
-            auto const& meta = acceptedLedgerTx->getMeta();
-            auto const& id = txn->getTransactionID();
-            std::string reason;
-
-            auto accTx = std::make_pair(
-                std::make_shared<ripple::Transaction>(txn, reason, app_),
-                std::make_shared<ripple::TxMeta>(meta));
-
-            ledgerData.transactions.emplace(id, accTx);
-            transactionMap_.emplace(id, accTx);
-
-            for (auto const& account : meta.getAffectedAccounts())
+            for (auto const& acceptedLedgerTx : *aLedger)
             {
-                if (accountTxMap_.find(account) == accountTxMap_.end())
-                    accountTxMap_[account] = AccountTxData();
-                auto& accountData = accountTxMap_[account];
-                accountData.transactions.push_back(accTx);
-                accountData.ledgerTxMap[ledger->info().seq]
-                                       [acceptedLedgerTx->getTxnSeq()] =
-                    accountData.transactions.size() - 1;
-            }
-            app_.getMasterTransaction().inLedger(
-                id,
-                seq,
-                acceptedLedgerTx->getTxnSeq(),
-                app_.config().NETWORK_ID);
-        }
+                auto const& txn = acceptedLedgerTx->getTxn();
+                auto const& meta = acceptedLedgerTx->getMeta();
+                auto const& id = txn->getTransactionID();
+                std::string reason;
 
-        ledgers_[ledger->info().seq] = std::move(ledgerData);
-        ledgerHashToSeq_[ledger->info().hash] = ledger->info().seq;
+                auto accTx = std::make_pair(
+                    std::make_shared<ripple::Transaction>(txn, reason, app_),
+                    std::make_shared<ripple::TxMeta>(meta));
 
-        if (current)
-        {
-            auto const cutoffSeq =
-                ledger->info().seq > app_.config().LEDGER_HISTORY
-                ? ledger->info().seq - app_.config().LEDGER_HISTORY
-                : 0;
+                ledgerData.transactions.emplace(id, accTx);
+                transactionMap_.emplace(id, accTx);
 
-            if (cutoffSeq > 0)
-            {
-                const std::size_t BATCH_SIZE = 128;
-                std::size_t deleted = 0;
-
-                std::vector<std::uint32_t> ledgersToDelete;
-                for (const auto& item : ledgers_)
+                for (auto const& account : meta.getAffectedAccounts())
                 {
-                    if (deleted >= BATCH_SIZE)
-                        break;
-                    if (item.first < cutoffSeq)
-                    {
-                        ledgersToDelete.push_back(item.first);
-                        deleted++;
-                    }
+                    if (accountTxMap_.find(account) == accountTxMap_.end())
+                        accountTxMap_[account] = AccountTxData();
+                    
+                    auto& accountData = accountTxMap_[account];
+                    accountData.transactions.push_back(accTx);
+                    accountData.ledgerTxMap[seq] [acceptedLedgerTx->getTxnSeq()] = accountData.transactions.size() - 1;
                 }
 
-                for (auto seq : ledgersToDelete)
-                {
-                    auto& ledgerToDelete = ledgers_[seq];
-
-                    for (const auto& txPair : ledgerToDelete.transactions)
-                    {
-                        transactionMap_.erase(txPair.first);
-                    }
-
-                    ledgerHashToSeq_.erase(ledgerToDelete.info.hash);
-                    ledgers_.erase(seq);
-                }
-
-                if (deleted > 0)
-                {
-                    for (auto& [account, data] : accountTxMap_)
-                    {
-                        auto it = data.ledgerTxMap.begin();
-                        while (it != data.ledgerTxMap.end())
-                        {
-                            if (it->first < cutoffSeq)
-                            {
-                                for (const auto& seqPair : it->second)
-                                {
-                                    if (seqPair.second <
-                                        data.transactions.size())
-                                    {
-                                        auto& txPair =
-                                            data.transactions[seqPair.second];
-                                        txPair.first.reset();
-                                        txPair.second.reset();
-                                    }
-                                }
-                                it = data.ledgerTxMap.erase(it);
-                            }
-                            else
-                            {
-                                ++it;
-                            }
-                        }
-
-                        data.transactions.erase(
-                            std::remove_if(
-                                data.transactions.begin(),
-                                data.transactions.end(),
-                                [](const auto& tx) {
-                                    return !tx.first && !tx.second;
-                                }),
-                            data.transactions.end());
-
-                        for (auto& [ledgerSeq, txMap] : data.ledgerTxMap)
-                        {
-                            for (auto& [txSeq, index] : txMap)
-                            {
-                                auto newIndex = std::distance(
-                                    data.transactions.begin(),
-                                    std::find(
-                                        data.transactions.begin(),
-                                        data.transactions.end(),
-                                        data.transactions[index]));
-                                index = newIndex;
-                            }
-                        }
-                    }
-
-                    app_.getLedgerMaster().clearPriorLedgers(cutoffSeq);
-                }
+                app_.getMasterTransaction().inLedger(
+                    id,
+                    seq,
+                    acceptedLedgerTx->getTxnSeq(),
+                    app_.config().NETWORK_ID);
             }
         }
 
+        // Overwrite Current Ledger
+        ledgers_[seq] = std::move(ledgerData);
+        ledgerHashToSeq_[ledger->info().hash] = seq;
         return true;
     }
 
@@ -524,6 +402,9 @@ public:
         std::optional<ClosedInterval<std::uint32_t>> const& range,
         error_code_i& ec) override
     {
+        if (!useTxTables_)
+            return TxSearched::unknown;
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = transactionMap_.find(id);
         if (it != transactionMap_.end())
@@ -542,7 +423,10 @@ public:
             for (LedgerIndex seq = range->first(); seq <= range->last(); ++seq)
             {
                 if (ledgers_.find(seq) != ledgers_.end())
-                    ++count;
+                {
+                    if (ledgers_[seq].transactions.size() > 0)
+                        ++count;
+                }
             }
             return (count == (range->last() - range->first() + 1))
                 ? TxSearched::all
@@ -600,6 +484,9 @@ public:
     std::uint32_t
     getKBUsedTransaction() override
     {
+        if (!useTxTables_)
+            return 0;
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         std::uint32_t size = 0;
         size += transactionMap_.size() * (sizeof(uint256) + sizeof(AccountTx));
@@ -644,6 +531,9 @@ public:
     std::vector<std::shared_ptr<Transaction>>
     getTxHistory(LedgerIndex startIndex) override
     {
+        if (!useTxTables_)
+            return {};
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         std::vector<std::shared_ptr<Transaction>> result;
 
@@ -694,6 +584,9 @@ public:
     AccountTxs
     getOldestAccountTxs(AccountTxOptions const& options) override
     {
+        if (!useTxTables_)
+            return {};
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = accountTxMap_.find(options.account);
         if (it == accountTxMap_.end())
@@ -733,6 +626,9 @@ public:
     AccountTxs
     getNewestAccountTxs(AccountTxOptions const& options) override
     {
+        if (!useTxTables_)
+            return {};
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = accountTxMap_.find(options.account);
         if (it == accountTxMap_.end())
@@ -775,6 +671,9 @@ public:
     MetaTxsList
     getOldestAccountTxsB(AccountTxOptions const& options) override
     {
+        if (!useTxTables_)
+            return {};
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = accountTxMap_.find(options.account);
         if (it == accountTxMap_.end())
@@ -813,6 +712,9 @@ public:
     MetaTxsList
     getNewestAccountTxsB(AccountTxOptions const& options) override
     {
+        if (!useTxTables_)
+            return {};
+
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = accountTxMap_.find(options.account);
         if (it == accountTxMap_.end())
@@ -972,7 +874,6 @@ public:
                      ++innerRIt)
                 {
                     const auto& [txnSeq, index] = *innerRIt;
-
                     if (lookingForMarker)
                     {
                         if (findLedger == ledgerSeq && findSeq == txnSeq)
@@ -1017,8 +918,8 @@ public:
     std::pair<AccountTxs, std::optional<AccountTxMarker>>
     oldestAccountTxPage(AccountTxPageOptions const& options) override
     {
-        // if (!useTxTables_)
-        //     return {};
+        if (!useTxTables_)
+            return {};
 
         static std::uint32_t const page_length(200);
         auto onUnsavedLedger =
@@ -1044,8 +945,8 @@ public:
     std::pair<AccountTxs, std::optional<AccountTxMarker>>
     newestAccountTxPage(AccountTxPageOptions const& options) override
     {
-        // if (!useTxTables_)
-        //     return {};
+        if (!useTxTables_)
+            return {};
 
         static std::uint32_t const page_length(200);
         auto onUnsavedLedger =
@@ -1071,8 +972,8 @@ public:
     std::pair<MetaTxsList, std::optional<AccountTxMarker>>
     oldestAccountTxPageB(AccountTxPageOptions const& options) override
     {
-        // if (!useTxTables_)
-        //     return {};
+        if (!useTxTables_)
+            return {};
 
         static std::uint32_t const page_length(500);
         auto onUnsavedLedger =
@@ -1096,8 +997,8 @@ public:
     std::pair<MetaTxsList, std::optional<AccountTxMarker>>
     newestAccountTxPageB(AccountTxPageOptions const& options) override
     {
-        // if (!useTxTables_)
-        //     return {};
+        if (!useTxTables_)
+            return {};
 
         static std::uint32_t const page_length(500);
         auto onUnsavedLedger =
