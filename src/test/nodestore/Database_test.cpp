@@ -564,7 +564,7 @@ public:
             BEAST_EXPECT(areBatchesEqual(batch, copy));
         }
 
-        if (type == "memory")
+        if (type == "memory" || type == "rwdb")
         {
             // Verify default earliest ledger sequence
             {

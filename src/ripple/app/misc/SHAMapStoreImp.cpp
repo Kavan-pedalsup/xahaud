@@ -118,9 +118,7 @@ SHAMapStoreImp::SHAMapStoreImp(
 
     get_if_exists(section, "online_delete", deleteInterval_);
 
-    bool const isMem = config.mem_backend();
-
-    if (deleteInterval_ || isMem)
+    if (deleteInterval_)
     {
         if (app_.config().reporting())
         {
@@ -128,9 +126,6 @@ SHAMapStoreImp::SHAMapStoreImp(
                 "Reporting does not support online_delete. Remove "
                 "online_delete info from config");
         }
-
-        if (isMem)
-            deleteInterval_ = config.LEDGER_HISTORY;
 
         // Configuration that affects the behavior of online delete
         get_if_exists(section, "delete_batch", deleteBatch_);
@@ -167,7 +162,7 @@ SHAMapStoreImp::SHAMapStoreImp(
         }
 
         state_db_.init(config, dbName_);
-        if (!isMem)
+        if (!config.mem_backend())
             dbPaths();
     }
 }
@@ -649,38 +644,38 @@ SHAMapStoreImp::clearPrior(LedgerIndex lastRotated)
     if (!db)
         Throw<std::runtime_error>("Failed to get relational database");
 
+    if (app_.config().useTxTables())
+    {
+        clearSql(
+            lastRotated,
+            "Transactions",
+            [&db]() -> std::optional<LedgerIndex> {
+                return db->getTransactionsMinLedgerSeq();
+            },
+            [&db](LedgerIndex min) -> void {
+                db->deleteTransactionsBeforeLedgerSeq(min);
+            });
+        if (healthWait() == stopping)
+            return;
+
+        clearSql(
+            lastRotated,
+            "AccountTransactions",
+            [&db]() -> std::optional<LedgerIndex> {
+                return db->getAccountTransactionsMinLedgerSeq();
+            },
+            [&db](LedgerIndex min) -> void {
+                db->deleteAccountTransactionsBeforeLedgerSeq(min);
+            });
+        if (healthWait() == stopping)
+            return;
+    }
+
     clearSql(
         lastRotated,
         "Ledgers",
         [db]() -> std::optional<LedgerIndex> { return db->getMinLedgerSeq(); },
         [db](LedgerIndex min) -> void { db->deleteBeforeLedgerSeq(min); });
-    if (healthWait() == stopping)
-        return;
-
-    if (!app_.config().useTxTables())
-        return;
-
-    clearSql(
-        lastRotated,
-        "Transactions",
-        [&db]() -> std::optional<LedgerIndex> {
-            return db->getTransactionsMinLedgerSeq();
-        },
-        [&db](LedgerIndex min) -> void {
-            db->deleteTransactionsBeforeLedgerSeq(min);
-        });
-    if (healthWait() == stopping)
-        return;
-
-    clearSql(
-        lastRotated,
-        "AccountTransactions",
-        [&db]() -> std::optional<LedgerIndex> {
-            return db->getAccountTransactionsMinLedgerSeq();
-        },
-        [&db](LedgerIndex min) -> void {
-            db->deleteAccountTransactionsBeforeLedgerSeq(min);
-        });
     if (healthWait() == stopping)
         return;
 }
