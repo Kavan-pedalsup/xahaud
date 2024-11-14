@@ -36,12 +36,21 @@ class UDPInfoSub : public InfoSub
 {
     std::function<void(std::string const&)> send_;
 
+    std::shared_ptr<UDPInfoSub> self_;
+
 public:
     UDPInfoSub(
         Source& source,
         std::function<void(std::string const&)>& sendResponse)
         : InfoSub(source), send_(sendResponse)
     {
+    }
+
+    // keep self reference to stop the infosub being destroyed until explicitly unsubscribed
+    void
+    setSelfPtr(std::shared_ptr<UDPInfoSub> ptr)
+    {
+        self_ = ptr;
     }
 
     void

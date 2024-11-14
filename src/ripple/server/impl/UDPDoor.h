@@ -180,7 +180,10 @@ private:
     do_send(std::string const& response, endpoint_type const& tcp_endpoint)
     {
         if (!socket_.is_open())
+        {
+            std::cout << "UDP SOCKET NOT OPEN WHEN SENDING\n\n";
             return;
+        }
 
         // Convert TCP endpoint back to UDP for sending
         boost::asio::ip::udp::endpoint udp_endpoint(

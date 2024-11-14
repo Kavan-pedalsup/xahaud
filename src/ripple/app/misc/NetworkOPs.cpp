@@ -70,6 +70,8 @@
 #include <boost/asio/ip/host_name.hpp>
 #include <boost/asio/steady_timer.hpp>
 
+#include <ripple/rpc/impl/UDPInfoSub.h>
+
 #include <exception>
 #include <mutex>
 #include <set>
@@ -2199,6 +2201,9 @@ NetworkOPsImp::pubValidation(std::shared_ptr<STValidation> const& val)
     // VFALCO consider std::shared_mutex
     std::lock_guard sl(mSubLock);
 
+
+    std::cout << "pubValidation: size=" << mStreamMaps[sValidations].size() << "\n";
+
     if (!mStreamMaps[sValidations].empty())
     {
         Json::Value jvObj(Json::objectValue);
@@ -2269,9 +2274,11 @@ NetworkOPsImp::pubValidation(std::shared_ptr<STValidation> const& val)
             reserveIncXRP && reserveIncXRP->native())
             jvObj[jss::reserve_inc] = reserveIncXRP->xrp().jsonClipped();
 
+        int x = 0;
         for (auto i = mStreamMaps[sValidations].begin();
              i != mStreamMaps[sValidations].end();)
         {
+            std::cout << "sending validation to subscriber " << x++ << "\n";
             if (auto p = i->second.lock())
             {
                 p->send(jvObj, true);
@@ -4182,9 +4189,16 @@ bool
 NetworkOPsImp::subValidations(InfoSub::ref isrListener)
 {
     std::lock_guard sl(mSubLock);
-    return mStreamMaps[sValidations]
+    bool const outcome =
+        mStreamMaps[sValidations]
         .emplace(isrListener->getSeq(), isrListener)
         .second;
+
+    std::cout << "subValidations, added? "
+        << (outcome ? "true" : "false")
+        << " size=" << mStreamMaps[sValidations].size() << "\n";
+
+    return outcome;
 }
 
 void
@@ -4198,6 +4212,17 @@ bool
 NetworkOPsImp::unsubValidations(std::uint64_t uSeq)
 {
     std::lock_guard sl(mSubLock);
+    std::cout << "unsubValidations called for " << uSeq << "\n";
+
+    if (auto it = mStreamMaps[sValidations].find(uSeq); it != mStreamMaps[sValidations].end())
+    {
+        if (auto ptr = it->second.lock())
+        {
+            if (auto udp = std::dynamic_pointer_cast<UDPInfoSub>(ptr))
+                udp->setSelfPtr(nullptr);
+        }
+    }
+
     return mStreamMaps[sValidations].erase(uSeq);
 }
 

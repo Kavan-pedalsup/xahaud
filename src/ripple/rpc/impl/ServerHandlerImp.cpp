@@ -512,7 +512,12 @@ ServerHandlerImp::processRaw(
             std::shared_ptr<InfoSub> is;
 
             if (sendResponse.has_value())
-                is = std::make_shared<UDPInfoSub>(m_networkOPs, *sendResponse);
+            {
+                std::shared_ptr<UDPInfoSub> p =
+                    std::make_shared<UDPInfoSub>(m_networkOPs, *sendResponse);
+                p->setSelfPtr(p);
+                is = p;
+            }
 
             RPC::JsonContext context{
                 {app_.journal("RPCHandler"),
