@@ -396,7 +396,8 @@ ServerHandlerImp::onUDPMessage(
             std::shared_ptr<JobQueue::Coro> const& coro) {
             // Process the request similar to WebSocket but with UDP context
             Role const role = Role::ADMIN;  // UDP-RPC is admin-only
-            auto const jr = this->processRaw(jv, role, coro, sendResponse);
+            auto const jr =
+                this->processUDP(jv, role, coro, sendResponse, remoteEndpoint);
 
             std::string const response = to_string(jr);
             JLOG(m_journal.trace())
@@ -458,13 +459,15 @@ logDuration(
 }
 
 Json::Value
-ServerHandlerImp::processRaw(
+ServerHandlerImp::processUDP(
     Json::Value const& jv,
     Role const& role,
     std::shared_ptr<JobQueue::Coro> const& coro,
     std::optional<std::function<void(std::string const&)>>
-        sendResponse /* used for subscriptions */)
+        sendResponse /* used for subscriptions */,
+    boost::asio::ip::tcp::endpoint const& remoteEndpoint)
 {
+    std::shared_ptr<InfoSub> is;
     // Requests without "command" are invalid.
     Json::Value jr(Json::objectValue);
     try
@@ -509,15 +512,10 @@ ServerHandlerImp::processRaw(
         {
             Resource::Consumer c;
             Resource::Charge loadType = Resource::feeReferenceRPC;
-            std::shared_ptr<InfoSub> is;
 
             if (sendResponse.has_value())
-            {
-                std::shared_ptr<UDPInfoSub> p =
-                    std::make_shared<UDPInfoSub>(m_networkOPs, *sendResponse);
-                p->setSelfPtr(p);
-                is = p;
-            }
+                is = UDPInfoSub::getInfoSub(
+                    m_networkOPs, *sendResponse, remoteEndpoint);
 
             RPC::JsonContext context{
                 {app_.journal("RPCHandler"),
@@ -544,6 +542,12 @@ ServerHandlerImp::processRaw(
         JLOG(m_journal.error())
             << "Exception while processing WS: " << ex.what() << "\n"
             << "Input JSON: " << Json::Compact{Json::Value{jv}};
+    }
+
+    if (is)
+    {
+        if (auto udp = std::dynamic_pointer_cast<UDPInfoSub>(is))
+            udp->destroy();
     }
 
     // Currently we will simply unwrap errors returned by the RPC

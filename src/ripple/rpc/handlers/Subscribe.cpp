@@ -30,13 +30,13 @@
 #include <ripple/rpc/Context.h>
 #include <ripple/rpc/Role.h>
 #include <ripple/rpc/impl/RPCHelpers.h>
+#include <ripple/rpc/impl/UDPInfoSub.h>
 
 namespace ripple {
 
 Json::Value
 doSubscribe(RPC::JsonContext& context)
 {
-
     std::cout << "doSubscribe called\n";
     InfoSub::pointer ispSub;
     Json::Value jvResult(Json::objectValue);
@@ -376,6 +376,13 @@ doSubscribe(RPC::JsonContext& context)
                 }
             }
         }
+    }
+
+    if (ispSub)
+    {
+        if (std::shared_ptr<UDPInfoSub> udp =
+                std::dynamic_pointer_cast<UDPInfoSub>(ispSub))
+            udp->increment();
     }
 
     return jvResult;

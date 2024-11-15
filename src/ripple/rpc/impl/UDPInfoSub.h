@@ -31,26 +31,96 @@
 #include <string>
 
 namespace ripple {
-
 class UDPInfoSub : public InfoSub
 {
     std::function<void(std::string const&)> send_;
+    boost::asio::ip::tcp::endpoint endpoint_;
 
-    std::shared_ptr<UDPInfoSub> self_;
-
-public:
     UDPInfoSub(
         Source& source,
-        std::function<void(std::string const&)>& sendResponse)
-        : InfoSub(source), send_(sendResponse)
+        std::function<void(std::string const&)>& sendResponse,
+        boost::asio::ip::tcp::endpoint const& remoteEndpoint)
+        : InfoSub(source), send_(sendResponse), endpoint_(remoteEndpoint)
     {
     }
 
-    // keep self reference to stop the infosub being destroyed until explicitly unsubscribed
-    void
-    setSelfPtr(std::shared_ptr<UDPInfoSub> ptr)
+    struct RefCountedSub
     {
-        self_ = ptr;
+        std::shared_ptr<UDPInfoSub> sub;
+        size_t refCount;
+
+        RefCountedSub(std::shared_ptr<UDPInfoSub> s)
+            : sub(std::move(s)), refCount(1)
+        {
+        }
+    };
+
+    static inline std::mutex mtx_;
+    static inline std::map<boost::asio::ip::tcp::endpoint, RefCountedSub> map_;
+
+public:
+    static std::shared_ptr<UDPInfoSub>
+    getInfoSub(
+        Source& source,
+        std::function<void(std::string const&)>& sendResponse,
+        boost::asio::ip::tcp::endpoint const& remoteEndpoint)
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+
+        auto it = map_.find(remoteEndpoint);
+        if (it != map_.end())
+        {
+            it->second.refCount++;
+            return it->second.sub;
+        }
+
+        auto sub = std::shared_ptr<UDPInfoSub>(
+            new UDPInfoSub(source, sendResponse, remoteEndpoint));
+        map_.emplace(remoteEndpoint, RefCountedSub(sub));
+        return sub;
+    }
+
+    static bool
+    increment(boost::asio::ip::tcp::endpoint const& remoteEndpoint)
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+
+        auto it = map_.find(remoteEndpoint);
+        if (it != map_.end())
+        {
+            it->second.refCount++;
+            return true;
+        }
+        return false;
+    }
+
+    bool
+    increment()
+    {
+        return increment(endpoint_);
+    }
+
+    static bool
+    destroy(boost::asio::ip::tcp::endpoint const& remoteEndpoint)
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+
+        auto it = map_.find(remoteEndpoint);
+        if (it != map_.end())
+        {
+            if (--it->second.refCount == 0)
+            {
+                map_.erase(it);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool
+    destroy()
+    {
+        return destroy(endpoint_);
     }
 
     void
@@ -59,8 +129,12 @@ public:
         std::string const str = to_string(jv);
         send_(str);
     }
+
+    boost::asio::ip::tcp::endpoint const&
+    endpoint() const
+    {
+        return endpoint_;
+    }
 };
-
 }  // namespace ripple
-
 #endif

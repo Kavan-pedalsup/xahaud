@@ -185,11 +185,12 @@ private:
         Json::Value const& jv);
 
     Json::Value
-    processRaw(
+    processUDP(
         Json::Value const& jv,
         Role const& role,
         std::shared_ptr<JobQueue::Coro> const& coro,
-        std::optional<std::function<void(std::string const&)>> sendResponse);
+        std::optional<std::function<void(std::string const&)>> sendResponse,
+        boost::asio::ip::tcp::endpoint const& remoteEndpoint);
 
     void
     processSession(

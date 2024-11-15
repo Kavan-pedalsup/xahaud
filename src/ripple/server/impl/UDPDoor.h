@@ -185,22 +185,95 @@ private:
             return;
         }
 
+        const size_t HEADER_SIZE = 16;
+        const size_t MAX_DATAGRAM_SIZE = 65507;  // Standard UDP datagram size
+        const size_t MAX_PAYLOAD_SIZE =
+            MAX_DATAGRAM_SIZE - HEADER_SIZE;  // 65,491 bytes
+
         // Convert TCP endpoint back to UDP for sending
         boost::asio::ip::udp::endpoint udp_endpoint(
             tcp_endpoint.address(), tcp_endpoint.port());
 
-        socket_.async_send_to(
-            boost::asio::buffer(response),
-            udp_endpoint,
-            boost::asio::bind_executor(
-                strand_,
-                [this, self = this->shared_from_this()](
-                    error_code ec, std::size_t bytes_transferred) {
-                    if (ec && ec != boost::asio::error::operation_aborted)
-                    {
-                        JLOG(j_.error()) << "UDP send failed: " << ec.message();
-                    }
-                }));
+        // If message fits in single datagram, send normally
+        if (response.length() <= MAX_DATAGRAM_SIZE)
+        {
+            socket_.async_send_to(
+                boost::asio::buffer(response),
+                udp_endpoint,
+                boost::asio::bind_executor(
+                    strand_,
+                    [this, self = this->shared_from_this()](
+                        error_code ec, std::size_t bytes_transferred) {
+                        if (ec && ec != boost::asio::error::operation_aborted)
+                        {
+                            JLOG(j_.error())
+                                << "UDP send failed: " << ec.message();
+                        }
+                    }));
+            return;
+        }
+
+        // Calculate number of packets needed
+        const size_t payload_size = MAX_PAYLOAD_SIZE;
+        const uint16_t total_packets =
+            (response.length() + payload_size - 1) / payload_size;
+
+        // Get current timestamp in microseconds
+        auto now = std::chrono::system_clock::now();
+        auto micros = std::chrono::duration_cast<std::chrono::microseconds>(
+                          now.time_since_epoch())
+                          .count();
+        uint64_t timestamp = static_cast<uint64_t>(micros);
+
+        // Send fragmented packets
+        for (uint16_t packet_num = 0; packet_num < total_packets; packet_num++)
+        {
+            std::string fragment;
+            fragment.reserve(MAX_DATAGRAM_SIZE);
+
+            // Add header - 4 bytes of zeros
+            fragment.push_back(0);
+            fragment.push_back(0);
+            fragment.push_back(0);
+            fragment.push_back(0);
+
+            // Add packet number (little endian)
+            fragment.push_back(packet_num & 0xFF);
+            fragment.push_back((packet_num >> 8) & 0xFF);
+
+            // Add total packets (little endian)
+            fragment.push_back(total_packets & 0xFF);
+            fragment.push_back((total_packets >> 8) & 0xFF);
+
+            // Add timestamp (8 bytes, little endian)
+            fragment.push_back(timestamp & 0xFF);
+            fragment.push_back((timestamp >> 8) & 0xFF);
+            fragment.push_back((timestamp >> 16) & 0xFF);
+            fragment.push_back((timestamp >> 24) & 0xFF);
+            fragment.push_back((timestamp >> 32) & 0xFF);
+            fragment.push_back((timestamp >> 40) & 0xFF);
+            fragment.push_back((timestamp >> 48) & 0xFF);
+            fragment.push_back((timestamp >> 56) & 0xFF);
+
+            // Calculate payload slice
+            size_t start = packet_num * payload_size;
+            size_t length = std::min(payload_size, response.length() - start);
+            fragment.append(response.substr(start, length));
+
+            socket_.async_send_to(
+                boost::asio::buffer(fragment),
+                udp_endpoint,
+                boost::asio::bind_executor(
+                    strand_,
+                    [this, self = this->shared_from_this()](
+                        error_code ec, std::size_t bytes_transferred) {
+                        if (ec && ec != boost::asio::error::operation_aborted)
+                        {
+                            JLOG(j_.error())
+                                << "UDP send failed: " << ec.message();
+                        }
+                    }));
+        }
     }
 
     boost::asio::ip::udp::endpoint sender_endpoint_;
