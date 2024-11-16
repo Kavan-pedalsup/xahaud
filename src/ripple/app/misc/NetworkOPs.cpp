@@ -1136,73 +1136,79 @@ NetworkOPsImp::strOperatingMode(OperatingMode const mode, bool const admin)
 void
 NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
 {
-    if (isNeedNetworkLedger())
-    {
-        // Nothing we can do if we've never been in sync
-        return;
-    }
-
-    auto const view = m_ledgerMaster.getCurrentLedger();
-
-    // Enforce Network bar for emitted txn
-    if (view->rules().enabled(featureHooks) && hook::isEmittedTxn(*iTrans))
-    {
-        // RH NOTE: Warning removed here due to ConsesusSet using this function
-        // which continually triggers this bar. Doesn't seem dangerous, just
-        // annoying.
-
-        // JLOG(m_journal.warn())
-        //    << "Submitted transaction invalid: EmitDetails present.";
-        return;
-    }
-
-    // this is an asynchronous interface
-    auto const trans = sterilize(*iTrans);
-
-    auto const txid = trans->getTransactionID();
-    auto const flags = app_.getHashRouter().getFlags(txid);
-
-    if ((flags & SF_BAD) != 0)
-    {
-        // RH NOTE: Warning removed here due to ConsesusSet using this function
-        // which continually triggers this bar. Doesn't seem dangerous, just
-        // annoying.
-
-        // JLOG(m_journal.warn()) << "Submitted transaction cached bad";
-        return;
-    }
-
-    try
-    {
-        auto const [validity, reason] = checkValidity(
-            app_.getHashRouter(),
-            *trans,
-            m_ledgerMaster.getValidatedRules(),
-            app_.config());
-
-        if (validity != Validity::Valid)
+    // Launch async task and return immediately
+    std::async(std::launch::async, [this, iTrans]() {
+        if (isNeedNetworkLedger())
         {
-            JLOG(m_journal.warn())
-                << "Submitted transaction invalid: " << reason;
+            // Nothing we can do if we've never been in sync
             return;
         }
-    }
-    catch (std::exception const& ex)
-    {
-        JLOG(m_journal.warn())
-            << "Exception checking transaction " << txid << ": " << ex.what();
 
-        return;
-    }
+        auto const view = m_ledgerMaster.getCurrentLedger();
 
-    std::string reason;
+        // Enforce Network bar for emitted txn
+        if (view->rules().enabled(featureHooks) && hook::isEmittedTxn(*iTrans))
+        {
+            // RH NOTE: Warning removed here due to ConsesusSet using this function
+            // which continually triggers this bar. Doesn't seem dangerous, just
+            // annoying.
 
-    auto tx = std::make_shared<Transaction>(trans, reason, app_);
+            // JLOG(m_journal.warn())
+            //    << "Submitted transaction invalid: EmitDetails present.";
+            return;
+        }
 
-    m_job_queue.addJob(jtTRANSACTION, "submitTxn", [this, tx]() {
-        auto t = tx;
-        processTransaction(t, false, false, FailHard::no);
+        // this is an asynchronous interface
+        auto const trans = sterilize(*iTrans);
+
+        auto const txid = trans->getTransactionID();
+        auto const flags = app_.getHashRouter().getFlags(txid);
+
+        if ((flags & SF_BAD) != 0)
+        {
+            // RH NOTE: Warning removed here due to ConsesusSet using this function
+            // which continually triggers this bar. Doesn't seem dangerous, just
+            // annoying.
+
+            // JLOG(m_journal.warn()) << "Submitted transaction cached bad";
+            return;
+        }
+
+        try
+        {
+            auto const [validity, reason] = checkValidity(
+                app_.getHashRouter(),
+                *trans,
+                m_ledgerMaster.getValidatedRules(),
+                app_.config());
+
+            if (validity != Validity::Valid)
+            {
+                JLOG(m_journal.warn())
+                    << "Submitted transaction invalid: " << reason;
+                return;
+            }
+        }
+        catch (std::exception const& ex)
+        {
+            JLOG(m_journal.warn())
+                << "Exception checking transaction " << txid << ": " << ex.what();
+
+            return;
+        }
+
+        std::string reason;
+
+        auto tx = std::make_shared<Transaction>(trans, reason, app_);
+
+        m_job_queue.addJob(jtTRANSACTION, "submitTxn", [this, tx]() {
+            auto t = tx;
+            processTransaction(t, false, false, FailHard::no);
+        });
     });
+
+    // Return immediately while async task runs
+    return;
 }
 
 void
