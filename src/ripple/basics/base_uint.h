@@ -549,8 +549,8 @@ using uint128 = base_uint<128>;
 using uint160 = base_uint<160>;
 using uint256 = base_uint<256>;
 
-/*
- * template <std::size_t Bits, class Tag>
+#ifdef __APPLE__
+template <std::size_t Bits, class Tag>
 [[nodiscard]] inline constexpr std::strong_ordering
 operator<=>(base_uint<Bits, Tag> const& lhs, base_uint<Bits, Tag> const& rhs)
 {
@@ -561,7 +561,6 @@ operator<=>(base_uint<Bits, Tag> const& lhs, base_uint<Bits, Tag> const& rhs)
     //
     // FIXME: use std::lexicographical_compare_three_way once support is
     //        added to MacOS.
-
     auto const ret = std::mismatch(lhs.cbegin(), lhs.cend(), rhs.cbegin());
 
     // a == b
@@ -571,8 +570,7 @@ operator<=>(base_uint<Bits, Tag> const& lhs, base_uint<Bits, Tag> const& rhs)
     return (*ret.first > *ret.second) ? std::strong_ordering::greater
                                       : std::strong_ordering::less;
 }
-*/
-
+#else
 template <std::size_t Bits, class Tag>
 [[nodiscard]] inline constexpr std::strong_ordering
 operator<=>(base_uint<Bits, Tag> const& lhs, base_uint<Bits, Tag> const& rhs)
@@ -584,6 +582,7 @@ operator<=>(base_uint<Bits, Tag> const& lhs, base_uint<Bits, Tag> const& rhs)
         rhs.cend(),
         std::compare_three_way{});
 }
+#endif
 
 template <std::size_t Bits, typename Tag>
 [[nodiscard]] inline constexpr bool
