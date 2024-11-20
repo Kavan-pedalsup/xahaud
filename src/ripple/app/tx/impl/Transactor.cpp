@@ -1081,27 +1081,20 @@ Transactor::checkMultiSign(PreclaimContext const& ctx)
 
 // increment the touch counter on an account
 static void
-touchAccount(
-    ApplyView& view,
-    AccountID const& id,
-    std::optional<std::shared_ptr<SLE>> sle)
+touchAccount(ApplyView& view, AccountID const& id)
 {
     if (!view.rules().enabled(featureTouch))
         return;
 
+    std::shared_ptr<SLE> sle = view.peek(keylet::account(id));
     if (!sle)
-        sle = view.peek(keylet::account(id));
-
-    if (!sle || !(*sle))
         return;
 
-    uint64_t tc = (*sle)->isFieldPresent(sfTouchCount)
-        ? (*sle)->getFieldU64(sfTouchCount)
-        : 0;
+    uint64_t tc =
+        sle->isFieldPresent(sfTouchCount) ? sle->getFieldU64(sfTouchCount) : 0;
 
-    (*sle)->setFieldU64(sfTouchCount, tc + 1);
-
-    view.update(*sle);
+    sle->setFieldU64(sfTouchCount, tc + 1);
+    view.update(sle);
 }
 
 static void
@@ -1536,7 +1529,7 @@ Transactor::doTSH(
         if ((!canRollback && strong) || (canRollback && !strong))
             continue;
 
-        touchAccount(view, tshAccountID, {});
+        touchAccount(view, tshAccountID);
 
         auto klTshHook = keylet::hook(tshAccountID);
 
