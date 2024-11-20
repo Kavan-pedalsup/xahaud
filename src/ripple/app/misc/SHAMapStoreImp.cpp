@@ -162,7 +162,8 @@ SHAMapStoreImp::SHAMapStoreImp(
         }
 
         state_db_.init(config, dbName_);
-        dbPaths();
+        if (!config.mem_backend())
+            dbPaths();
     }
 }
 
@@ -195,6 +196,7 @@ SHAMapStoreImp::makeNodeStore(int readThreads)
                 "online_delete info from config");
         }
         SavedState state = state_db_.getState();
+
         auto writableBackend = makeBackendRotating(state.writableDb);
         auto archiveBackend = makeBackendRotating(state.archiveDb);
         if (!state.writableDb.size())
@@ -293,6 +295,8 @@ SHAMapStoreImp::run()
     fullBelowCache_ = &(*app_.getNodeFamily().getFullBelowCache(0));
     treeNodeCache_ = &(*app_.getNodeFamily().getTreeNodeCache(0));
 
+    bool const isMem = app_.config().mem_backend();
+
     if (advisoryDelete_)
         canDelete_ = state_db_.getCanDelete();
 
@@ -351,7 +355,7 @@ SHAMapStoreImp::run()
         // will delete up to (not including) lastRotated
         if (readyToRotate && !waitForImport)
         {
-            JLOG(journal_.warn())
+            JLOG(journal_.debug())
                 << "rotating  validatedSeq " << validatedSeq << " lastRotated "
                 << lastRotated << " deleteInterval " << deleteInterval_
                 << " canDelete_ " << canDelete_ << " state "
@@ -395,7 +399,7 @@ SHAMapStoreImp::run()
             // Only log if we completed without a "health" abort
             JLOG(journal_.debug()) << validatedSeq << " freshened caches";
 
-            JLOG(journal_.trace()) << "Making a new backend";
+            JLOG(journal_.debug()) << "Making a new backend";
             auto newBackend = makeBackendRotating();
             JLOG(journal_.debug())
                 << validatedSeq << " new backend " << newBackend->getName();
@@ -640,38 +644,38 @@ SHAMapStoreImp::clearPrior(LedgerIndex lastRotated)
     if (!db)
         Throw<std::runtime_error>("Failed to get relational database");
 
+    if (app_.config().useTxTables())
+    {
+        clearSql(
+            lastRotated,
+            "Transactions",
+            [&db]() -> std::optional<LedgerIndex> {
+                return db->getTransactionsMinLedgerSeq();
+            },
+            [&db](LedgerIndex min) -> void {
+                db->deleteTransactionsBeforeLedgerSeq(min);
+            });
+        if (healthWait() == stopping)
+            return;
+
+        clearSql(
+            lastRotated,
+            "AccountTransactions",
+            [&db]() -> std::optional<LedgerIndex> {
+                return db->getAccountTransactionsMinLedgerSeq();
+            },
+            [&db](LedgerIndex min) -> void {
+                db->deleteAccountTransactionsBeforeLedgerSeq(min);
+            });
+        if (healthWait() == stopping)
+            return;
+    }
+
     clearSql(
         lastRotated,
         "Ledgers",
         [db]() -> std::optional<LedgerIndex> { return db->getMinLedgerSeq(); },
         [db](LedgerIndex min) -> void { db->deleteBeforeLedgerSeq(min); });
-    if (healthWait() == stopping)
-        return;
-
-    if (!app_.config().useTxTables())
-        return;
-
-    clearSql(
-        lastRotated,
-        "Transactions",
-        [&db]() -> std::optional<LedgerIndex> {
-            return db->getTransactionsMinLedgerSeq();
-        },
-        [&db](LedgerIndex min) -> void {
-            db->deleteTransactionsBeforeLedgerSeq(min);
-        });
-    if (healthWait() == stopping)
-        return;
-
-    clearSql(
-        lastRotated,
-        "AccountTransactions",
-        [&db]() -> std::optional<LedgerIndex> {
-            return db->getAccountTransactionsMinLedgerSeq();
-        },
-        [&db](LedgerIndex min) -> void {
-            db->deleteAccountTransactionsBeforeLedgerSeq(min);
-        });
     if (healthWait() == stopping)
         return;
 }
