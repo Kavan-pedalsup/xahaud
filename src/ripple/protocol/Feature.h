@@ -364,7 +364,6 @@ extern uint256 const fix240911;
 extern uint256 const fixFloatDivide;
 extern uint256 const featureTouch;
 
-
 }  // namespace ripple
 
 #endif
