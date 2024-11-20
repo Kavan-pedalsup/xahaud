@@ -63,9 +63,11 @@ public:
         jtx::Env env = [&] {
             auto c = jtx::envconfig();
             auto& sectionNode = c->section(ConfigSection::nodeDatabase());
+            sectionNode.set("type", "memory");
             sectionNode.set("earliest_seq", "257");
             sectionNode.set("ledgers_per_shard", "256");
             c->setupControl(true, true, true);
+            c->overwrite(SECTION_RELATIONAL_DB, "backend", "sqlite");
 
             return jtx::Env(*this, std::move(c));
         }();
@@ -138,9 +140,11 @@ public:
             section.set("ledgers_per_shard", "256");
             section.set("earliest_seq", "257");
             auto& sectionNode = c->section(ConfigSection::nodeDatabase());
+            sectionNode.set("type", "memory");
             sectionNode.set("earliest_seq", "257");
             sectionNode.set("ledgers_per_shard", "256");
             c->setupControl(true, true, true);
+            c->overwrite(SECTION_RELATIONAL_DB, "backend", "sqlite");
 
             return jtx::Env(*this, std::move(c));
         }();
@@ -282,9 +286,11 @@ public:
             section.set("ledgers_per_shard", "256");
             section.set("earliest_seq", "257");
             auto& sectionNode = c->section(ConfigSection::nodeDatabase());
+            sectionNode.set("type", "memory");
             sectionNode.set("earliest_seq", "257");
             sectionNode.set("ledgers_per_shard", "256");
             c->setupControl(true, true, true);
+            c->overwrite(SECTION_RELATIONAL_DB, "backend", "sqlite");
 
             return jtx::Env(
                 *this, std::move(c), nullptr, beast::severities::kDisabled);

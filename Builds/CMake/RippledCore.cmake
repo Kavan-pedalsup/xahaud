@@ -539,7 +539,9 @@ target_sources (rippled PRIVATE
        subdir: nodestore
   #]===============================]
   src/ripple/nodestore/backend/CassandraFactory.cpp
+  src/ripple/nodestore/backend/RWDBFactory.cpp
   src/ripple/nodestore/backend/MemoryFactory.cpp
+  src/ripple/nodestore/backend/FlatmapFactory.cpp
   src/ripple/nodestore/backend/NuDBFactory.cpp
   src/ripple/nodestore/backend/NullFactory.cpp
   src/ripple/nodestore/backend/RocksDBFactory.cpp
@@ -670,6 +672,9 @@ target_sources (rippled PRIVATE
   src/ripple/rpc/impl/ShardVerificationScheduler.cpp
   src/ripple/rpc/impl/Status.cpp
   src/ripple/rpc/impl/TransactionSign.cpp
+  src/ripple/rpc/impl/NFTokenID.cpp
+  src/ripple/rpc/impl/NFTokenOfferID.cpp
+  src/ripple/rpc/impl/NFTSyntheticSerializer.cpp
   #[===============================[
      main sources:
        subdir: perflog

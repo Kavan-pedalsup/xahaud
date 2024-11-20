@@ -50,7 +50,13 @@ struct LedgerReplay_test : public beast::unit_test::suite
         auto const alice = Account("alice");
         auto const bob = Account("bob");
 
-        Env env(*this);
+        Env env = [&] {
+            auto c = jtx::envconfig();
+            auto& sectionNode = c->section(ConfigSection::nodeDatabase());
+            sectionNode.set("type", "memory");
+            c->overwrite(SECTION_RELATIONAL_DB, "backend", "sqlite");
+            return jtx::Env(*this, std::move(c));
+        }();
         env.fund(XRP(100000), alice, bob);
         env.close();
 
@@ -1300,8 +1306,8 @@ struct LedgerReplayer_test : public beast::unit_test::suite
 
         std::uint8_t payload[55] = {
             0x6A, 0x09, 0xE6, 0x67, 0xF3, 0xBC, 0xC9, 0x08, 0xB2};
-        auto item = std::make_shared<SHAMapItem>(
-            uint256(12345), Slice(payload, sizeof(payload)));
+        auto item =
+            make_shamapitem(uint256(12345), Slice(payload, sizeof(payload)));
         skipList->processData(l->seq(), item);
 
         std::vector<TaskStatus> deltaStatuses;
