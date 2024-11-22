@@ -207,7 +207,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
             BEAST_REQUIRE(!!genesisAccRoot);
             BEAST_EXPECT(
                 genesisAccRoot->getFieldAmount(sfBalance) ==
-                XRPAmount(100000000000ULL));
+                XRPAmount(100000000000000000ULL));
             return;
         }
 
@@ -481,9 +481,39 @@ struct XahauGenesis_test : public beast::unit_test::suite
     {
         testcase("Test Bad Network ID activation");
         using namespace jtx;
-        Env env{
-            *this, makeNetworkConfig(21329), features - featureXahauGenesis};
-        activate(__LINE__, env, false, false, false, true);
+        std::vector<int> badNetIDs{
+            0,
+            1,
+            2,
+            10,
+            100,
+            1000,
+            10000,
+            20000,
+            21000,
+            21328,
+            21329,
+            21340,
+            21341,
+            65535};
+
+        for (int netid : badNetIDs)
+        {
+            Env env{
+                *this,
+                makeNetworkConfig(netid),
+                features - featureXahauGenesis};
+            activate(__LINE__, env, false, false, false, true);
+        }
+
+        for (int netid = 21330; netid <= 21339; ++netid)
+        {
+            Env env{
+                *this,
+                makeNetworkConfig(netid),
+                features - featureXahauGenesis};
+            activate(__LINE__, env, false, false, false, false);
+        }
     }
 
     void
