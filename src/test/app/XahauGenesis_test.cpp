@@ -27,6 +27,8 @@
 #include <ripple/protocol/jss.h>
 #include <string>
 #include <test/jtx.h>
+#include <test/jtx/envconfig.h>
+#include <ripple/core/Config.h>
 #include <vector>
 
 #define BEAST_REQUIRE(x)     \
@@ -59,7 +61,19 @@ maybe_to_string(T val, std::enable_if_t<!std::is_integral_v<T>, int> = 0)
 using namespace XahauGenesis;
 
 namespace ripple {
+
+inline
+std::unique_ptr<Config>
+makeNetworkConfig(uint32_t networkID)
+{
+    using namespace test::jtx;
+    return envconfig([&](std::unique_ptr<Config> cfg) {
+        cfg->NETWORK_ID = networkID;
+        return cfg;
+    });
+}
 namespace test {
+
 /*
     Accounts used in this test suite:
     alice: AE123A8556F3CF91154711376AFB0F894F832B3D,
@@ -442,7 +456,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
     {
         testcase("Test activation");
         using namespace jtx;
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         activate(__LINE__, env, false, false, false);
     }
@@ -452,7 +466,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
     {
         using namespace jtx;
         testcase("Test signerlist");
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         Account const alice{"alice", KeyType::ed25519};
         env.fund(XRP(1000), alice);
@@ -468,7 +482,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
     {
         using namespace jtx;
         testcase("Test regkey");
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         env.memoize(env.master);
         Account const alice("alice");
@@ -667,7 +681,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
     {
         using namespace jtx;
         testcase("Test governance membership voting L1");
-        Env env{*this, envconfig(), features - featureXahauGenesis, nullptr};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis, nullptr};
 
         auto const alice = Account("alice");
         auto const bob = Account("bob");
@@ -2111,7 +2125,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace jtx;
         testcase("Test governance membership voting L2");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         auto const alice = Account("alice");
         auto const bob = Account("bob");
@@ -3708,7 +3722,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test last close time");
 
-        Env env{*this, envconfig(), features};
+        Env env{*this, makeNetworkConfig(21337), features};
         validateTime(lastClose(env), 0);
 
         // last close = 0
@@ -3738,7 +3752,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace jtx;
         testcase("test claim reward rate is == 0");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         STAmount const feesXRP = XRP(1);
 
@@ -3783,7 +3797,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace jtx;
         testcase("test claim reward rate is > 1");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         STAmount const feesXRP = XRP(1);
 
@@ -3828,7 +3842,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace jtx;
         testcase("test claim reward delay is == 0");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         STAmount const feesXRP = XRP(1);
 
@@ -3873,7 +3887,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace jtx;
         testcase("test claim reward delay is < 0");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         STAmount const feesXRP = XRP(1);
 
@@ -3918,7 +3932,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace jtx;
         testcase("test claim reward before time");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         STAmount const feesXRP = XRP(1);
 
@@ -3968,7 +3982,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test claim reward valid without unl report");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
         bool const has240819 = env.current()->rules().enabled(fix240819);
 
         double const rateDrops = 0.00333333333 * 1'000'000;
@@ -4115,7 +4129,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test claim reward valid with unl report");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         double const rateDrops = 0.00333333333 * 1'000'000;
         STAmount const feesXRP = XRP(1);
@@ -4250,7 +4264,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         {
             FeatureBitset _features = features - featureXahauGenesis;
             auto const amend = withXahauV1 ? _features : _features - fixXahauV1;
-            Env env{*this, envconfig(), amend};
+            Env env{*this, makeNetworkConfig(21337), amend};
 
             double const rateDrops = 0.00333333333 * 1'000'000;
             STAmount const feesXRP = XRP(1);
@@ -4387,7 +4401,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test claim reward optin optout");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
         bool const has240819 = env.current()->rules().enabled(fix240819);
 
         double const rateDrops = 0.00333333333 * 1'000'000;
@@ -4499,7 +4513,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test claim reward bal == 1");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         double const rateDrops = 0.00333333333 * 1'000'000;
         STAmount const feesXRP = XRP(1);
@@ -4587,7 +4601,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test claim reward elapsed_since_last == 1");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         double const rateDrops = 0.00333333333 * 1'000'000;
         STAmount const feesXRP = XRP(1);
@@ -4668,7 +4682,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test claim reward elapsed_since_last == 0");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         STAmount const feesXRP = XRP(1);
 
@@ -4929,7 +4943,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test compound interest over 12 claims");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         double const rateDrops = 0.00333333333 * 1'000'000;
         STAmount const feesXRP = XRP(1);
@@ -5027,7 +5041,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test deposit");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         double const rateDrops = 0.00333333333 * 1'000'000;
         STAmount const feesXRP = XRP(1);
@@ -5117,7 +5131,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test deposit withdraw");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         double const rateDrops = 0.00333333333 * 1'000'000;
         STAmount const feesXRP = XRP(1);
@@ -5209,7 +5223,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test deposit late");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         double const rateDrops = 0.00333333333 * 1'000'000;
         STAmount const feesXRP = XRP(1);
@@ -5299,7 +5313,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test deposit late withdraw");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         double const rateDrops = 0.00333333333 * 1'000'000;
         STAmount const feesXRP = XRP(1);
@@ -5392,7 +5406,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test no claim");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         double const rateDrops = 0.00333333333 * 1'000'000;
         STAmount const feesXRP = XRP(1);
@@ -5480,7 +5494,7 @@ struct XahauGenesis_test : public beast::unit_test::suite
         using namespace std::chrono_literals;
         testcase("test no claim late");
 
-        Env env{*this, envconfig(), features - featureXahauGenesis};
+        Env env{*this, makeNetworkConfig(21337), features - featureXahauGenesis};
 
         double const rateDrops = 0.00333333333 * 1'000'000;
         STAmount const feesXRP = XRP(1);
