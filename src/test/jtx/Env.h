@@ -591,7 +591,6 @@ public:
     void
     disableFeature(uint256 const feature);
 
-private:
     void
     fund(bool setDefaultRipple, STAmount const& amount, Account const& account);
 

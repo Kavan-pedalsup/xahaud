@@ -38,6 +38,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_set>
+#include <iterator>
 
 namespace ripple {
 
@@ -321,6 +322,12 @@ public:
 
     // The range of transactions
     txs_type txs;
+
+    std::size_t
+    txCount() const
+    {
+        return std::distance(txs.begin(), txs.end());
+    }    
 };
 
 //------------------------------------------------------------------------------

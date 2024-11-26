@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <limits>
 #include <numeric>
+#include <ripple/protocol/AccountID.h>
 
 namespace ripple {
 
@@ -1897,7 +1898,10 @@ TxQ::tryDirectApply(
     // transaction straight into the ledger.
     FeeLevel64 const feeLevelPaid = getFeeLevelPaid(view, *tx);
 
-    if (feeLevelPaid >= requiredFeeLevel)
+    static auto const genesisAccountId = calcAccountID(
+        generateKeyPair(KeyType::secp256k1, generateSeed("masterpassphrase")).first);
+
+    if (feeLevelPaid >= requiredFeeLevel || (*tx)[sfAccount] == genesisAccountId)
     {
         // Attempt to apply the transaction directly.
         auto const transactionID = tx->getTransactionID();

@@ -729,6 +729,7 @@ if (tests)
     src/test/app/LedgerLoad_test.cpp
     src/test/app/LedgerMaster_test.cpp
     src/test/app/LedgerReplay_test.cpp
+    src/test/app/LedgerStress_test.cpp
     src/test/app/LoadFeeTrack_test.cpp
     src/test/app/Manifest_test.cpp
     src/test/app/MultiSign_test.cpp
