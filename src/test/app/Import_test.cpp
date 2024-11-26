@@ -79,7 +79,7 @@ class Import_test : public beast::unit_test::suite
     importVLSequence(jtx::Env const& env, PublicKey const& pk)
     {
         auto const sle = env.le(keylet::import_vlseq(pk));
-        if (sle->isFieldPresent(sfImportSequence))
+        if (sle && sle->isFieldPresent(sfImportSequence))
             return (*sle)[sfImportSequence];
         return 0;
     }
@@ -4580,14 +4580,18 @@ class Import_test : public beast::unit_test::suite
             // confirm signers set
             auto const [signers, signersSle] =
                 signersKeyAndSle(*env.current(), alice);
-            auto const signerEntries =
-                signersSle->getFieldArray(sfSignerEntries);
-            BEAST_EXPECT(signerEntries.size() == 2);
-            BEAST_EXPECT(signerEntries[0u].getFieldU16(sfSignerWeight) == 1);
-            BEAST_EXPECT(
-                signerEntries[0u].getAccountID(sfAccount) == carol.id());
-            BEAST_EXPECT(signerEntries[1u].getFieldU16(sfSignerWeight) == 1);
-            BEAST_EXPECT(signerEntries[1u].getAccountID(sfAccount) == bob.id());
+            BEAST_EXPECT(signersSle && signersSle->isFieldPresent(sfSignerEntries));
+            if (signersSle && signersSle->isFieldPresent(sfSignerEntries))
+            {
+                auto const signerEntries =
+                    signersSle->getFieldArray(sfSignerEntries);
+                BEAST_EXPECT(signerEntries.size() == 2);
+                BEAST_EXPECT(signerEntries[0u].getFieldU16(sfSignerWeight) == 1);
+                BEAST_EXPECT(
+                    signerEntries[0u].getAccountID(sfAccount) == carol.id());
+                BEAST_EXPECT(signerEntries[1u].getFieldU16(sfSignerWeight) == 1);
+                BEAST_EXPECT(signerEntries[1u].getAccountID(sfAccount) == bob.id());
+            }
 
             // confirm multisign tx
             env.close();
