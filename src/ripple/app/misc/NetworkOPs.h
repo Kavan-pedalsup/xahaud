@@ -27,6 +27,7 @@
 #include <ripple/net/InfoSub.h>
 #include <ripple/protocol/STValidation.h>
 #include <ripple/protocol/messages.h>
+#include <ripple/app/consensus/RCLConsensus.h>
 #include <boost/asio.hpp>
 #include <deque>
 #include <memory>
@@ -221,6 +222,13 @@ public:
 
     virtual Json::Value
     getConsensusInfo() = 0;
+
+    virtual RCLConsensus&
+    getConsensus() = 0;
+
+    virtual LedgerMaster&
+    getLedgerMaster() = 0;
+
     virtual Json::Value
     getServerInfo(bool human, bool admin, bool counters) = 0;
     virtual void

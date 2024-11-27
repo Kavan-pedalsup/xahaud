@@ -780,6 +780,12 @@ private:
 
     std::set<uint256> pendingValidations_;
     std::mutex validationsMutex_;
+    
+    RCLConsensus&
+    getConsensus();
+
+    LedgerMaster&
+    getLedgerMaster();
 
 private:
     struct Stats
@@ -2394,6 +2400,19 @@ Json::Value
 NetworkOPsImp::getConsensusInfo()
 {
     return mConsensus.getJson(true);
+}
+
+// RHTODO: not threadsafe?
+RCLConsensus&
+NetworkOPsImp::getConsensus()
+{
+    return mConsensus;
+}
+
+LedgerMaster&
+NetworkOPsImp::getLedgerMaster()
+{
+    return m_ledgerMaster;
 }
 
 Json::Value

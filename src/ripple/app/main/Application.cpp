@@ -44,6 +44,7 @@
 #include <ripple/app/misc/TxQ.h>
 #include <ripple/app/misc/ValidatorKeys.h>
 #include <ripple/app/misc/ValidatorSite.h>
+#include <ripple/app/misc/DatagramMonitor.h>
 #include <ripple/app/paths/PathRequests.h>
 #include <ripple/app/rdb/Wallet.h>
 #include <ripple/app/rdb/backend/PostgresDatabase.h>
@@ -166,6 +167,8 @@ public:
     std::unique_ptr<Config> config_;
     std::unique_ptr<Logs> logs_;
     std::unique_ptr<TimeKeeper> timeKeeper_;
+
+    std::unique_ptr<DatagramMonitor> datagram_monitor_;
 
     std::uint64_t const instanceCookie_;
 
@@ -511,6 +514,8 @@ public:
         //
 
         add(ledgerCleaner_.get());
+
+
     }
 
     //--------------------------------------------------------------------------
@@ -1522,6 +1527,18 @@ ApplicationImp::setup(boost::program_options::variables_map const& cmdline)
 
     if (reportingETL_)
         reportingETL_->start();
+
+    // Datagram monitor if applicable
+    if (!config_->standalone() && config_->DATAGRAM_MONITOR != "")
+    {
+        std::cout << "\n\n!!!! Starting datagram monitor\n\n\n";
+        datagram_monitor_ = std::make_unique<DatagramMonitor>(*this);
+        datagram_monitor_->start();
+    }
+    else
+    {
+        std::cout << "\n\n!!!! NOT starting datagram monitor\n\n\n";
+    }
 
     return true;
 }
