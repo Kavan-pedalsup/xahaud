@@ -1,6 +1,8 @@
 
 #ifndef RIPPLE_APP_MAIN_DATAGRAMMONITOR_H_INCLUDED
 #define RIPPLE_APP_MAIN_DATAGRAMMONITOR_H_INCLUDED
+#include <ripple/app/misc/NetworkOPs.h>
+#include <ripple/overlay/Overlay.h>
 #include <boost/icl/interval_set.hpp>
 #include <arpa/inet.h>
 #include <array>
@@ -17,8 +19,6 @@
 #include <sys/sysinfo.h>
 #include <thread>
 #include <vector>
-#include <ripple/overlay/Overlay.h>
-#include <ripple/app/misc/NetworkOPs.h>
 
 namespace ripple {
 
@@ -30,6 +30,7 @@ constexpr uint32_t SERVER_INFO_VERSION = 1;
 constexpr uint32_t WARNING_AMENDMENT_BLOCKED = 1 << 0;
 constexpr uint32_t WARNING_UNL_BLOCKED = 1 << 1;
 constexpr uint32_t WARNING_AMENDMENT_WARNED = 1 << 2;
+constexpr uint32_t WARNING_NOT_SYNCED = 1 << 3;
 
 // Time window statistics for rates
 struct RateStats
@@ -260,7 +261,8 @@ private:
             addr_len = sizeof(struct sockaddr_in);
         }
 
-        std::cout << "Datagram monitor sending packet of size " << buffer.size() << "\n";
+        std::cout << "Datagram monitor sending packet of size " << buffer.size()
+                  << "\n";
         sendto(
             sock,
             buffer.data(),
@@ -335,7 +337,6 @@ private:
     std::vector<uint8_t>
     generateServerInfo()
     {
-
         auto& ops = app_.getOPs();
 
         // Get the RangeSet directly
@@ -384,8 +385,38 @@ private:
         header->converge_time_ms = mConsensus.prevRoundTime().count();
 
         // Pack fetch pack size if present
-        auto& m_ledgerMaster = ops.getLedgerMaster();
-        auto const fp = m_ledgerMaster.getFetchPackCacheSize();
+        auto& ledgerMaster = ops.getLedgerMaster();
+        auto const lastClosed = ledgerMaster.getClosedLedger();
+        auto const validated = ledgerMaster.getValidatedLedger();
+
+        if (lastClosed && validated)
+        {
+            auto consensus =
+                ledgerMaster.getLedgerByHash(lastClosed->info().hash);
+            if (!consensus)
+                consensus = app_.getInboundLedgers().acquire(
+                    lastClosed->info().hash,
+                    0,
+                    InboundLedger::Reason::CONSENSUS);
+
+            if (consensus &&
+                (!ledgerMaster.canBeCurrent(consensus) ||
+                 !ledgerMaster.isCompatible(
+                     *consensus,
+                     app_.journal("DatagramMonitor").debug(),
+                     "Not switching")))
+            {
+                header->warning_flags |= WARNING_NOT_SYNCED;
+            }
+        }
+        else
+        {
+            // If we don't have both lastClosed and validated ledgers, we're
+            // definitely not synced
+            header->warning_flags |= WARNING_NOT_SYNCED;
+        }
+
+        auto const fp = ledgerMaster.getFetchPackCacheSize();
         if (fp != 0)
             header->fetch_pack_size = fp;
 
@@ -446,9 +477,9 @@ private:
         header->rates.disk_write = rates_24h;
 
         // Pack ledger info and ranges
-        auto lpClosed = m_ledgerMaster.getValidatedLedger();
+        auto lpClosed = ledgerMaster.getValidatedLedger();
         if (!lpClosed && !app_.config().reporting())
-            lpClosed = m_ledgerMaster.getClosedLedger();
+            lpClosed = ledgerMaster.getClosedLedger();
 
         if (lpClosed)
         {
@@ -483,7 +514,8 @@ private:
     monitorThread()
     {
         auto endpoint = parseEndpoint(app_.config().DATAGRAM_MONITOR);
-        std::cout << "Datagram monitor, endpoint: " << app_.config().DATAGRAM_MONITOR << "\n";
+        std::cout << "Datagram monitor, endpoint: "
+                  << app_.config().DATAGRAM_MONITOR << "\n";
         int sock = createSocket(endpoint);
 
         while (running_)
@@ -536,5 +568,5 @@ public:
         stop();
     }
 };
-} // namespace ripple
+}  // namespace ripple
 #endif
