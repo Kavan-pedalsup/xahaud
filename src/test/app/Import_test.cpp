@@ -4673,17 +4673,21 @@ class Import_test : public beast::unit_test::suite
             // confirm signers set
             auto const [signers, signersSle] =
                 signersKeyAndSle(*env.current(), alice);
-            BEAST_EXPECT(signersSle && signersSle->isFieldPresent(sfSignerEntries));
+            BEAST_EXPECT(
+                signersSle && signersSle->isFieldPresent(sfSignerEntries));
             if (signersSle && signersSle->isFieldPresent(sfSignerEntries))
             {
                 auto const signerEntries =
                     signersSle->getFieldArray(sfSignerEntries);
                 BEAST_EXPECT(signerEntries.size() == 2);
-                BEAST_EXPECT(signerEntries[0u].getFieldU16(sfSignerWeight) == 1);
+                BEAST_EXPECT(
+                    signerEntries[0u].getFieldU16(sfSignerWeight) == 1);
                 BEAST_EXPECT(
                     signerEntries[0u].getAccountID(sfAccount) == carol.id());
-                BEAST_EXPECT(signerEntries[1u].getFieldU16(sfSignerWeight) == 1);
-                BEAST_EXPECT(signerEntries[1u].getAccountID(sfAccount) == bob.id());
+                BEAST_EXPECT(
+                    signerEntries[1u].getFieldU16(sfSignerWeight) == 1);
+                BEAST_EXPECT(
+                    signerEntries[1u].getAccountID(sfAccount) == bob.id());
             }
 
             // confirm multisign tx
