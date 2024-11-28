@@ -894,21 +894,21 @@ Import::preclaim(PreclaimContext const& ctx)
         // blackhole check
         do
         {
-        
-            // master key must be disabled to be regarded as blackholed
-            if (sle->getFlags() & lsfDisableMaster == 0)
+            // if master key is not set then it is not blackholed
+            if (!(sle->getFlags() & lsfDisableMaster))
                 break;
 
-            // if a regular key is set then it must be acc 0, 1, or 2 otherwise not blackholed
+            // if a regular key is set then it must be acc 0, 1, or 2 otherwise
+            // not blackholed
             if (sle->isFieldPresent(sfRegularKey))
             {
                 AccountID rk = sle->getAccountID(sfRegularKey);
-
                 static const AccountID ACCOUNT_ZERO(0);
                 static const AccountID ACCOUNT_ONE(1);
                 static const AccountID ACCOUNT_TWO(2);
 
-                if (rk != ACCOUNT_ZERO && rk != ACCOUNT_ONE && rk != ACCOUNT_TWO)
+                if (rk != ACCOUNT_ZERO && rk != ACCOUNT_ONE &&
+                    rk != ACCOUNT_TWO)
                     break;
             }
 
@@ -918,14 +918,12 @@ Import::preclaim(PreclaimContext const& ctx)
                 break;
 
             // execution to here means it's blackholed
-            JLOG(ctx.j.warn()) << "Import: during preclaim target account is blackholed "
-                << ctx.tx[sfAccount]
-                << ", bailing.";
+            JLOG(ctx.j.warn())
+                << "Import: during preclaim target account is blackholed "
+                << ctx.tx[sfAccount] << ", bailing.";
             return tefIMPORT_BLACKHOLED;
-        }
-        while (0);
+        } while (0);
     }
-
 
     if (sle && sle->isFieldPresent(sfImportSequence))
     {
@@ -1306,8 +1304,8 @@ Import::doApply()
             view().rules().enabled(featureXahauGenesis)
                 ? view().info().parentCloseTime.time_since_epoch().count()
                 : view().rules().enabled(featureDeletableAccounts)
-                    ? view().seq()
-                    : 1};
+                ? view().seq()
+                : 1};
 
         sle = std::make_shared<SLE>(keylet::account(id));
         sle->setAccountID(sfAccount, id);

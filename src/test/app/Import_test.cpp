@@ -2672,6 +2672,99 @@ class Import_test : public beast::unit_test::suite
             env(import::import(alice, tmpXpop), ter(temMALFORMED));
         }
 
+        // tefIMPORT_BLACKHOLED - AccountZero
+        {
+            test::jtx::Env env{
+                *this, network::makeNetworkVLConfig(21337, keys)};
+            auto const feeDrops = env.current()->fees().base;
+
+            auto const alice = Account("alice");
+            env.fund(XRP(1000), alice);
+            env.close();
+
+            // Set Regular Key
+            Json::Value jv;
+            jv[jss::Account] = alice.human();
+            const AccountID ACCOUNT_ZERO(0);
+            jv["RegularKey"] = to_string(ACCOUNT_ZERO);
+            jv[jss::TransactionType] = jss::SetRegularKey;
+            env(jv, alice);
+
+            // Disable Master Key
+            env(fset(alice, asfDisableMaster), sig(alice));
+            env.close();
+
+            // Import with Master Key
+            Json::Value tmpXpop = import::loadXpop(ImportTCAccountSet::w_seed);
+            env(import::import(alice, tmpXpop),
+                ter(tefIMPORT_BLACKHOLED),
+                fee(feeDrops * 10),
+                sig(alice));
+            env.close();
+        }
+
+        // tefIMPORT_BLACKHOLED - AccountOne
+        {
+            test::jtx::Env env{
+                *this, network::makeNetworkVLConfig(21337, keys)};
+            auto const feeDrops = env.current()->fees().base;
+
+            auto const alice = Account("alice");
+            env.fund(XRP(1000), alice);
+            env.close();
+
+            // Set Regular Key
+            Json::Value jv;
+            jv[jss::Account] = alice.human();
+            const AccountID ACCOUNT_ONE(1);
+            jv["RegularKey"] = to_string(ACCOUNT_ONE);
+            jv[jss::TransactionType] = jss::SetRegularKey;
+            env(jv, alice);
+
+            // Disable Master Key
+            env(fset(alice, asfDisableMaster), sig(alice));
+            env.close();
+
+            // Import with Master Key
+            Json::Value tmpXpop = import::loadXpop(ImportTCAccountSet::w_seed);
+            env(import::import(alice, tmpXpop),
+                ter(tefIMPORT_BLACKHOLED),
+                fee(feeDrops * 10),
+                sig(alice));
+            env.close();
+        }
+
+        // tefIMPORT_BLACKHOLED - AccountOne
+        {
+            test::jtx::Env env{
+                *this, network::makeNetworkVLConfig(21337, keys)};
+            auto const feeDrops = env.current()->fees().base;
+
+            auto const alice = Account("alice");
+            env.fund(XRP(1000), alice);
+            env.close();
+
+            // Set Regular Key
+            Json::Value jv;
+            jv[jss::Account] = alice.human();
+            const AccountID ACCOUNT_TWO(2);
+            jv["RegularKey"] = to_string(ACCOUNT_TWO);
+            jv[jss::TransactionType] = jss::SetRegularKey;
+            env(jv, alice);
+
+            // Disable Master Key
+            env(fset(alice, asfDisableMaster), sig(alice));
+            env.close();
+
+            // Import with Master Key
+            Json::Value tmpXpop = import::loadXpop(ImportTCAccountSet::w_seed);
+            env(import::import(alice, tmpXpop),
+                ter(tefIMPORT_BLACKHOLED),
+                fee(feeDrops * 10),
+                sig(alice));
+            env.close();
+        }
+
         // tefPAST_IMPORT_SEQ
         {
             test::jtx::Env env{
