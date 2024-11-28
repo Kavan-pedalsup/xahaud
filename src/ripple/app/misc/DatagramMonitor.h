@@ -48,13 +48,14 @@ struct LgrRange
     uint32_t end;
 };
 
+
 // Core server metrics in the fixed header
-struct ServerInfoHeader
-{
+struct ServerInfoHeader {
     uint32_t magic;               // Magic number to identify packet type
     uint32_t version;             // Protocol version number
     uint32_t network_id;          // Network ID from config
-    uint32_t padding1;            // Padding to maintain 8-byte alignment
+    uint16_t warning_flags;       // Reduced to 16 bits, plenty for flags
+    uint16_t padding1;            // Added to maintain alignment
     uint64_t timestamp;           // System time in microseconds
     uint64_t uptime;              // Server uptime in seconds
     uint64_t io_latency_us;       // IO latency in microseconds
@@ -62,7 +63,7 @@ struct ServerInfoHeader
     uint32_t peer_count;          // Number of connected peers
     uint32_t node_size;           // Size category (0=tiny through 4=huge)
     uint32_t server_state;        // Operating mode as enum
-    uint32_t amendment_blocked;   // Boolean flag (0 or 1)
+    uint32_t padding2;            // Added to maintain 8-byte alignment
     uint64_t fetch_pack_size;     // Size of fetch pack cache
     uint64_t proposer_count;      // Number of proposers in last close
     uint64_t converge_time_ms;    // Last convergence time in ms
@@ -72,8 +73,8 @@ struct ServerInfoHeader
     uint64_t reserve_inc;         // Reserve increment amount
     uint64_t ledger_seq;          // Latest ledger sequence
     uint8_t ledger_hash[32];      // Latest ledger hash
-    uint8_t node_public_key[32];  // Node's public key
-    uint32_t warning_flags;       // Bitfield of active warnings
+    uint8_t node_public_key[33];  // Node's public key (33 bytes)
+    uint8_t padding3[7];          // Padding to maintain 8-byte alignment
     uint32_t ledger_range_count;  // Number of range entries that follow
 
     // System metrics
@@ -90,8 +91,7 @@ struct ServerInfoHeader
     uint64_t io_wait_time;          // IO wait time in milliseconds
 
     // Network and disk rates
-    struct
-    {
+    struct {
         RateStats network_in;
         RateStats network_out;
         RateStats disk_read;
@@ -498,7 +498,7 @@ private:
 
         // Pack node public key
         auto const& nodeKey = app_.nodeIdentity().first;
-        std::memcpy(header->node_public_key, nodeKey.data(), 32);
+        std::memcpy(header->node_public_key, nodeKey.data(), 33);
 
         // Set the complete ledger count
         header->ledger_range_count = validRangeCount;

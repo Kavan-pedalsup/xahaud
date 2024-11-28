@@ -1531,13 +1531,8 @@ ApplicationImp::setup(boost::program_options::variables_map const& cmdline)
     // Datagram monitor if applicable
     if (!config_->standalone() && config_->DATAGRAM_MONITOR != "")
     {
-        std::cout << "\n\n!!!! Starting datagram monitor\n\n\n";
         datagram_monitor_ = std::make_unique<DatagramMonitor>(*this);
         datagram_monitor_->start();
-    }
-    else
-    {
-        std::cout << "\n\n!!!! NOT starting datagram monitor\n\n\n";
     }
 
     return true;
