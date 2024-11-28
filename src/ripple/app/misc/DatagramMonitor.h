@@ -229,7 +229,6 @@ private:
         int sock = socket(endpoint.is_ipv6 ? AF_INET6 : AF_INET, SOCK_DGRAM, 0);
         if (sock < 0)
             throw std::runtime_error("Failed to create socket");
-        std::cout << "DatagramMonitor createSocket = " << sock << "\n";
         return sock;
     }
 
@@ -261,8 +260,6 @@ private:
             addr_len = sizeof(struct sockaddr_in);
         }
 
-        std::cout << "Datagram monitor sending packet of size " << buffer.size()
-                  << "\n";
         sendto(
             sock,
             buffer.data(),
@@ -346,15 +343,17 @@ private:
 
         // Count only non-zero intervals and calculate total size needed
         size_t validRangeCount = 0;
-        for (auto const& interval : rangeSet) {
+        for (auto const& interval : rangeSet)
+        {
             // Skip intervals where both lower and upper are 0
-            if (interval.lower() != 0 || interval.upper() != 0) {
+            if (interval.lower() != 0 || interval.upper() != 0)
+            {
                 validRangeCount++;
             }
         }
 
-        size_t totalSize = sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange));
-
+        size_t totalSize =
+            sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange));
 
         // Allocate buffer and initialize header
         std::vector<uint8_t> buffer(totalSize);
@@ -505,11 +504,14 @@ private:
         header->ledger_range_count = validRangeCount;
 
         // Append only non-zero ranges after the header
-        auto* rangeData = reinterpret_cast<LgrRange*>(buffer.data() + sizeof(ServerInfoHeader));
+        auto* rangeData = reinterpret_cast<LgrRange*>(
+            buffer.data() + sizeof(ServerInfoHeader));
         size_t i = 0;
-        for (auto const& interval : rangeSet) {
+        for (auto const& interval : rangeSet)
+        {
             // Only pack non-zero ranges
-            if (interval.lower() != 0 || interval.upper() != 0) {
+            if (interval.lower() != 0 || interval.upper() != 0)
+            {
                 rangeData[i].start = interval.lower();
                 rangeData[i].end = interval.upper();
                 ++i;
@@ -522,8 +524,6 @@ private:
     monitorThread()
     {
         auto endpoint = parseEndpoint(app_.config().DATAGRAM_MONITOR);
-        std::cout << "Datagram monitor, endpoint: "
-                  << app_.config().DATAGRAM_MONITOR << "\n";
         int sock = createSocket(endpoint);
 
         while (running_)
@@ -533,7 +533,6 @@ private:
                 auto info = generateServerInfo();
                 sendPacket(sock, endpoint, info);
                 std::this_thread::sleep_for(std::chrono::seconds(1));
-                std::cout << "Sending datagram monitor packet\n";
             }
             catch (const std::exception& e)
             {
