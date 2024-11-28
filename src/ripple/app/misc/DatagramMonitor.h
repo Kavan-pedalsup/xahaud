@@ -74,7 +74,7 @@ struct ServerInfoHeader
     uint8_t ledger_hash[32];      // Latest ledger hash
     uint8_t node_public_key[32];  // Node's public key
     uint32_t warning_flags;       // Bitfield of active warnings
-    uint32_t complete_ledger_count;  // Number of range entries that follow
+    uint32_t ledger_range_count;  // Number of range entries that follow
 
     // System metrics
     uint64_t process_memory_pages;  // Process memory usage in pages
@@ -344,10 +344,17 @@ private:
         auto currentMetrics = collectSystemMetrics();
         metrics_tracker_.addSample(currentMetrics);
 
-        // Count the intervals and calculate total size needed
-        size_t rangeCount = rangeSet.size();
-        size_t totalSize =
-            sizeof(ServerInfoHeader) + (rangeCount * sizeof(LgrRange));
+        // Count only non-zero intervals and calculate total size needed
+        size_t validRangeCount = 0;
+        for (auto const& interval : rangeSet) {
+            // Skip intervals where both lower and upper are 0
+            if (interval.lower() != 0 || interval.upper() != 0) {
+                validRangeCount++;
+            }
+        }
+
+        size_t totalSize = sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange));
+
 
         // Allocate buffer and initialize header
         std::vector<uint8_t> buffer(totalSize);
@@ -495,17 +502,18 @@ private:
         std::memcpy(header->node_public_key, nodeKey.data(), 32);
 
         // Set the complete ledger count
-        header->complete_ledger_count = rangeCount;
+        header->ledger_range_count = validRangeCount;
 
-        // Append the ranges after the header
-        auto* rangeData = reinterpret_cast<LgrRange*>(
-            buffer.data() + sizeof(ServerInfoHeader));
+        // Append only non-zero ranges after the header
+        auto* rangeData = reinterpret_cast<LgrRange*>(buffer.data() + sizeof(ServerInfoHeader));
         size_t i = 0;
-        for (auto const& interval : rangeSet)
-        {
-            rangeData[i].start = interval.lower();
-            rangeData[i].end = interval.upper();
-            ++i;
+        for (auto const& interval : rangeSet) {
+            // Only pack non-zero ranges
+            if (interval.lower() != 0 || interval.upper() != 0) {
+                rangeData[i].start = interval.lower();
+                rangeData[i].end = interval.upper();
+                ++i;
+            }
         }
 
         return buffer;
