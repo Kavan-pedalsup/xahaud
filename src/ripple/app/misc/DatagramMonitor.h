@@ -56,9 +56,9 @@ struct LgrRange
     uint32_t end;
 };
 
-
 // Core server metrics in the fixed header
-struct ServerInfoHeader {
+struct ServerInfoHeader
+{
     uint32_t magic;               // Magic number to identify packet type
     uint32_t version;             // Protocol version number
     uint32_t network_id;          // Network ID from config
@@ -99,7 +99,8 @@ struct ServerInfoHeader {
     uint64_t io_wait_time;          // IO wait time in milliseconds
 
     // Network and disk rates
-    struct {
+    struct
+    {
         MetricRates network_in;
         MetricRates network_out;
         MetricRates disk_read;
@@ -137,23 +138,39 @@ private:
     calculateRate(
         const SystemMetrics& current,
         const std::vector<SystemMetrics>& samples,
-        size_t window_size,
-        double time_period_seconds,
+        size_t current_index,
+        size_t max_samples,
+        bool is_24h_window,
         std::function<uint64_t(const SystemMetrics&)> metric_getter)
     {
-        if (window_size == 0)
+        if (current_index == 0)
             return 0.0;
 
-        auto oldest = samples[window_size - 1];
-        double elapsed = (current.timestamp - oldest.timestamp) / 1000000.0;  // Convert microseconds to seconds
+        // For 24h window, we're sampling every minute instead of every second
+        size_t actual_index = std::min(current_index, max_samples);
+        size_t oldest_index = (current_index - actual_index) % max_samples;
+
+        const auto& oldest = samples[oldest_index];
+        double elapsed = (current.timestamp - oldest.timestamp) /
+            1000000.0;  // Convert microseconds to seconds
+
         if (elapsed <= 0)
             return 0.0;
 
+        // For network stats
         uint64_t current_value = metric_getter(current);
         uint64_t oldest_value = metric_getter(oldest);
-        uint64_t diff = current_value - oldest_value;
 
-        return static_cast<double>(diff) / elapsed;
+        // Handle counter wraparound
+        uint64_t diff = (current_value >= oldest_value)
+            ? (current_value - oldest_value)
+            : (std::numeric_limits<uint64_t>::max() - oldest_value +
+               current_value + 1);
+
+        // For 24h window, we need to account for minute-based sampling
+        double time_factor = is_24h_window ? 60.0 : 1.0;
+
+        return (static_cast<double>(diff) / elapsed) * time_factor;
     }
 
     MetricRates
@@ -162,15 +179,18 @@ private:
         std::function<uint64_t(const SystemMetrics&)> metric_getter)
     {
         MetricRates rates;
-        rates.rate_1m = calculateRate(current, samples_1m, std::min(index_1m, SAMPLES_1M), 60, metric_getter);
-        rates.rate_5m = calculateRate(current, samples_5m, std::min(index_5m, SAMPLES_5M), 300, metric_getter);
-        rates.rate_1h = calculateRate(current, samples_1h, std::min(index_1h, SAMPLES_1H), 3600, metric_getter);
-        rates.rate_24h = calculateRate(current, samples_24h, std::min(index_24h, SAMPLES_24H), 86400, metric_getter);
+        rates.rate_1m = calculateRate(
+            current, samples_1m, index_1m, SAMPLES_1M, false, metric_getter);
+        rates.rate_5m = calculateRate(
+            current, samples_5m, index_5m, SAMPLES_5M, false, metric_getter);
+        rates.rate_1h = calculateRate(
+            current, samples_1h, index_1h, SAMPLES_1H, false, metric_getter);
+        rates.rate_24h = calculateRate(
+            current, samples_24h, index_24h, SAMPLES_24H, true, metric_getter);
         return rates;
     }
-    
-public:
 
+public:
     void
     addSample(const SystemMetrics& metrics)
     {
@@ -197,16 +217,18 @@ public:
     getRates(const SystemMetrics& current)
     {
         AllRates rates;
-        rates.network_in = calculateMetricRates(current, 
-            [](const SystemMetrics& m) { return m.network_bytes_in; });
-        rates.network_out = calculateMetricRates(current, 
+        rates.network_in = calculateMetricRates(
+            current, [](const SystemMetrics& m) { return m.network_bytes_in; });
+        rates.network_out = calculateMetricRates(
+            current,
             [](const SystemMetrics& m) { return m.network_bytes_out; });
-        rates.disk_read = calculateMetricRates(current, 
-            [](const SystemMetrics& m) { return m.disk_bytes_read; });
-        rates.disk_write = calculateMetricRates(current, 
+        rates.disk_read = calculateMetricRates(
+            current, [](const SystemMetrics& m) { return m.disk_bytes_read; });
+        rates.disk_write = calculateMetricRates(
+            current,
             [](const SystemMetrics& m) { return m.disk_bytes_written; });
         return rates;
-    }    
+    }
 };
 
 class DatagramMonitor
