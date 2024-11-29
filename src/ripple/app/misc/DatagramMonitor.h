@@ -33,12 +33,20 @@ constexpr uint32_t WARNING_AMENDMENT_WARNED = 1 << 2;
 constexpr uint32_t WARNING_NOT_SYNCED = 1 << 3;
 
 // Time window statistics for rates
-struct RateStats
+struct MetricRates
 {
     double rate_1m;   // Average rate over last minute
     double rate_5m;   // Average rate over last 5 minutes
     double rate_1h;   // Average rate over last hour
     double rate_24h;  // Average rate over last 24 hours
+};
+
+struct AllRates
+{
+    MetricRates network_in;
+    MetricRates network_out;
+    MetricRates disk_read;
+    MetricRates disk_write;
 };
 
 // Structure to represent a ledger sequence range
@@ -92,10 +100,10 @@ struct ServerInfoHeader {
 
     // Network and disk rates
     struct {
-        RateStats network_in;
-        RateStats network_out;
-        RateStats disk_read;
-        RateStats disk_write;
+        MetricRates network_in;
+        MetricRates network_out;
+        MetricRates disk_read;
+        MetricRates disk_write;
     } rates;
 };
 
@@ -124,40 +132,45 @@ private:
 
     size_t index_1m{0}, index_5m{0}, index_1h{0}, index_24h{0};
     std::chrono::system_clock::time_point last_24h_sample{};
-    RateStats
-    calculateRates(
+
+    double
+    calculateRate(
         const SystemMetrics& current,
         const std::vector<SystemMetrics>& samples,
         size_t window_size,
-        double time_period_seconds)
+        double time_period_seconds,
+        std::function<uint64_t(const SystemMetrics&)> metric_getter)
     {
-        RateStats stats{0.0, 0.0, 0.0, 0.0};
         if (window_size == 0)
-            return stats;
+            return 0.0;
 
         auto oldest = samples[window_size - 1];
-        double elapsed = (current.timestamp - oldest.timestamp) /
-            1000000.0;  // Convert microseconds to seconds
+        double elapsed = (current.timestamp - oldest.timestamp) / 1000000.0;  // Convert microseconds to seconds
         if (elapsed <= 0)
-            return stats;
+            return 0.0;
 
-        uint64_t net_in_diff =
-            current.network_bytes_in - oldest.network_bytes_in;
-        uint64_t net_out_diff =
-            current.network_bytes_out - oldest.network_bytes_out;
-        uint64_t disk_read_diff =
-            current.disk_bytes_read - oldest.disk_bytes_read;
-        uint64_t disk_write_diff =
-            current.disk_bytes_written - oldest.disk_bytes_written;
+        uint64_t current_value = metric_getter(current);
+        uint64_t oldest_value = metric_getter(oldest);
+        uint64_t diff = current_value - oldest_value;
 
-        return {
-            static_cast<double>(net_in_diff) / elapsed,
-            static_cast<double>(net_out_diff) / elapsed,
-            static_cast<double>(disk_read_diff) / elapsed,
-            static_cast<double>(disk_write_diff) / elapsed};
+        return static_cast<double>(diff) / elapsed;
     }
 
+    MetricRates
+    calculateMetricRates(
+        const SystemMetrics& current,
+        std::function<uint64_t(const SystemMetrics&)> metric_getter)
+    {
+        MetricRates rates;
+        rates.rate_1m = calculateRate(current, samples_1m, std::min(index_1m, SAMPLES_1M), 60, metric_getter);
+        rates.rate_5m = calculateRate(current, samples_5m, std::min(index_5m, SAMPLES_5M), 300, metric_getter);
+        rates.rate_1h = calculateRate(current, samples_1h, std::min(index_1h, SAMPLES_1H), 3600, metric_getter);
+        rates.rate_24h = calculateRate(current, samples_24h, std::min(index_24h, SAMPLES_24H), 86400, metric_getter);
+        return rates;
+    }
+    
 public:
+
     void
     addSample(const SystemMetrics& metrics)
     {
@@ -180,19 +193,20 @@ public:
         }
     }
 
-    std::tuple<RateStats, RateStats, RateStats, RateStats>
+    AllRates
     getRates(const SystemMetrics& current)
     {
-        return {
-            calculateRates(
-                current, samples_1m, std::min(index_1m, SAMPLES_1M), 60),
-            calculateRates(
-                current, samples_5m, std::min(index_5m, SAMPLES_5M), 300),
-            calculateRates(
-                current, samples_1h, std::min(index_1h, SAMPLES_1H), 3600),
-            calculateRates(
-                current, samples_24h, std::min(index_24h, SAMPLES_24H), 86400)};
-    }
+        AllRates rates;
+        rates.network_in = calculateMetricRates(current, 
+            [](const SystemMetrics& m) { return m.network_bytes_in; });
+        rates.network_out = calculateMetricRates(current, 
+            [](const SystemMetrics& m) { return m.network_bytes_out; });
+        rates.disk_read = calculateMetricRates(current, 
+            [](const SystemMetrics& m) { return m.disk_bytes_read; });
+        rates.disk_write = calculateMetricRates(current, 
+            [](const SystemMetrics& m) { return m.disk_bytes_written; });
+        return rates;
+    }    
 };
 
 class DatagramMonitor
@@ -475,12 +489,11 @@ private:
         }
 
         // Get rate statistics
-        auto [rates_1m, rates_5m, rates_1h, rates_24h] =
-            metrics_tracker_.getRates(currentMetrics);
-        header->rates.network_in = rates_1m;
-        header->rates.network_out = rates_5m;
-        header->rates.disk_read = rates_1h;
-        header->rates.disk_write = rates_24h;
+        auto rates = metrics_tracker_.getRates(currentMetrics);
+        header->rates.network_in = rates.network_in;
+        header->rates.network_out = rates.network_out;
+        header->rates.disk_read = rates.disk_read;
+        header->rates.disk_write = rates.disk_write;
 
         // Pack ledger info and ranges
         auto lpClosed = ledgerMaster.getValidatedLedger();
