@@ -19,6 +19,8 @@
 #include <sys/sysinfo.h>
 #include <thread>
 #include <vector>
+#include <ripple/app/misc/ValidatorList.h>
+#include <ripple/app/misc/LoadFeeTrack.h>
 
 namespace ripple {
 
@@ -57,33 +59,37 @@ struct LgrRange
 };
 
 // Core server metrics in the fixed header
-struct ServerInfoHeader
-{
+struct ServerInfoHeader {
+    // Fixed header fields come first 
     uint32_t magic;               // Magic number to identify packet type
     uint32_t version;             // Protocol version number
     uint32_t network_id;          // Network ID from config
-    uint16_t warning_flags;       // Reduced to 16 bits, plenty for flags
-    uint16_t padding1;            // Added to maintain alignment
-    uint64_t timestamp;           // System time in microseconds
-    uint64_t uptime;              // Server uptime in seconds
-    uint64_t io_latency_us;       // IO latency in microseconds
-    uint64_t validation_quorum;   // Validation quorum count
+    uint32_t server_state;        // Operating mode as enum
     uint32_t peer_count;          // Number of connected peers
     uint32_t node_size;           // Size category (0=tiny through 4=huge)
-    uint32_t server_state;        // Operating mode as enum
-    uint32_t padding2;            // Added to maintain 8-byte alignment
+    uint32_t cpu_cores;           // CPU core count
+    uint32_t ledger_range_count;  // Number of range entries
+    uint16_t warning_flags;       // Warning flags (reduced size)
+    uint16_t padding1;            // Added to maintain alignment
+
+    // 64-bit metrics
+    uint64_t timestamp;           // System time in microseconds
+    uint64_t uptime;             // Server uptime in seconds 
+    uint64_t io_latency_us;      // IO latency in microseconds
+    uint64_t validation_quorum;   // Validation quorum count
     uint64_t fetch_pack_size;     // Size of fetch pack cache
     uint64_t proposer_count;      // Number of proposers in last close
     uint64_t converge_time_ms;    // Last convergence time in ms
-    uint64_t load_factor;         // Load factor (scaled by 1M for fixed point)
-    uint64_t load_base;           // Load base value
-    uint64_t reserve_base;        // Reserve base amount
-    uint64_t reserve_inc;         // Reserve increment amount
-    uint64_t ledger_seq;          // Latest ledger sequence
+    uint64_t load_factor;         // Load factor (scaled by 1M)
+    uint64_t load_base;          // Load base value
+    uint64_t reserve_base;       // Reserve base amount
+    uint64_t reserve_inc;        // Reserve increment amount
+    uint64_t ledger_seq;         // Latest ledger sequence
+
+    // Fixed-size byte arrays
     uint8_t ledger_hash[32];      // Latest ledger hash
-    uint8_t node_public_key[33];  // Node's public key (33 bytes)
-    uint8_t padding3[7];          // Padding to maintain 8-byte alignment
-    uint32_t ledger_range_count;  // Number of range entries that follow
+    uint8_t node_public_key[33];  // Node's public key
+    uint8_t padding2[7];          // Padding to maintain 8-byte alignment
 
     // System metrics
     uint64_t process_memory_pages;  // Process memory usage in pages
@@ -93,16 +99,19 @@ struct ServerInfoHeader
     uint64_t system_disk_total;     // Total disk space in bytes
     uint64_t system_disk_free;      // Free disk space in bytes
     uint64_t system_disk_used;      // Used disk space in bytes
-    double load_avg_1min;           // 1 minute load average
-    double load_avg_5min;           // 5 minute load average
-    double load_avg_15min;          // 15 minute load average
     uint64_t io_wait_time;          // IO wait time in milliseconds
-    uint32_t cpu_cores;
-    uint32_t padding4;
+    double load_avg_1min;           // 1 minute load average
+    double load_avg_5min;           // 5 minute load average  
+    double load_avg_15min;          // 15 minute load average
 
-    // Network and disk rates
-    struct
-    {
+    // State transition metrics
+    uint32_t state_transitions[5];   // Count for each operating mode
+    uint32_t padding3;              // Maintain alignment
+    uint64_t state_durations[5];    // Duration in each mode
+    uint64_t initial_sync_us;       // Initial sync duration
+
+    // Network and disk rates remain unchanged
+    struct {
         MetricRates network_in;
         MetricRates network_out;
         MetricRates disk_read;
@@ -529,6 +538,18 @@ private:
             header->peer_count = app_.overlay().size();
 
         header->node_size = app_.config().NODE_SIZE;
+
+        // Get state accounting data
+        auto const [counters, mode, start, initialSync] = 
+            app_.getOPs().getStateAccountingData();
+
+        // Pack state metrics into header 
+        for (size_t i = 0; i < 5; ++i) {
+            header->state_transitions[i] = counters[i].transitions;
+            header->state_durations[i] = counters[i].dur.count();
+        }
+        header->initial_sync_us = initialSync;
+
 
         // Pack warning flags
         if (ops.isAmendmentBlocked())
