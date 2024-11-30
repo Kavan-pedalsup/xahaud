@@ -21,6 +21,20 @@
 #include <sys/sysinfo.h>
 #include <thread>
 #include <vector>
+#include <ripple/app/ledger/AcceptedLedger.h>
+#include <ripple/app/ledger/InboundLedgers.h>
+#include <ripple/app/ledger/LedgerMaster.h>
+#include <ripple/app/main/Application.h>
+#include <ripple/app/misc/NetworkOPs.h>
+#include <ripple/app/rdb/backend/SQLiteDatabase.h>
+#include <ripple/basics/UptimeClock.h>
+#include <ripple/ledger/CachedSLEs.h>
+#include <ripple/nodestore/Database.h>
+#include <ripple/nodestore/DatabaseShard.h>
+#include <ripple/protocol/ErrorCodes.h>
+#include <ripple/protocol/jss.h>
+#include <ripple/shamap/ShardFamily.h>
+#include <ripple/protocol/BuildInfo.h>
 
 namespace ripple {
 
@@ -58,6 +72,50 @@ struct [[gnu::packed]] LgrRange
     uint32_t end;
 };
 
+// Map is returned separately since variable-length data
+// shouldn't be included in network structures
+using ObjectCountMap = std::vector<std::pair<std::basic_string<char>, int>>;
+
+struct [[gnu::packed]] DebugCounters {
+    // Database metrics
+    std::uint64_t dbKBTotal{0};
+    std::uint64_t dbKBLedger{0};
+    std::uint64_t dbKBTransaction{0};
+    std::uint64_t localTxCount{0};
+
+    // Basic metrics
+    std::uint32_t writeLoad{0};
+    std::int32_t historicalPerMinute{0};
+
+    // Cache metrics
+    std::uint32_t sleHitRate{0};      // Stored as fixed point, multiplied by 1000
+    std::uint32_t ledgerHitRate{0};   // Stored as fixed point, multiplied by 1000
+    std::uint32_t alSize{0};
+    std::uint32_t alHitRate{0};       // Stored as fixed point, multiplied by 1000
+    std::int32_t fullbelowSize{0};
+    std::uint32_t treenodeCacheSize{0};
+    std::uint32_t treenodeTrackSize{0};
+
+    // Shard metrics
+    std::int32_t shardFullbelowSize{0};
+    std::uint32_t shardTreenodeCacheSize{0};
+    std::uint32_t shardTreenodeTrackSize{0};
+    std::uint32_t shardWriteLoad{0};
+    std::uint64_t shardNodeWrites{0};
+    std::uint64_t shardNodeReadsTotal{0};
+    std::uint64_t shardNodeReadsHit{0};
+    std::uint64_t shardNodeWrittenBytes{0};
+    std::uint64_t shardNodeReadBytes{0};
+
+    // Node store metrics (when not using shards)
+    std::uint64_t nodeWriteCount{0};
+    std::uint64_t nodeWriteSize{0};
+    std::uint64_t nodeFetchCount{0};
+    std::uint64_t nodeFetchHitCount{0};
+    std::uint64_t nodeFetchSize{0};
+};
+
+
 // Core server metrics in the fixed header
 struct [[gnu::packed]] ServerInfoHeader
 {
@@ -92,6 +150,7 @@ struct [[gnu::packed]] ServerInfoHeader
     uint8_t ledger_hash[32];      // Latest ledger hash
     uint8_t node_public_key[33];  // Node's public key
     uint8_t padding2[7];          // Padding to maintain 8-byte alignment
+    uint8_t version_string[32];
 
     // System metrics
     uint64_t process_memory_pages;  // Process memory usage in pages
@@ -119,6 +178,8 @@ struct [[gnu::packed]] ServerInfoHeader
         MetricRates disk_read;
         MetricRates disk_write;
     } rates;
+
+    DebugCounters dbg_counters;
 };
 
 // System metrics collected for rate calculations
@@ -343,6 +404,72 @@ private:
             addr_len);
     }
 
+    // Returns both the counters and object count map separately
+    std::pair<DebugCounters, ObjectCountMap>
+    getDebugCounters()
+    {
+        DebugCounters counters;
+        ObjectCountMap objectCounts = CountedObjects::getInstance().getCounts(1);
+        
+        // Database metrics if app_licable
+        if (!app_.config().reporting() && app_.config().useTxTables())
+        {
+            auto const db = dynamic_cast<SQLiteDatabase*>(&app_.getRelationalDatabase());
+            if (!db)
+                Throw<std::runtime_error>("Failed to get relational database");
+            
+            if (auto dbKB = db->getKBUsedAll())
+                counters.dbKBTotal = dbKB;
+            if (auto dbKB = db->getKBUsedLedger())
+                counters.dbKBLedger = dbKB;
+            if (auto dbKB = db->getKBUsedTransaction())
+                counters.dbKBTransaction = dbKB;
+            if (auto count = app_.getOPs().getLocalTxCount())
+                counters.localTxCount = count;
+        }
+
+        // Basic metrics
+        counters.writeLoad = app_.getNodeStore().getWriteLoad();
+        counters.historicalPerMinute = static_cast<std::int32_t>(app_.getInboundLedgers().fetchRate());
+
+        // Cache metrics - convert floating point rates to fixed point
+        counters.sleHitRate = static_cast<std::uint32_t>(app_.cachedSLEs().rate() * 1000);
+        counters.ledgerHitRate = static_cast<std::uint32_t>(app_.getLedgerMaster().getCacheHitRate() * 1000);
+        counters.alSize = app_.getAcceptedLedgerCache().size();
+        counters.alHitRate = static_cast<std::uint32_t>(app_.getAcceptedLedgerCache().getHitRate() * 1000);
+        counters.fullbelowSize = static_cast<std::int32_t>(app_.getNodeFamily().getFullBelowCache(0)->size());
+        counters.treenodeCacheSize = app_.getNodeFamily().getTreeNodeCache(0)->getCacheSize();
+        counters.treenodeTrackSize = app_.getNodeFamily().getTreeNodeCache(0)->getTrackSize();
+
+        // Handle shard metrics if available
+        if (auto shardStore = app_.getShardStore())
+        {
+            auto shardFamily = dynamic_cast<ShardFamily*>(app_.getShardFamily());
+            auto const [cacheSz, trackSz] = shardFamily->getTreeNodeCacheSize();
+            
+            counters.shardFullbelowSize = shardFamily->getFullBelowCacheSize();
+            counters.shardTreenodeCacheSize = cacheSz;
+            counters.shardTreenodeTrackSize = trackSz;
+            counters.shardWriteLoad = shardStore->getWriteLoad();
+            counters.shardNodeWrites = shardStore->getStoreCount();
+            counters.shardNodeReadsTotal = shardStore->getFetchTotalCount();
+            counters.shardNodeReadsHit = shardStore->getFetchHitCount();
+            counters.shardNodeWrittenBytes = shardStore->getStoreSize();
+            counters.shardNodeReadBytes = shardStore->getFetchSize();
+        }
+        else
+        {
+            // Get regular node store metrics
+            counters.nodeWriteCount = app_.getNodeStore().getStoreCount();
+            counters.nodeWriteSize = app_.getNodeStore().getStoreSize();
+            counters.nodeFetchCount = app_.getNodeStore().getFetchTotalCount();
+            counters.nodeFetchHitCount = app_.getNodeStore().getFetchHitCount();
+            counters.nodeFetchSize = app_.getNodeStore().getFetchSize();
+        }
+
+        return {counters, objectCounts};
+    }
+
     uint32_t
     getPhysicalCPUCount()
     {
@@ -500,6 +627,8 @@ private:
     {
         auto& ops = app_.getOPs();
 
+        auto [dbg_counters, obj_count_map] = getDebugCounters();
+
         // Get the RangeSet directly
         auto rangeSet = app_.getLedgerMaster().getCompleteLedgersRangeSet();
         auto currentMetrics = collectSystemMetrics();
@@ -517,7 +646,7 @@ private:
         }
 
         size_t totalSize =
-            sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange));
+            sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange)) + (28 * obj_count_map.size());
 
         // Allocate buffer and initialize header
         std::vector<uint8_t> buffer(totalSize);
@@ -683,6 +812,13 @@ private:
         auto const& nodeKey = app_.nodeIdentity().first;
         std::memcpy(header->node_public_key, nodeKey.data(), 33);
 
+        // Pack version string
+        memset(&header->version_string, 0, 32);
+        memcpy(&header->version_string, BuildInfo::getVersionString().c_str(),
+                BuildInfo::getVersionString().size() > 32 ? 32 : BuildInfo::getVersionString().size());
+
+        header->dbg_counters = dbg_counters;
+
         // Set the complete ledger count
         header->ledger_range_count = validRangeCount;
 
@@ -699,6 +835,17 @@ private:
                 rangeData[i].end = interval.upper();
                 ++i;
             }
+        }
+
+        uint8_t* end_of_ranges = buffer.data() + sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange));
+
+        memset(end_of_ranges, 0, 28 * obj_count_map.size());
+
+        uint8_t* ptr = end_of_ranges;
+        for (auto& [name, val] : obj_count_map)
+        {
+            memcpy(ptr, name.c_str(), name.size() > 20 ? 20 : name.size()); ptr += 20;
+            *reinterpret_cast<uint64_t*>(ptr) = val;
         }
 
         return buffer;
