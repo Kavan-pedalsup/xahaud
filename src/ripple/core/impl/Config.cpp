@@ -509,7 +509,7 @@ Config::loadFromString(std::string const& fileContents)
 
     if (getSingleSection(secConfig, SECTION_DATAGRAM_MONITOR, strTemp, j_))
     {
-        std::vector<std::string> vecTemp {strTemp};
+        std::vector<std::string> vecTemp{strTemp};
         replaceColons(vecTemp);
         DATAGRAM_MONITOR = vecTemp[0];
     }
