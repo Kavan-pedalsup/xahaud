@@ -2,12 +2,12 @@
 
 namespace ripple {
 
-void 
+void
 StateAccounting::mode(OperatingMode om)
 {
+    std::lock_guard lock(mutex_);
     auto now = std::chrono::steady_clock::now();
 
-    std::lock_guard lock(mutex_);
     ++counters_[static_cast<std::size_t>(om)].transitions;
     if (om == OperatingMode::FULL &&
         counters_[static_cast<std::size_t>(om)].transitions == 1)
@@ -23,7 +23,7 @@ StateAccounting::mode(OperatingMode om)
     start_ = now;
 }
 
-void 
+void
 StateAccounting::json(Json::Value& obj)
 {
     auto [counters, mode, start, initialSync] = getCounterData();
@@ -46,4 +46,4 @@ StateAccounting::json(Json::Value& obj)
         obj[jss::initial_sync_duration_us] = std::to_string(initialSync);
 }
 
-} // ripple
+}  // namespace ripple

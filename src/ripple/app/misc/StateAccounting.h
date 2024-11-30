@@ -1,10 +1,10 @@
 #ifndef RIPPLE_APP_MAIN_STATEACCOUNTING_H_INCLUDED
 #define RIPPLE_APP_MAIN_STATEACCOUNTING_H_INCLUDED
 
-#include <ripple/json/json_value.h>
-#include <ripple/beast/utility/Journal.h>
-#include <ripple/protocol/jss.h>
 #include <ripple/basics/chrono.h>
+#include <ripple/beast/utility/Journal.h>
+#include <ripple/json/json_value.h>
+#include <ripple/protocol/jss.h>
 #include <array>
 #include <mutex>
 
@@ -39,20 +39,15 @@ enum class OperatingMode {
     FULL = 4           //!< we have the ledger and can even validate
 };
 
-
 class StateAccounting
 {
-    public:
-    constexpr static
-    std::array<Json::StaticString const, 5> const
-        states_ = 
-        {
-            {Json::StaticString("disconnected"),
-             Json::StaticString("connected"),
-             Json::StaticString("syncing"),
-             Json::StaticString("tracking"),
-             Json::StaticString("full")}};
-
+public:
+    constexpr static std::array<Json::StaticString const, 5> const states_ = {
+        {Json::StaticString("disconnected"),
+         Json::StaticString("connected"),
+         Json::StaticString("syncing"),
+         Json::StaticString("tracking"),
+         Json::StaticString("full")}};
 
     struct Counters
     {
@@ -62,27 +57,29 @@ class StateAccounting
         std::chrono::microseconds dur = std::chrono::microseconds(0);
     };
 
-    private:
-
+private:
     OperatingMode mode_;
     std::array<Counters, 5> counters_;
     mutable std::mutex mutex_;
-    std::chrono::steady_clock::time_point start_;
-    std::chrono::steady_clock::time_point const processStart_;
+    std::chrono::steady_clock::time_point start_ =
+        std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point const processStart_ = start_;
     std::uint64_t initialSyncUs_;
 
 public:
     explicit StateAccounting()
     {
         counters_[static_cast<std::size_t>(OperatingMode::DISCONNECTED)]
-            .transitions = 1;        
+            .transitions = 1;
     }
 
     //! Record state transition. Update duration spent in previous state.
-    void mode(OperatingMode om);
+    void
+    mode(OperatingMode om);
 
     //! Output state counters in JSON format.
-    void json(Json::Value& obj);
+    void
+    json(Json::Value& obj);
 
     using CounterData = std::tuple<
         decltype(counters_),
@@ -97,6 +94,6 @@ public:
     }
 };
 
-} // ripple
+}  // namespace ripple
 
 #endif
