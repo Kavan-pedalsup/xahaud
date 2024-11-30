@@ -281,6 +281,9 @@ Config::setupControl(bool bQuiet, bool bSilent, bool bStandalone)
     // RAM and CPU resources. We default to "tiny" for standalone mode.
     if (!bStandalone)
     {
+        NODE_SIZE = 4;
+        return;
+
         // First, check against 'minimum' RAM requirements per node size:
         auto const& threshold =
             sizedItems[std::underlying_type_t<SizedItem>(SizedItem::ramSizeGB)];

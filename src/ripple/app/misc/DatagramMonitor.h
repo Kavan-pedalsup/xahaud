@@ -69,8 +69,8 @@ struct ServerInfoHeader {
     uint32_t node_size;           // Size category (0=tiny through 4=huge)
     uint32_t cpu_cores;           // CPU core count
     uint32_t ledger_range_count;  // Number of range entries
-    uint16_t warning_flags;       // Warning flags (reduced size)
-    uint16_t padding1;            // Added to maintain alignment
+    uint32_t warning_flags;       // Warning flags (reduced size)
+    uint32_t padding_1;           // padding for alignment
 
     // 64-bit metrics
     uint64_t timestamp;           // System time in microseconds
