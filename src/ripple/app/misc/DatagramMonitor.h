@@ -97,6 +97,8 @@ struct ServerInfoHeader
     double load_avg_5min;           // 5 minute load average
     double load_avg_15min;          // 15 minute load average
     uint64_t io_wait_time;          // IO wait time in milliseconds
+    uint32_t cpu_cores;
+    uint32_t padding4;
 
     // Network and disk rates
     struct
@@ -328,6 +330,38 @@ private:
             0,
             reinterpret_cast<struct sockaddr*>(&addr),
             addr_len);
+    }
+
+    uint32_t 
+    getPhysicalCPUCount() {
+        static uint32_t count = 0;
+        if (count > 0)
+            return count;
+
+        try {
+            std::ifstream cpuinfo("/proc/cpuinfo");
+            std::string line;
+            std::set<std::string> physical_ids;
+            std::string current_physical_id;
+            
+            while (std::getline(cpuinfo, line)) {
+                if (line.find("core id") != std::string::npos) {
+                    current_physical_id = line.substr(line.find(":") + 1);
+                    // Trim whitespace
+                    current_physical_id.erase(0, current_physical_id.find_first_not_of(" \t"));
+                    current_physical_id.erase(current_physical_id.find_last_not_of(" \t") + 1);
+                    physical_ids.insert(current_physical_id);
+                }
+            }
+            
+            count = physical_ids.size();
+        } catch (const std::exception& e) {
+            JLOG(app_.journal("DatagramMonitor").error())
+                << "Error getting CPU count: " << e.what();
+        }
+        
+        // Return at least 1 if we couldn't determine the count
+        return count > 0 ? count : (count=1);
     }
 
     SystemMetrics
@@ -584,6 +618,9 @@ private:
             header->system_disk_used =
                 header->system_disk_total - header->system_disk_free;
         }
+
+        // Get CPU core count
+        header->cpu_cores = getPhysicalCPUCount();
 
         // Get rate statistics
         auto rates = metrics_tracker_.getRates(currentMetrics);
