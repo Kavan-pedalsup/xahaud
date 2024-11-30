@@ -143,21 +143,48 @@ private:
         bool is_24h_window,
         std::function<uint64_t(const SystemMetrics&)> metric_getter)
     {
-        if (current_index == 0)
+        // If we don't have at least 2 samples, the rate is 0
+        if (current_index < 2)
+        {
             return 0.0;
+        }
 
-        // For 24h window, we're sampling every minute instead of every second
-        size_t actual_index = std::min(current_index, max_samples);
-        size_t oldest_index = (current_index - actual_index) % max_samples;
+        // Calculate time window based on the window type
+        uint64_t expected_window_micros;
+        if (is_24h_window)
+        {
+            expected_window_micros =
+                24ULL * 60ULL * 60ULL * 1000000ULL;  // 24 hours in microseconds
+        }
+        else
+        {
+            expected_window_micros = max_samples *
+                1000000ULL;  // window in seconds * 1,000,000 for microseconds
+        }
 
+        // For any window where we don't have full data, we should scale the
+        // rate based on the actual time we have data for
+        uint64_t actual_window_micros =
+            current.timestamp - samples[0].timestamp;
+        double window_scale = std::min(
+            1.0,
+            static_cast<double>(actual_window_micros) / expected_window_micros);
+
+        // Get the oldest valid sample
+        size_t oldest_index = (current_index >= max_samples)
+            ? ((current_index + 1) % max_samples)
+            : 0;
         const auto& oldest = samples[oldest_index];
-        double elapsed = (current.timestamp - oldest.timestamp) /
+
+        double elapsed = actual_window_micros /
             1000000.0;  // Convert microseconds to seconds
 
-        if (elapsed <= 0)
+        // Ensure we have a meaningful time difference
+        if (elapsed < 0.001)
+        {  // Less than 1ms difference
             return 0.0;
+        }
 
-        // For network stats
         uint64_t current_value = metric_getter(current);
         uint64_t oldest_value = metric_getter(oldest);
 
@@ -167,10 +194,8 @@ private:
             : (std::numeric_limits<uint64_t>::max() - oldest_value +
                current_value + 1);
 
-        // For 24h window, we need to account for minute-based sampling
-        double time_factor = is_24h_window ? 60.0 : 1.0;
-
-        return (static_cast<double>(diff) / elapsed) * time_factor;
+        // Calculate the rate and scale it based on our window coverage
+        return (static_cast<double>(diff) / elapsed) * window_scale;
     }
 
     MetricRates
@@ -308,65 +333,115 @@ private:
     SystemMetrics
     collectSystemMetrics()
     {
-        SystemMetrics metrics;
+        SystemMetrics metrics{};
         metrics.timestamp =
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch())
                 .count();
 
-        // Get network stats from /proc/net/dev
-        std::ifstream net_file("/proc/net/dev");
-        std::string line;
-        uint64_t total_bytes_in = 0, total_bytes_out = 0;
-        while (std::getline(net_file, line))
+        // Network stats collection
+        try
         {
-            if (line.find(':') != std::string::npos)
-            {
-                uint64_t bytes_in, bytes_out;
-                sscanf(
-                    line.c_str(),
-                    "%*[^:]: %lu %*u %*u %*u %*u %*u %*u %*u %lu",
-                    &bytes_in,
-                    &bytes_out);
-                total_bytes_in += bytes_in;
-                total_bytes_out += bytes_out;
-            }
-        }
-        metrics.network_bytes_in = total_bytes_in;
-        metrics.network_bytes_out = total_bytes_out;
+            std::ifstream net_file("/proc/net/dev");
+            std::string line;
+            uint64_t total_bytes_in = 0, total_bytes_out = 0;
 
-        // Get disk stats from /proc/diskstats
-        std::ifstream disk_file("/proc/diskstats");
-        uint64_t total_bytes_read = 0, total_bytes_written = 0;
-        while (std::getline(disk_file, line))
-        {
-            unsigned int major, minor;
-            char dev_name[32];
-            uint64_t reads, read_sectors, writes, write_sectors;
-            if (sscanf(
-                    line.c_str(),
-                    "%u %u %s %lu %*u %lu %*u %lu %*u %lu",
-                    &major,
-                    &minor,
-                    dev_name,
-                    &reads,
-                    &read_sectors,
-                    &writes,
-                    &write_sectors) == 7)
+            // Skip header lines
+            std::getline(net_file, line);  // Inter-|   Receive...
+            std::getline(net_file, line);  // face |bytes...
+
+            while (std::getline(net_file, line))
             {
-                // Skip partition entries and non-physical devices
-                if (major <= 0 || minor % 16 == 0)
-                    continue;
-                total_bytes_read +=
-                    read_sectors * 512;  // Sectors are 512 bytes
-                total_bytes_written += write_sectors * 512;
+                if (line.find(':') != std::string::npos)
+                {
+                    std::string interface = line.substr(0, line.find(':'));
+                    interface =
+                        interface.substr(interface.find_first_not_of(" \t"));
+                    interface = interface.substr(
+                        0, interface.find_last_not_of(" \t") + 1);
+
+                    // Skip loopback interface
+                    if (interface == "lo")
+                        continue;
+
+                    uint64_t bytes_in, bytes_out;
+                    std::istringstream iss(line.substr(line.find(':') + 1));
+                    iss >> bytes_in;  // First field after : is bytes_in
+                    for (int i = 0; i < 8; ++i)
+                        iss >> std::ws;  // Skip 8 fields
+                    iss >> bytes_out;    // 9th field is bytes_out
+
+                    total_bytes_in += bytes_in;
+                    total_bytes_out += bytes_out;
+                }
             }
+            metrics.network_bytes_in = total_bytes_in;
+            metrics.network_bytes_out = total_bytes_out;
         }
-        metrics.disk_bytes_read = total_bytes_read;
-        metrics.disk_bytes_written = total_bytes_written;
+        catch (const std::exception& e)
+        {
+            JLOG(app_.journal("DatagramMonitor").error())
+                << "Error collecting network stats: " << e.what();
+        }
+
+        // Disk stats collection
+        try
+        {
+            std::ifstream disk_file("/proc/diskstats");
+            std::string line;
+            uint64_t total_bytes_read = 0, total_bytes_written = 0;
+
+            while (std::getline(disk_file, line))
+            {
+                unsigned int major, minor;
+                char dev_name[32];
+                uint64_t reads, read_sectors, writes, write_sectors;
+
+                if (sscanf(
+                        line.c_str(),
+                        "%u %u %31s %lu %*u %lu %*u %lu %*u %lu",
+                        &major,
+                        &minor,
+                        dev_name,
+                        &reads,
+                        &read_sectors,
+                        &writes,
+                        &write_sectors) == 7)
+                {
+                    // Only process physical devices
+                    std::string device_name(dev_name);
+                    if (device_name.substr(0, 3) == "dm-" ||
+                        device_name.substr(0, 4) == "loop" ||
+                        device_name.substr(0, 3) == "ram")
+                    {
+                        continue;
+                    }
+
+                    // Skip partitions (usually have a number at the end)
+                    if (std::isdigit(device_name.back()))
+                    {
+                        continue;
+                    }
+
+                    uint64_t bytes_read = read_sectors * 512;
+                    uint64_t bytes_written = write_sectors * 512;
+
+                    total_bytes_read += bytes_read;
+                    total_bytes_written += bytes_written;
+                }
+            }
+            metrics.disk_bytes_read = total_bytes_read;
+            metrics.disk_bytes_written = total_bytes_written;
+        }
+        catch (const std::exception& e)
+        {
+            JLOG(app_.journal("DatagramMonitor").error())
+                << "Error collecting disk stats: " << e.what();
+        }
 
         return metrics;
     }
+
     std::vector<uint8_t>
     generateServerInfo()
     {
