@@ -37,6 +37,7 @@
 #include <ripple/app/main/NodeStoreScheduler.h>
 #include <ripple/app/main/Tuning.h>
 #include <ripple/app/misc/AmendmentTable.h>
+#include <ripple/app/misc/DatagramMonitor.h>
 #include <ripple/app/misc/HashRouter.h>
 #include <ripple/app/misc/LoadFeeTrack.h>
 #include <ripple/app/misc/NetworkOPs.h>
@@ -44,7 +45,6 @@
 #include <ripple/app/misc/TxQ.h>
 #include <ripple/app/misc/ValidatorKeys.h>
 #include <ripple/app/misc/ValidatorSite.h>
-#include <ripple/app/misc/DatagramMonitor.h>
 #include <ripple/app/paths/PathRequests.h>
 #include <ripple/app/rdb/Wallet.h>
 #include <ripple/app/rdb/backend/PostgresDatabase.h>
@@ -514,8 +514,6 @@ public:
         //
 
         add(ledgerCleaner_.get());
-
-
     }
 
     //--------------------------------------------------------------------------

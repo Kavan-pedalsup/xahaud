@@ -20,6 +20,7 @@
 #ifndef RIPPLE_APP_MISC_NETWORKOPS_H_INCLUDED
 #define RIPPLE_APP_MISC_NETWORKOPS_H_INCLUDED
 
+#include <ripple/app/consensus/RCLConsensus.h>
 #include <ripple/app/consensus/RCLCxPeerPos.h>
 #include <ripple/app/ledger/Ledger.h>
 #include <ripple/core/JobQueue.h>
@@ -27,7 +28,6 @@
 #include <ripple/net/InfoSub.h>
 #include <ripple/protocol/STValidation.h>
 #include <ripple/protocol/messages.h>
-#include <ripple/app/consensus/RCLConsensus.h>
 #include <boost/asio.hpp>
 #include <deque>
 #include <memory>

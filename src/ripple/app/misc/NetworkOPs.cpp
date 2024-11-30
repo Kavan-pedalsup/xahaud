@@ -780,7 +780,7 @@ private:
 
     std::set<uint256> pendingValidations_;
     std::mutex validationsMutex_;
-    
+
     RCLConsensus&
     getConsensus();
 

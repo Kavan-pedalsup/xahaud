@@ -332,36 +332,44 @@ private:
             addr_len);
     }
 
-    uint32_t 
-    getPhysicalCPUCount() {
+    uint32_t
+    getPhysicalCPUCount()
+    {
         static uint32_t count = 0;
         if (count > 0)
             return count;
 
-        try {
+        try
+        {
             std::ifstream cpuinfo("/proc/cpuinfo");
             std::string line;
             std::set<std::string> physical_ids;
             std::string current_physical_id;
-            
-            while (std::getline(cpuinfo, line)) {
-                if (line.find("core id") != std::string::npos) {
+
+            while (std::getline(cpuinfo, line))
+            {
+                if (line.find("core id") != std::string::npos)
+                {
                     current_physical_id = line.substr(line.find(":") + 1);
                     // Trim whitespace
-                    current_physical_id.erase(0, current_physical_id.find_first_not_of(" \t"));
-                    current_physical_id.erase(current_physical_id.find_last_not_of(" \t") + 1);
+                    current_physical_id.erase(
+                        0, current_physical_id.find_first_not_of(" \t"));
+                    current_physical_id.erase(
+                        current_physical_id.find_last_not_of(" \t") + 1);
                     physical_ids.insert(current_physical_id);
                 }
             }
-            
+
             count = physical_ids.size();
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception& e)
+        {
             JLOG(app_.journal("DatagramMonitor").error())
                 << "Error getting CPU count: " << e.what();
         }
-        
+
         // Return at least 1 if we couldn't determine the count
-        return count > 0 ? count : (count=1);
+        return count > 0 ? count : (count = 1);
     }
 
     SystemMetrics
