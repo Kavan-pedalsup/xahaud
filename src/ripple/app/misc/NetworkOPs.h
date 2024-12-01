@@ -23,6 +23,7 @@
 #include <ripple/app/consensus/RCLConsensus.h>
 #include <ripple/app/consensus/RCLCxPeerPos.h>
 #include <ripple/app/ledger/Ledger.h>
+#include <ripple/app/misc/StateAccounting.h>
 #include <ripple/core/JobQueue.h>
 #include <ripple/ledger/ReadView.h>
 #include <ripple/net/InfoSub.h>
@@ -32,7 +33,6 @@
 #include <deque>
 #include <memory>
 #include <tuple>
-#include <ripple/app/misc/StateAccounting.h>
 
 namespace ripple {
 

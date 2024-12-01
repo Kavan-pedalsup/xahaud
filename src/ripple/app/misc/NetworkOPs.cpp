@@ -33,6 +33,7 @@
 #include <ripple/app/misc/HashRouter.h>
 #include <ripple/app/misc/LoadFeeTrack.h>
 #include <ripple/app/misc/NetworkOPs.h>
+#include <ripple/app/misc/StateAccounting.h>
 #include <ripple/app/misc/Transaction.h>
 #include <ripple/app/misc/TxQ.h>
 #include <ripple/app/misc/ValidatorKeys.h>
@@ -69,8 +70,8 @@
 #include <ripple/rpc/impl/RPCHelpers.h>
 #include <boost/asio/ip/host_name.hpp>
 #include <boost/asio/steady_timer.hpp>
-#include <ripple/app/misc/StateAccounting.h>
 
+#include <ripple/app/misc/StateAccounting.h>
 #include <exception>
 #include <mutex>
 #include <set>
@@ -78,7 +79,6 @@
 #include <tuple>
 #include <unordered_map>
 #include <utility>
-#include <ripple/app/misc/StateAccounting.h>
 
 namespace ripple {
 
@@ -4134,7 +4134,6 @@ NetworkOPsImp::getStateAccountingData()
 {
     return accounting_.getCounterData();
 }
-
 
 // <-- bool: true=erased, false=was not there
 bool
