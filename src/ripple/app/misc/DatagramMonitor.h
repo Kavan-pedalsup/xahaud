@@ -646,7 +646,7 @@ private:
         }
 
         size_t totalSize =
-            sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange)) + (28 * obj_count_map.size());
+            sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange)) + (64 * obj_count_map.size());
 
         // Allocate buffer and initialize header
         std::vector<uint8_t> buffer(totalSize);
@@ -678,12 +678,7 @@ private:
         for (size_t i = 0; i < 5; ++i)
         {
             header->state_transitions[i] = counters[i].transitions;
-            std::cout << "Transitions " << i << ": " << counters[i].transitions
-                      << "\n";
-
             header->state_durations[i] = counters[i].dur.count();
-            std::cout << "Duration " << i << ": " << counters[i].dur.count()
-                      << "\n";
         }
         header->initial_sync_us = initialSync;
 
@@ -837,15 +832,19 @@ private:
             }
         }
 
-        uint8_t* end_of_ranges = buffer.data() + sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange));
+        uint8_t* end_of_ranges = reinterpret_cast<uint8_t*>(buffer.data()) + 
+            sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange));
 
-        memset(end_of_ranges, 0, 28 * obj_count_map.size());
+        memset(end_of_ranges, 0, 64 * obj_count_map.size());
 
         uint8_t* ptr = end_of_ranges;
         for (auto& [name, val] : obj_count_map)
         {
-            memcpy(ptr, name.c_str(), name.size() > 20 ? 20 : name.size()); ptr += 20;
+            size_t to_write = name.size() > 56 ? 56 : name.size();
+            memcpy(ptr, name.c_str(), to_write);
+            ptr += 56;
             *reinterpret_cast<uint64_t*>(ptr) = val;
+            ptr += 8;
         }
 
         return buffer;
