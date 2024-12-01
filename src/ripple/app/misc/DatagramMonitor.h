@@ -1,10 +1,23 @@
 //
 #ifndef RIPPLE_APP_MAIN_DATAGRAMMONITOR_H_INCLUDED
 #define RIPPLE_APP_MAIN_DATAGRAMMONITOR_H_INCLUDED
+#include <ripple/app/ledger/AcceptedLedger.h>
+#include <ripple/app/ledger/InboundLedgers.h>
+#include <ripple/app/ledger/LedgerMaster.h>
+#include <ripple/app/main/Application.h>
 #include <ripple/app/misc/LoadFeeTrack.h>
 #include <ripple/app/misc/NetworkOPs.h>
 #include <ripple/app/misc/ValidatorList.h>
+#include <ripple/app/rdb/backend/SQLiteDatabase.h>
+#include <ripple/basics/UptimeClock.h>
+#include <ripple/ledger/CachedSLEs.h>
+#include <ripple/nodestore/Database.h>
+#include <ripple/nodestore/DatabaseShard.h>
 #include <ripple/overlay/Overlay.h>
+#include <ripple/protocol/BuildInfo.h>
+#include <ripple/protocol/ErrorCodes.h>
+#include <ripple/protocol/jss.h>
+#include <ripple/shamap/ShardFamily.h>
 #include <boost/icl/interval_set.hpp>
 #include <arpa/inet.h>
 #include <array>
@@ -21,20 +34,6 @@
 #include <sys/sysinfo.h>
 #include <thread>
 #include <vector>
-#include <ripple/app/ledger/AcceptedLedger.h>
-#include <ripple/app/ledger/InboundLedgers.h>
-#include <ripple/app/ledger/LedgerMaster.h>
-#include <ripple/app/main/Application.h>
-#include <ripple/app/misc/NetworkOPs.h>
-#include <ripple/app/rdb/backend/SQLiteDatabase.h>
-#include <ripple/basics/UptimeClock.h>
-#include <ripple/ledger/CachedSLEs.h>
-#include <ripple/nodestore/Database.h>
-#include <ripple/nodestore/DatabaseShard.h>
-#include <ripple/protocol/ErrorCodes.h>
-#include <ripple/protocol/jss.h>
-#include <ripple/shamap/ShardFamily.h>
-#include <ripple/protocol/BuildInfo.h>
 
 namespace ripple {
 
@@ -76,7 +75,8 @@ struct [[gnu::packed]] LgrRange
 // shouldn't be included in network structures
 using ObjectCountMap = std::vector<std::pair<std::basic_string<char>, int>>;
 
-struct [[gnu::packed]] DebugCounters {
+struct [[gnu::packed]] DebugCounters
+{
     // Database metrics
     std::uint64_t dbKBTotal{0};
     std::uint64_t dbKBLedger{0};
@@ -88,10 +88,11 @@ struct [[gnu::packed]] DebugCounters {
     std::int32_t historicalPerMinute{0};
 
     // Cache metrics
-    std::uint32_t sleHitRate{0};      // Stored as fixed point, multiplied by 1000
-    std::uint32_t ledgerHitRate{0};   // Stored as fixed point, multiplied by 1000
+    std::uint32_t sleHitRate{0};  // Stored as fixed point, multiplied by 1000
+    std::uint32_t ledgerHitRate{
+        0};  // Stored as fixed point, multiplied by 1000
     std::uint32_t alSize{0};
-    std::uint32_t alHitRate{0};       // Stored as fixed point, multiplied by 1000
+    std::uint32_t alHitRate{0};  // Stored as fixed point, multiplied by 1000
     std::int32_t fullbelowSize{0};
     std::uint32_t treenodeCacheSize{0};
     std::uint32_t treenodeTrackSize{0};
@@ -114,7 +115,6 @@ struct [[gnu::packed]] DebugCounters {
     std::uint64_t nodeFetchHitCount{0};
     std::uint64_t nodeFetchSize{0};
 };
-
 
 // Core server metrics in the fixed header
 struct [[gnu::packed]] ServerInfoHeader
@@ -409,15 +409,17 @@ private:
     getDebugCounters()
     {
         DebugCounters counters;
-        ObjectCountMap objectCounts = CountedObjects::getInstance().getCounts(1);
-        
+        ObjectCountMap objectCounts =
+            CountedObjects::getInstance().getCounts(1);
+
         // Database metrics if app_licable
         if (!app_.config().reporting() && app_.config().useTxTables())
         {
-            auto const db = dynamic_cast<SQLiteDatabase*>(&app_.getRelationalDatabase());
+            auto const db =
+                dynamic_cast<SQLiteDatabase*>(&app_.getRelationalDatabase());
             if (!db)
                 Throw<std::runtime_error>("Failed to get relational database");
-            
+
             if (auto dbKB = db->getKBUsedAll())
                 counters.dbKBTotal = dbKB;
             if (auto dbKB = db->getKBUsedLedger())
@@ -430,23 +432,31 @@ private:
 
         // Basic metrics
         counters.writeLoad = app_.getNodeStore().getWriteLoad();
-        counters.historicalPerMinute = static_cast<std::int32_t>(app_.getInboundLedgers().fetchRate());
+        counters.historicalPerMinute =
+            static_cast<std::int32_t>(app_.getInboundLedgers().fetchRate());
 
         // Cache metrics - convert floating point rates to fixed point
-        counters.sleHitRate = static_cast<std::uint32_t>(app_.cachedSLEs().rate() * 1000);
-        counters.ledgerHitRate = static_cast<std::uint32_t>(app_.getLedgerMaster().getCacheHitRate() * 1000);
+        counters.sleHitRate =
+            static_cast<std::uint32_t>(app_.cachedSLEs().rate() * 1000);
+        counters.ledgerHitRate = static_cast<std::uint32_t>(
+            app_.getLedgerMaster().getCacheHitRate() * 1000);
         counters.alSize = app_.getAcceptedLedgerCache().size();
-        counters.alHitRate = static_cast<std::uint32_t>(app_.getAcceptedLedgerCache().getHitRate() * 1000);
-        counters.fullbelowSize = static_cast<std::int32_t>(app_.getNodeFamily().getFullBelowCache(0)->size());
-        counters.treenodeCacheSize = app_.getNodeFamily().getTreeNodeCache(0)->getCacheSize();
-        counters.treenodeTrackSize = app_.getNodeFamily().getTreeNodeCache(0)->getTrackSize();
+        counters.alHitRate = static_cast<std::uint32_t>(
+            app_.getAcceptedLedgerCache().getHitRate() * 1000);
+        counters.fullbelowSize = static_cast<std::int32_t>(
+            app_.getNodeFamily().getFullBelowCache(0)->size());
+        counters.treenodeCacheSize =
+            app_.getNodeFamily().getTreeNodeCache(0)->getCacheSize();
+        counters.treenodeTrackSize =
+            app_.getNodeFamily().getTreeNodeCache(0)->getTrackSize();
 
         // Handle shard metrics if available
         if (auto shardStore = app_.getShardStore())
         {
-            auto shardFamily = dynamic_cast<ShardFamily*>(app_.getShardFamily());
+            auto shardFamily =
+                dynamic_cast<ShardFamily*>(app_.getShardFamily());
             auto const [cacheSz, trackSz] = shardFamily->getTreeNodeCacheSize();
-            
+
             counters.shardFullbelowSize = shardFamily->getFullBelowCacheSize();
             counters.shardTreenodeCacheSize = cacheSz;
             counters.shardTreenodeTrackSize = trackSz;
@@ -645,8 +655,8 @@ private:
             }
         }
 
-        size_t totalSize =
-            sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange)) + (64 * obj_count_map.size());
+        size_t totalSize = sizeof(ServerInfoHeader) +
+            (validRangeCount * sizeof(LgrRange)) + (64 * obj_count_map.size());
 
         // Allocate buffer and initialize header
         std::vector<uint8_t> buffer(totalSize);
@@ -809,8 +819,12 @@ private:
 
         // Pack version string
         memset(&header->version_string, 0, 32);
-        memcpy(&header->version_string, BuildInfo::getVersionString().c_str(),
-                BuildInfo::getVersionString().size() > 32 ? 32 : BuildInfo::getVersionString().size());
+        memcpy(
+            &header->version_string,
+            BuildInfo::getVersionString().c_str(),
+            BuildInfo::getVersionString().size() > 32
+                ? 32
+                : BuildInfo::getVersionString().size());
 
         header->dbg_counters = dbg_counters;
 
@@ -832,7 +846,7 @@ private:
             }
         }
 
-        uint8_t* end_of_ranges = reinterpret_cast<uint8_t*>(buffer.data()) + 
+        uint8_t* end_of_ranges = reinterpret_cast<uint8_t*>(buffer.data()) +
             sizeof(ServerInfoHeader) + (validRangeCount * sizeof(LgrRange));
 
         memset(end_of_ranges, 0, 64 * obj_count_map.size());
