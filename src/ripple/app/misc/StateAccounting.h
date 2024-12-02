@@ -58,13 +58,13 @@ public:
     };
 
 private:
-    OperatingMode mode_;
+    OperatingMode mode_ = OperatingMode::DISCONNECTED;
     std::array<Counters, 5> counters_;
     mutable std::mutex mutex_;
     std::chrono::steady_clock::time_point start_ =
         std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point const processStart_ = start_;
-    std::uint64_t initialSyncUs_;
+    std::uint64_t initialSyncUs_{0};
 
 public:
     explicit StateAccounting()
