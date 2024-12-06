@@ -2672,7 +2672,7 @@ class Import_test : public beast::unit_test::suite
             env(import::import(alice, tmpXpop), ter(temMALFORMED));
         }
 
-        // tefIMPORT_BLACKHOLED - AccountZero
+        // tefIMPORT_BLACKHOLED - SetRegularKey (w/seed) AccountZero
         {
             test::jtx::Env env{
                 *this, network::makeNetworkVLConfig(21337, keys)};
@@ -2695,7 +2695,8 @@ class Import_test : public beast::unit_test::suite
             env.close();
 
             // Import with Master Key
-            Json::Value tmpXpop = import::loadXpop(ImportTCAccountSet::w_seed);
+            Json::Value tmpXpop =
+                import::loadXpop(ImportTCSetRegularKey::w_seed);
             env(import::import(alice, tmpXpop),
                 ter(tefIMPORT_BLACKHOLED),
                 fee(feeDrops * 10),
@@ -2703,7 +2704,7 @@ class Import_test : public beast::unit_test::suite
             env.close();
         }
 
-        // tefIMPORT_BLACKHOLED - AccountOne
+        // tefIMPORT_BLACKHOLED - SetRegularKey (w/seed) AccountOne
         {
             test::jtx::Env env{
                 *this, network::makeNetworkVLConfig(21337, keys)};
@@ -2726,7 +2727,8 @@ class Import_test : public beast::unit_test::suite
             env.close();
 
             // Import with Master Key
-            Json::Value tmpXpop = import::loadXpop(ImportTCAccountSet::w_seed);
+            Json::Value tmpXpop =
+                import::loadXpop(ImportTCSetRegularKey::w_seed);
             env(import::import(alice, tmpXpop),
                 ter(tefIMPORT_BLACKHOLED),
                 fee(feeDrops * 10),
@@ -2734,7 +2736,7 @@ class Import_test : public beast::unit_test::suite
             env.close();
         }
 
-        // tefIMPORT_BLACKHOLED - AccountOne
+        // tefIMPORT_BLACKHOLED - SetRegularKey (w/seed) AccountTwo
         {
             test::jtx::Env env{
                 *this, network::makeNetworkVLConfig(21337, keys)};
@@ -2757,7 +2759,40 @@ class Import_test : public beast::unit_test::suite
             env.close();
 
             // Import with Master Key
-            Json::Value tmpXpop = import::loadXpop(ImportTCAccountSet::w_seed);
+            Json::Value tmpXpop =
+                import::loadXpop(ImportTCSetRegularKey::w_seed);
+            env(import::import(alice, tmpXpop),
+                ter(tefIMPORT_BLACKHOLED),
+                fee(feeDrops * 10),
+                sig(alice));
+            env.close();
+        }
+
+        // tefIMPORT_BLACKHOLED - SignersListSet (w/seed)
+        {
+            test::jtx::Env env{
+                *this, network::makeNetworkVLConfig(21337, keys)};
+            auto const feeDrops = env.current()->fees().base;
+
+            auto const alice = Account("alice");
+            env.fund(XRP(1000), alice);
+            env.close();
+
+            // Set Regular Key
+            Json::Value jv;
+            jv[jss::Account] = alice.human();
+            const AccountID ACCOUNT_ZERO(0);
+            jv["RegularKey"] = to_string(ACCOUNT_ZERO);
+            jv[jss::TransactionType] = jss::SetRegularKey;
+            env(jv, alice);
+
+            // Disable Master Key
+            env(fset(alice, asfDisableMaster), sig(alice));
+            env.close();
+
+            // Import with Master Key
+            Json::Value tmpXpop =
+                import::loadXpop(ImportTCSignersListSet::w_seed);
             env(import::import(alice, tmpXpop),
                 ter(tefIMPORT_BLACKHOLED),
                 fee(feeDrops * 10),
@@ -5006,8 +5041,7 @@ class Import_test : public beast::unit_test::suite
         {
             for (std::uint32_t const withFeature : {0, 1, 2})
             {
-                auto const amend = withFeature == 0
-                    ? features
+                auto const amend = withFeature == 0 ? features
                     : withFeature == 1 ? features - featureXahauGenesis
                                        : features - featureDeletableAccounts;
                 test::jtx::Env env{
@@ -5046,8 +5080,9 @@ class Import_test : public beast::unit_test::suite
                 {
                     BEAST_EXPECT((*acctSle)[sfAccountIndex] == 0);
                 }
-                std::uint64_t const seq =
-                    withFeature == 0 ? 12 : withFeature == 1 ? 6 : 12;
+                std::uint64_t const seq = withFeature == 0 ? 12
+                    : withFeature == 1                     ? 6
+                                                           : 12;
                 BEAST_EXPECT((*acctSle)[sfSequence] == seq);
 
                 // confirm account count was set
@@ -5063,8 +5098,7 @@ class Import_test : public beast::unit_test::suite
         {
             for (std::uint32_t const withFeature : {0, 1, 2})
             {
-                auto const amend = withFeature == 0
-                    ? features
+                auto const amend = withFeature == 0 ? features
                     : withFeature == 1 ? features - featureXahauGenesis
                                        : features - featureDeletableAccounts;
                 test::jtx::Env env{
@@ -5084,8 +5118,9 @@ class Import_test : public beast::unit_test::suite
                     std::uint64_t sequence;
                 };
 
-                std::uint64_t const seq =
-                    withFeature == 0 ? 11 : withFeature == 1 ? 5 : 11;
+                std::uint64_t const seq = withFeature == 0 ? 11
+                    : withFeature == 1                     ? 5
+                                                           : 11;
                 std::array<TestAccountData, 3> acctTests = {{
                     {alice, 0, seq},
                     {bob, 1, seq},
@@ -6087,6 +6122,69 @@ class Import_test : public beast::unit_test::suite
         }
     }
 
+    void
+    testBlackhole(FeatureBitset features)
+    {
+        testcase("blackhole");
+
+        using namespace test::jtx;
+        using namespace std::literals;
+
+        auto blackholeAccount = [&](Env& env, Account const& acct) {
+            // Set Regular Key
+            Json::Value jv;
+            jv[jss::Account] = acct.human();
+            const AccountID ACCOUNT_ZERO(0);
+            jv["RegularKey"] = to_string(ACCOUNT_ZERO);
+            jv[jss::TransactionType] = jss::SetRegularKey;
+            env(jv, acct);
+
+            // Disable Master Key
+            env(fset(acct, asfDisableMaster), sig(acct));
+            env.close();
+        };
+
+        auto burnHeader = [&](Env& env) {
+            // confirm total coins header
+            auto const initCoins = env.current()->info().drops;
+            BEAST_EXPECT(initCoins == 100'000'000'000'000'000);
+
+            // burn 10'000 xrp
+            auto const master = Account("masterpassphrase");
+            env(noop(master), fee(100'000'000'000'000), ter(tesSUCCESS));
+            env.close();
+
+            // confirm total coins header
+            auto const burnCoins = env.current()->info().drops;
+            BEAST_EXPECT(burnCoins == initCoins - 100'000'000'000'000);
+        };
+
+        // AccountSet (w/seed)
+        {
+            test::jtx::Env env{
+                *this, network::makeNetworkVLConfig(21337, keys)};
+            auto const feeDrops = env.current()->fees().base;
+
+            // Burn Header
+            burnHeader(env);
+
+            auto const alice = Account("alice");
+            env.fund(XRP(1000), alice);
+            env.close();
+
+            // Blackhole Account
+            blackholeAccount(env, alice);
+
+            // Import with Master Key
+            Json::Value tmpXpop = import::loadXpop(ImportTCAccountSet::w_seed);
+            env(import::import(alice, tmpXpop),
+                ter(tesSUCCESS),
+                fee(feeDrops * 10),
+                sig(alice));
+            env.close();
+        }
+    }
+
 public:
     void
     run() override
@@ -6127,6 +6225,7 @@ public:
         testMaxSupply(features);
         testMinMax(features);
         testHalving(features - featureOwnerPaysFee);
+        testBlackhole(features);
     }
 };
 

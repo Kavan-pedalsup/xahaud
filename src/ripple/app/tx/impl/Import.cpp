@@ -889,7 +889,10 @@ Import::preclaim(PreclaimContext const& ctx)
     }
 
     auto const& sle = ctx.view.read(keylet::account(ctx.tx[sfAccount]));
-    if (ctx.view.rules().enabled(fixReduceImport) && sle)
+
+    auto const tt = stpTrans->getTxnType();
+    if ((tt == ttSIGNER_LIST_SET || tt == ttREGULAR_KEY_SET) &&
+        ctx.view.rules().enabled(fixReduceImport) && sle)
     {
         // blackhole check
         do
