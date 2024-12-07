@@ -69,6 +69,7 @@
 #include <ripple/rpc/impl/RPCHelpers.h>
 #include <boost/asio/ip/host_name.hpp>
 #include <boost/asio/steady_timer.hpp>
+#include <ripple/basics/ThreadLocalQueue.h>
 
 #include <exception>
 #include <mutex>
@@ -774,7 +775,7 @@ private:
     std::condition_variable mCond;
     std::mutex mMutex;
     DispatchState mDispatchState = DispatchState::none;
-    std::vector<TransactionStatus> mTransactions;
+    ThreadLocalQueue<TransactionStatus> mTransactions;
 
     StateAccounting accounting_{};
 
@@ -1404,7 +1405,6 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
             std::unique_lock ledgerLock{
                 m_ledgerMaster.peekMutex(), std::defer_lock};
             std::lock(masterLock, ledgerLock);
-
             app_.openLedger().modify([&](OpenView& view, beast::Journal j) {
                 for (TransactionStatus& e : transactions)
                 {
