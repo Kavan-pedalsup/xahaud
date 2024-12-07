@@ -77,6 +77,14 @@ setupConfigForUnitTests(Config& cfg)
 namespace jtx {
 
 std::unique_ptr<Config>
+many_workers(std::unique_ptr<Config> cfg)
+{
+    cfg->WORKERS = 128;
+    return cfg;
+}
+
+
+std::unique_ptr<Config>
 no_admin(std::unique_ptr<Config> cfg)
 {
     (*cfg)["port_rpc"].set("admin", "");

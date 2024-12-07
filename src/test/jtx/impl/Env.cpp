@@ -49,6 +49,8 @@
 #include <test/jtx/sig.h>
 #include <test/jtx/trust.h>
 #include <test/jtx/utility.h>
+#include <ripple/app/misc/NetworkOPs.h>
+#include <ripple/app/misc/Transaction.h>
 
 namespace ripple {
 namespace test {
@@ -282,6 +284,32 @@ Env::parseResult(Json::Value const& jr)
     else
         ter = temINVALID;
     return std::make_pair(ter, isTesSuccess(ter) || isTecClaim(ter));
+}
+
+void
+Env::inject_jtx(JTx const& jt)
+{
+    Application& app = *(getApp());
+    auto& netOPs = app.getOPs();
+    if (jt.stx)
+    {
+        std::string reason;
+        // make a copy
+        STTx* newData = new STTx(*jt.stx);
+        auto stx = std::shared_ptr<STTx const>(newData);
+        auto id = stx->getTransactionID();
+
+        static std::map<uint256, std::shared_ptr<STTx const>> storage;
+        storage.emplace(id, stx);
+        
+        auto tx = std::make_shared<Transaction>(stx, reason, app);
+
+        static int counter = 0;
+        std::cout << "inject_jtx [" << counter++ << "] id=" << id << "\n";
+        netOPs.processTransaction(tx, false, false);
+    }
+    return postconditions(jt, ter_, true);
+
 }
 
 void

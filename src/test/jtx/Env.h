@@ -148,6 +148,12 @@ public:
     operator=(Env const&) = delete;
     Env(Env const&) = delete;
 
+    Application*
+    getApp()
+    {
+        return bundle_.app;
+    }
+
     /**
      * @brief Create Env using suite, Config pointer, and explicit features.
      *
@@ -508,6 +514,9 @@ public:
     virtual void
     submit(JTx const& jt);
 
+    virtual void
+    inject_jtx(JTx const& jt);
+
     /** Use the submit RPC command with a provided JTx object.
         This calls postconditions.
     */
@@ -527,6 +536,13 @@ public:
     apply(JsonValue&& jv, FN const&... fN)
     {
         submit(jt(std::forward<JsonValue>(jv), fN...));
+    }
+
+    template <class JsonValue, class... FN>
+    void
+    inject(JsonValue&& jv, FN const&... fN)
+    {
+        inject_jtx(jt(std::forward<JsonValue>(jv), fN...));
     }
 
     template <class JsonValue, class... FN>

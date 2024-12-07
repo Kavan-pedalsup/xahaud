@@ -26,6 +26,7 @@ public:
     {
         std::lock_guard lock(mutex);
         thread_queues.emplace(&local_queue);
+        std::cout << "Thread registered: " << reinterpret_cast<uint64_t>(&local_queue) << "\n";
         local_count = 0;
     }
 
