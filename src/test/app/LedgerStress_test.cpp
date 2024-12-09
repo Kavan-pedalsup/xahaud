@@ -19,14 +19,14 @@ using namespace jtx;
 class LedgerStress_test : public beast::unit_test::suite
 {
 private:
-    static constexpr std::size_t TXN_PER_LEDGER = 100;
-    static constexpr std::size_t MAX_TXN_PER_ACCOUNT = 1;
+    static constexpr std::size_t TXN_PER_LEDGER = 20000;
+    static constexpr std::size_t MAX_TXN_PER_ACCOUNT = 5;
     static constexpr std::chrono::seconds MAX_CLOSE_TIME{6};
     static constexpr std::size_t REQUIRED_ACCOUNTS = 
         (TXN_PER_LEDGER + MAX_TXN_PER_ACCOUNT - 1) / MAX_TXN_PER_ACCOUNT;
     
     // Get number of hardware threads and use half
-    const std::size_t NUM_THREADS = 1;//std::max(std::thread::hardware_concurrency() / 2, 1u);
+    const std::size_t NUM_THREADS = std::max(std::thread::hardware_concurrency() / 2, 1u);
 
     struct LedgerMetrics {
         std::chrono::milliseconds submitTime{0};
@@ -86,39 +86,49 @@ private:
         env.close();
         return accounts;
     }
+
+    // Structure to hold work assignment for each thread
+    struct ThreadWork {
+        std::size_t startAccountIdx;
+        std::size_t endAccountIdx;
+        std::size_t numTxnsToSubmit;
+    };
     
     void 
     submitBatchThread(
         jtx::Env& env,
-        std::vector<jtx::Account> const& senders,
-        std::vector<jtx::Account> const& allAccounts,
-        std::size_t startIdx,
-        std::size_t endIdx,
-        std::size_t txPerAccount)
+        std::vector<jtx::Account> const& accounts,
+        ThreadWork const& work)
     {
-        static thread_local int tmp = 0;
-        std::cout << "submitBatchThread " << reinterpret_cast<uint64_t>(&tmp) << "\n";
-
-        for (std::size_t i = startIdx; i < endIdx; ++i)
+        auto const escalatedFee = getEscalatedFee(env);
+        std::size_t txnsSubmitted = 0;
+        
+        for (std::size_t i = work.startAccountIdx; 
+             i < work.endAccountIdx && txnsSubmitted < work.numTxnsToSubmit; ++i)
         {
-            auto const& sender = senders[i];
+            auto const& sender = accounts[i];
             
+            // Create list of possible recipients (everyone except sender)
             std::vector<Account> recipients;
-            recipients.reserve(allAccounts.size() - 1);
-            for (auto const& acct : allAccounts)
+            recipients.reserve(accounts.size() - 1);
+            for (auto const& acct : accounts)
             {
                 if (acct.id() != sender.id())
                     recipients.push_back(acct);
             }
 
-            auto const escalatedFee = getEscalatedFee(env);
+            // Calculate how many txns to submit from this account
+            std::size_t txnsRemaining = work.numTxnsToSubmit - txnsSubmitted;
+            std::size_t txnsForAccount = std::min(MAX_TXN_PER_ACCOUNT, txnsRemaining);
             
-            for (std::size_t tx = 0; tx < txPerAccount; ++tx)
+            // Submit transactions
+            for (std::size_t tx = 0; tx < txnsForAccount; ++tx)
             {
                 auto const& recipient = recipients[tx % recipients.size()];
                 env.inject(pay(sender, recipient, XRP(1)), 
                     fee(escalatedFee),
                     seq(autofill));
+                ++txnsSubmitted;
             }
         }
     }
@@ -130,19 +140,14 @@ private:
                 " ledgers using " + std::to_string(NUM_THREADS) + " threads");
 
         Env env{*this, envconfig(many_workers)};
-
-        Application* appPtr = env.getApp();
-
-        std::cout << "Application ptr: " << reinterpret_cast<uint64_t>(appPtr) << "\n";
-
-        auto const journal = env.app().journal("LedgerStressTest");
-
         env.app().config().MAX_TRANSACTIONS = 100000;
 
-        // Get actual hardware thread count and ensure consistent types
+        auto const journal = env.app().journal("LedgerStressTest");
+        
+        // Get actual hardware thread count
         std::size_t hardwareThreads = static_cast<std::size_t>(std::thread::hardware_concurrency());
         if (hardwareThreads == 0)
-            hardwareThreads = 4;  // Fallback if hardware_concurrency() fails
+            hardwareThreads = 4;  // Fallback
         
         const std::size_t THREAD_COUNT = std::min(NUM_THREADS, hardwareThreads);
         
@@ -154,10 +159,6 @@ private:
         std::vector<LedgerMetrics> metrics;
         metrics.reserve(numLedgers);
 
-        // Create thread pool
-        std::vector<std::thread> threadPool;
-        threadPool.reserve(THREAD_COUNT);
-
         for (std::size_t ledger = 0; ledger < numLedgers; ++ledger)
         {
             threadSafeLog("Starting ledger " + std::to_string(ledger));
@@ -166,57 +167,55 @@ private:
             auto submitStart = std::chrono::steady_clock::now();
             ledgerMetrics.baseFee = env.current()->fees().base;
 
-            // Calculate work distribution
-            std::size_t txnsPerThread = (TXN_PER_LEDGER + THREAD_COUNT - 1) / THREAD_COUNT;
-            std::size_t accountsPerThread = (accounts.size() + THREAD_COUNT - 1) / THREAD_COUNT;
-
-            // Atomic counter for synchronization
-            std::atomic<std::size_t> completedTxns{0};
-            std::mutex submitMutex;
-
-            // Launch worker threads
+            // Pre-calculate exact work distribution for threads
+            std::vector<ThreadWork> threadAssignments;
+            threadAssignments.reserve(THREAD_COUNT);
+            
+            std::size_t totalAccountsAssigned = 0;
+            std::size_t totalTxnsAssigned = 0;
+            std::size_t accountsPerThread = accounts.size() / THREAD_COUNT;
+            
             for (std::size_t t = 0; t < THREAD_COUNT; ++t)
             {
-                std::size_t startIdx = t * accountsPerThread;
-                std::size_t endIdx = std::min(startIdx + accountsPerThread, accounts.size());
+                ThreadWork work;
+                work.startAccountIdx = totalAccountsAssigned;
                 
-                threadPool.emplace_back(
-                    [&, startIdx, endIdx]() {
-                        try {
-                            std::size_t localTxnCount = 0;
-                            std::size_t targetTxns = txnsPerThread;
-                            
-                            // Ensure we don't exceed total desired transactions
-                            {
-                                std::lock_guard<std::mutex> lock(submitMutex);
-                                std::size_t remaining = TXN_PER_LEDGER - completedTxns;
-                                targetTxns = std::min(txnsPerThread, remaining);
-                            }
+                // Last thread gets remaining accounts
+                if (t == THREAD_COUNT - 1) {
+                    work.endAccountIdx = accounts.size();
+                    work.numTxnsToSubmit = TXN_PER_LEDGER - totalTxnsAssigned;
+                }
+                else {
+                    work.endAccountIdx = work.startAccountIdx + accountsPerThread;
+                    work.numTxnsToSubmit = TXN_PER_LEDGER / THREAD_COUNT;
+                }
+                
+                totalAccountsAssigned = work.endAccountIdx;
+                totalTxnsAssigned += work.numTxnsToSubmit;
+                threadAssignments.push_back(work);
+            }
+            
+            BEAST_EXPECT(totalTxnsAssigned == TXN_PER_LEDGER);
 
-                            submitBatchThread(
-                                env,
-                                accounts,
-                                accounts,
-                                startIdx,
-                                endIdx,
-                                targetTxns);
-
-                            completedTxns += targetTxns;
-                        }
-                        catch (const std::exception& e) {
-                            threadSafeLog("Thread exception: " + std::string(e.what()));
-                        }
+            // Launch threads with pre-calculated work assignments
+            std::vector<std::thread> threads;
+            threads.reserve(THREAD_COUNT);
+            
+            for (std::size_t t = 0; t < THREAD_COUNT; ++t)
+            {
+                threads.emplace_back(
+                    [&env, &accounts, work = threadAssignments[t], this]() {
+                        submitBatchThread(env, accounts, work);
                     }
                 );
             }
 
-            // Wait for all threads to complete
-            for (auto& thread : threadPool)
+            // Wait for all threads
+            for (auto& thread : threads)
             {
                 if (thread.joinable())
                     thread.join();
             }
-            threadPool.clear();
 
             ledgerMetrics.submitTime = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - submitStart);
@@ -243,12 +242,10 @@ private:
         }
     }
 
-
-
 public:
     void run() override
     {
-        runStressTest(1);
+        runStressTest(5);
     }
 };
 

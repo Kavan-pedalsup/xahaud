@@ -139,6 +139,9 @@ public:
         bool bLocal,
         FailHard failType = FailHard::no) = 0;
 
+    virtual void
+    forceTransactionBatch() = 0;
+
     //--------------------------------------------------------------------------
     //
     // Owner functions

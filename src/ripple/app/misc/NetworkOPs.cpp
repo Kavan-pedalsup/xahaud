@@ -323,6 +323,9 @@ public:
     void
     transactionBatch();
 
+    void
+    forceTransactionBatch();
+
     /**
      * Attempt to apply transactions and post-process based on the results.
      *
@@ -1369,6 +1372,17 @@ NetworkOPsImp::doTransactionSync(
             }
         }
     } while (transaction->getApplying());
+}
+
+void
+NetworkOPsImp::forceTransactionBatch()
+{
+    std::unique_lock<std::mutex> lock(mMutex);
+    mDispatchState = DispatchState::scheduled;
+    while (mTransactions.size())
+    {
+        apply(lock);
+    }
 }
 
 void

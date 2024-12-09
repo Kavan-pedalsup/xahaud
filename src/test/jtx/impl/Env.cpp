@@ -126,13 +126,17 @@ Env::close(
 {
     // Round up to next distinguishable value
     using namespace std::chrono_literals;
+
+    auto& netOPs = app().getOPs();
+    netOPs.forceTransactionBatch();
+
     bool res = true;
     closeTime += closed()->info().closeTimeResolution - 1s;
     timeKeeper().set(closeTime);
     // Go through the rpc interface unless we need to simulate
     // a specific consensus delay.
     if (consensusDelay)
-        app().getOPs().acceptLedger(consensusDelay);
+        netOPs.acceptLedger(consensusDelay);
     else
     {
         auto resp = rpc("ledger_accept");
@@ -295,18 +299,17 @@ Env::inject_jtx(JTx const& jt)
     {
         std::string reason;
         // make a copy
-        STTx* newData = new STTx(*jt.stx);
-        auto stx = std::shared_ptr<STTx const>(newData);
-        auto id = stx->getTransactionID();
+        //STTx* newData = new STTx(*jt.stx);
+        //auto stx = std::shared_ptr<STTx const>(newData);
+        auto id = jt.stx->getTransactionID();
 
-        static std::map<uint256, std::shared_ptr<STTx const>> storage;
-        storage.emplace(id, stx);
-        
-        auto tx = std::make_shared<Transaction>(stx, reason, app);
+        auto tx = std::make_shared<Transaction>(jt.stx, reason, app);
 
         static int counter = 0;
-        std::cout << "inject_jtx [" << counter++ << "] id=" << id << "\n";
-        netOPs.processTransaction(tx, false, false);
+        counter++;
+        if (counter % 2500 == 0)
+            std::cout << "inject_jtx [" << counter++ << "] id=" << id << "\n";
+        netOPs.processTransaction(tx, true, false);
     }
     return postconditions(jt, ter_, true);
 
