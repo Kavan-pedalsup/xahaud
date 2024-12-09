@@ -69,7 +69,6 @@
 #include <ripple/rpc/impl/RPCHelpers.h>
 #include <boost/asio/ip/host_name.hpp>
 #include <boost/asio/steady_timer.hpp>
-#include <ripple/basics/ThreadLocalQueue.h>
 
 #include <exception>
 #include <mutex>
@@ -778,7 +777,7 @@ private:
     std::condition_variable mCond;
     std::mutex mMutex;
     DispatchState mDispatchState = DispatchState::none;
-    ThreadLocalQueue<TransactionStatus> mTransactions;
+    std::vector<TransactionStatus> mTransactions;
 
     StateAccounting accounting_{};
 
@@ -1153,9 +1152,9 @@ NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
         // Enforce Network bar for emitted txn
         if (view->rules().enabled(featureHooks) && hook::isEmittedTxn(*iTrans))
         {
-            // RH NOTE: Warning removed here due to ConsesusSet using this function
-            // which continually triggers this bar. Doesn't seem dangerous, just
-            // annoying.
+            // RH NOTE: Warning removed here due to ConsesusSet using this
+            // function which continually triggers this bar. Doesn't seem
+            // dangerous, just annoying.
 
             // JLOG(m_journal.warn())
             //    << "Submitted transaction invalid: EmitDetails present.";
@@ -1170,9 +1169,9 @@ NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
 
         if ((flags & SF_BAD) != 0)
         {
-            // RH NOTE: Warning removed here due to ConsesusSet using this function
-            // which continually triggers this bar. Doesn't seem dangerous, just
-            // annoying.
+            // RH NOTE: Warning removed here due to ConsesusSet using this
+            // function which continually triggers this bar. Doesn't seem
+            // dangerous, just annoying.
 
             // JLOG(m_journal.warn()) << "Submitted transaction cached bad";
             return;
@@ -1195,8 +1194,8 @@ NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
         }
         catch (std::exception const& ex)
         {
-            JLOG(m_journal.warn())
-                << "Exception checking transaction " << txid << ": " << ex.what();
+            JLOG(m_journal.warn()) << "Exception checking transaction " << txid
+                                   << ": " << ex.what();
 
             return;
         }
