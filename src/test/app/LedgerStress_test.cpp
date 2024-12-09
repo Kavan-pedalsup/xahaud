@@ -20,8 +20,8 @@ using namespace jtx;
 class LedgerStress_test : public beast::unit_test::suite
 {
 private:
-    static constexpr std::size_t TXN_PER_LEDGER = 10000;
-    static constexpr std::size_t MAX_TXN_PER_ACCOUNT = 2;  // Increased from 1
+    static constexpr std::size_t TXN_PER_LEDGER = 50000;
+    static constexpr std::size_t MAX_TXN_PER_ACCOUNT = 5;  // Increased from 1
     static constexpr std::chrono::seconds MAX_CLOSE_TIME{6};
     static constexpr std::size_t REQUIRED_ACCOUNTS =
         (TXN_PER_LEDGER + MAX_TXN_PER_ACCOUNT - 1) / MAX_TXN_PER_ACCOUNT;
