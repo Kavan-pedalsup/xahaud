@@ -305,10 +305,12 @@ Env::inject_jtx(JTx const& jt)
 
         auto tx = std::make_shared<Transaction>(jt.stx, reason, app);
 
+        /*
         static int counter = 0;
         counter++;
         if (counter % 2500 == 0)
             std::cout << "inject_jtx [" << counter++ << "] id=" << id << "\n";
+        */
         netOPs.processTransaction(tx, true, false);
     }
     return postconditions(jt, ter_, true);
