@@ -326,7 +326,6 @@ public:
                   }; 
 
                 int threads = f();
-                std::cout << "JobQueue thread count: " << threads << "\n";
                 return threads;
               }(config_),
               m_collectorManager->group("jobq"),
