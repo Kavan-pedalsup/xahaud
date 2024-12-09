@@ -200,7 +200,7 @@ public:
     strOperatingMode(bool const admin = false) const override;
 
     StateAccounting::CounterData
-    getStateAccountingData() override;
+    getStateAccountingData();
 
     //
     // Transaction operations.

@@ -1530,7 +1530,8 @@ ApplicationImp::setup(boost::program_options::variables_map const& cmdline)
     if (!config_->standalone() && config_->DATAGRAM_MONITOR != "")
     {
         datagram_monitor_ = std::make_unique<DatagramMonitor>(*this);
-        datagram_monitor_->start();
+        if (datagram_monitor_)
+            datagram_monitor_->start();
     }
 
     return true;

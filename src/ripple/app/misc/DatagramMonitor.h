@@ -1,6 +1,7 @@
 //
 #ifndef RIPPLE_APP_MAIN_DATAGRAMMONITOR_H_INCLUDED
 #define RIPPLE_APP_MAIN_DATAGRAMMONITOR_H_INCLUDED
+
 #include <ripple/app/ledger/AcceptedLedger.h>
 #include <ripple/app/ledger/InboundLedgers.h>
 #include <ripple/app/ledger/LedgerMaster.h>
@@ -18,7 +19,6 @@
 #include <ripple/protocol/ErrorCodes.h>
 #include <ripple/protocol/jss.h>
 #include <ripple/shamap/ShardFamily.h>
-#include <boost/icl/interval_set.hpp>
 #include <arpa/inet.h>
 #include <array>
 #include <atomic>
@@ -30,8 +30,19 @@
 #include <string>
 #include <sys/resource.h>
 #include <sys/socket.h>
+#if defined(__linux__)
 #include <sys/statvfs.h>
 #include <sys/sysinfo.h>
+#elif defined(__APPLE__)
+#include <ifaddrs.h>
+#include <mach/host_info.h>
+#include <mach/mach.h>
+#include <net/if.h>
+#include <net/if_dl.h>
+#include <sys/mount.h>
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#endif
 #include <thread>
 #include <vector>
 
@@ -153,7 +164,7 @@ struct [[gnu::packed]] ServerInfoHeader
     uint8_t version_string[32];
 
     // System metrics
-    uint64_t process_memory_pages;  // Process memory usage in pages
+    uint64_t process_memory_pages;  // Process memory usage in bytes
     uint64_t system_memory_total;   // Total system memory in bytes
     uint64_t system_memory_free;    // Free system memory in bytes
     uint64_t system_memory_used;    // Used system memory in bytes
@@ -412,7 +423,7 @@ private:
         ObjectCountMap objectCounts =
             CountedObjects::getInstance().getCounts(1);
 
-        // Database metrics if app_licable
+        // Database metrics if applicable
         if (!app_.config().reporting() && app_.config().useTxTables())
         {
             auto const db =
@@ -487,9 +498,16 @@ private:
         if (count > 0)
             return count;
 
+#if defined(__linux__)
         try
         {
             std::ifstream cpuinfo("/proc/cpuinfo");
+            if (!cpuinfo)
+            {
+                JLOG(app_.journal("DatagramMonitor").error())
+                    << "Unable to open file: /proc/cpuinfo";
+                return count;
+            }
             std::string line;
             std::set<std::string> physical_ids;
             std::string current_physical_id;
@@ -518,6 +536,13 @@ private:
 
         // Return at least 1 if we couldn't determine the count
         return count > 0 ? count : (count = 1);
+#elif defined(__APPLE__)
+        int value = 0;
+        size_t size = sizeof(value);
+        if (sysctlbyname("hw.physicalcpu", &value, &size, NULL, 0) == 0)
+            count = value;
+        return count > 0 ? count : (count = 1);
+#endif
     }
 
     SystemMetrics
@@ -529,10 +554,18 @@ private:
                 std::chrono::system_clock::now().time_since_epoch())
                 .count();
 
+#if defined(__linux__)
         // Network stats collection
         try
         {
             std::ifstream net_file("/proc/net/dev");
+            if (!net_file)
+            {
+                JLOG(app_.journal("DatagramMonitor").error())
+                    << "Unable to open file /proc/net/dev";
+                return metrics;
+            }
+
             std::string line;
             uint64_t total_bytes_in = 0, total_bytes_out = 0;
 
@@ -578,6 +611,12 @@ private:
         try
         {
             std::ifstream disk_file("/proc/diskstats");
+            if (!disk_file)
+            {
+                JLOG(app_.journal("DatagramMonitor").error())
+                    << "Unable to open file: /proc/diskstats";
+                return metrics;
+            }
             std::string line;
             uint64_t total_bytes_read = 0, total_bytes_written = 0;
 
@@ -628,7 +667,49 @@ private:
             JLOG(app_.journal("DatagramMonitor").error())
                 << "Error collecting disk stats: " << e.what();
         }
+#elif defined(__APPLE__)
+        // Network stats collection
+        try
+        {
+            struct ifaddrs* ifap;
+            if (getifaddrs(&ifap) == 0)
+            {
+                uint64_t total_bytes_in = 0, total_bytes_out = 0;
+                for (struct ifaddrs* ifa = ifap; ifa; ifa = ifa->ifa_next)
+                {
+                    if (ifa->ifa_addr != NULL &&
+                        ifa->ifa_addr->sa_family == AF_LINK)
+                    {
+                        struct if_data* ifd = (struct if_data*)ifa->ifa_data;
+                        if (ifd != NULL)
+                        {
+                            // Skip loopback interface
+                            if (strcmp(ifa->ifa_name, "lo0") == 0)
+                                continue;
 
+                            total_bytes_in += ifd->ifi_ibytes;
+                            total_bytes_out += ifd->ifi_obytes;
+                        }
+                    }
+                }
+                freeifaddrs(ifap);
+
+                metrics.network_bytes_in = total_bytes_in;
+                metrics.network_bytes_out = total_bytes_out;
+            }
+        }
+        catch (const std::exception& e)
+        {
+            JLOG(app_.journal("DatagramMonitor").error())
+                << "Error collecting network stats: " << e.what();
+        }
+
+        // Disk stats collection
+        // Disk IO stats are not easily accessible in macOS.
+        // We'll set these values to zero for now.
+        metrics.disk_bytes_read = 0;
+        metrics.disk_bytes_written = 0;
+#endif
         return metrics;
     }
 
@@ -761,7 +842,8 @@ private:
             header->load_base = loadBaseServer;
         }
 
-        // Get system info
+#if defined(__linux__)
+        // Get system info using sysinfo
         struct sysinfo si;
         if (sysinfo(&si) == 0)
         {
@@ -773,6 +855,43 @@ private:
             header->load_avg_5min = si.loads[1] / (float)(1 << SI_LOAD_SHIFT);
             header->load_avg_15min = si.loads[2] / (float)(1 << SI_LOAD_SHIFT);
         }
+#elif defined(__APPLE__)
+        // Get total physical memory
+        int64_t physical_memory;
+        size_t length = sizeof(physical_memory);
+        if (sysctlbyname("hw.memsize", &physical_memory, &length, NULL, 0) == 0)
+        {
+            header->system_memory_total = physical_memory;
+        }
+
+        // Get free and used memory
+        vm_statistics_data_t vm_stats;
+        mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+        if (host_statistics(
+                mach_host_self(),
+                HOST_VM_INFO,
+                (host_info_t)&vm_stats,
+                &count) == KERN_SUCCESS)
+        {
+            uint64_t page_size;
+            length = sizeof(page_size);
+            sysctlbyname("hw.pagesize", &page_size, &length, NULL, 0);
+
+            header->system_memory_free =
+                (uint64_t)vm_stats.free_count * page_size;
+            header->system_memory_used =
+                header->system_memory_total - header->system_memory_free;
+        }
+
+        // Get load averages
+        double loadavg[3];
+        if (getloadavg(loadavg, 3) == 3)
+        {
+            header->load_avg_1min = loadavg[0];
+            header->load_avg_5min = loadavg[1];
+            header->load_avg_15min = loadavg[2];
+        }
+#endif
 
         // Get process memory usage
         struct rusage usage;
@@ -780,6 +899,7 @@ private:
         header->process_memory_pages = usage.ru_maxrss;
 
         // Get disk usage
+#if defined(__linux__)
         struct statvfs fs;
         if (statvfs("/", &fs) == 0)
         {
@@ -788,6 +908,16 @@ private:
             header->system_disk_used =
                 header->system_disk_total - header->system_disk_free;
         }
+#elif defined(__APPLE__)
+        struct statfs fs;
+        if (statfs("/", &fs) == 0)
+        {
+            header->system_disk_total = fs.f_blocks * fs.f_bsize;
+            header->system_disk_free = fs.f_bfree * fs.f_bsize;
+            header->system_disk_used =
+                header->system_disk_total - header->system_disk_free;
+        }
+#endif
 
         // Get CPU core count
         header->cpu_cores = getPhysicalCPUCount();
