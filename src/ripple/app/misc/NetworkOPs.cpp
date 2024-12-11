@@ -68,10 +68,9 @@
 #include <ripple/rpc/CTID.h>
 #include <ripple/rpc/DeliveredAmount.h>
 #include <ripple/rpc/impl/RPCHelpers.h>
+#include <ripple/rpc/impl/UDPInfoSub.h>
 #include <boost/asio/ip/host_name.hpp>
 #include <boost/asio/steady_timer.hpp>
-#include <ripple/rpc/impl/UDPInfoSub.h>
-#include <ripple/app/misc/StateAccounting.h>
 #include <exception>
 #include <mutex>
 #include <set>
@@ -2192,7 +2191,6 @@ NetworkOPsImp::pubValidation(std::shared_ptr<STValidation> const& val)
             reserveIncXRP && reserveIncXRP->native())
             jvObj[jss::reserve_inc] = reserveIncXRP->xrp().jsonClipped();
 
-        int x = 0;
         for (auto i = mStreamMaps[sValidations].begin();
              i != mStreamMaps[sValidations].end();)
         {
@@ -4119,10 +4117,9 @@ bool
 NetworkOPsImp::subValidations(InfoSub::ref isrListener)
 {
     std::lock_guard sl(mSubLock);
-    bool const outcome = mStreamMaps[sValidations]
-                             .emplace(isrListener->getSeq(), isrListener)
-                             .second;
-    return outcome;
+    return mStreamMaps[sValidations]
+        .emplace(isrListener->getSeq(), isrListener)
+        .second;
 }
 
 void

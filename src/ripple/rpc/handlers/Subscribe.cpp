@@ -37,7 +37,6 @@ namespace ripple {
 Json::Value
 doSubscribe(RPC::JsonContext& context)
 {
-    std::cout << "doSubscribe called\n";
     InfoSub::pointer ispSub;
     Json::Value jvResult(Json::objectValue);
 
@@ -48,7 +47,6 @@ doSubscribe(RPC::JsonContext& context)
         return rpcError(rpcINVALID_PARAMS);
     }
 
-    std::cout << "doSubscribe called 1\n";
     if (context.params.isMember(jss::url))
     {
         if (context.role != Role::ADMIN)
@@ -114,7 +112,6 @@ doSubscribe(RPC::JsonContext& context)
         ispSub = context.infoSub;
     }
 
-    std::cout << "doSubscribe called 2\n";
     if (context.params.isMember(jss::streams))
     {
         if (!context.params[jss::streams].isArray())
@@ -160,7 +157,6 @@ doSubscribe(RPC::JsonContext& context)
             }
             else if (streamName == "validations")
             {
-                std::cout << "doSubscribe called 3\n";
                 context.netOps.subValidations(ispSub);
             }
             else if (streamName == "peer_status")
