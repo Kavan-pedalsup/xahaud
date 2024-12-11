@@ -24,13 +24,13 @@
 #include <ripple/app/misc/TxQ.h>
 #include <ripple/app/tx/apply.h>
 #include <ripple/basics/mulDiv.h>
+#include <ripple/protocol/AccountID.h>
 #include <ripple/protocol/Feature.h>
 #include <ripple/protocol/jss.h>
 #include <ripple/protocol/st.h>
 #include <algorithm>
 #include <limits>
 #include <numeric>
-#include <ripple/protocol/AccountID.h>
 
 namespace ripple {
 
@@ -1899,9 +1899,14 @@ TxQ::tryDirectApply(
     FeeLevel64 const feeLevelPaid = getFeeLevelPaid(view, *tx);
 
     static auto const genesisAccountId = calcAccountID(
-        generateKeyPair(KeyType::secp256k1, generateSeed("masterpassphrase")).first);
+        generateKeyPair(KeyType::secp256k1, generateSeed("masterpassphrase"))
+            .first);
 
-    if (feeLevelPaid >= requiredFeeLevel || (*tx)[sfAccount] == genesisAccountId)
+    // RH NOTE: exempting the genesis account from fee escalation is useful for
+    // stress testing it also shouldn't require an amendment because it will be
+    // fought out in consensus.
+    if (feeLevelPaid >= requiredFeeLevel ||
+        (*tx)[sfAccount] == genesisAccountId)
     {
         // Attempt to apply the transaction directly.
         auto const transactionID = tx->getTransactionID();
