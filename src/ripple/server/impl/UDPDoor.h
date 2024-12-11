@@ -186,7 +186,8 @@ private:
         }
 
         const size_t HEADER_SIZE = 16;
-        const size_t MAX_DATAGRAM_SIZE = 65507;  // Standard UDP datagram size
+        const size_t MAX_DATAGRAM_SIZE =
+            65487;  // Allow for ipv6 header 40 bytes + 8 bytes of udp header
         const size_t MAX_PAYLOAD_SIZE =
             MAX_DATAGRAM_SIZE - HEADER_SIZE;  // 65,491 bytes
 
