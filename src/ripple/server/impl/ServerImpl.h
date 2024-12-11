@@ -178,7 +178,6 @@ ServerImpl<Handler>::ports(std::vector<Port> const& ports)
             if (auto sp = ios_.emplace<UDPDoor<Handler>>(
                     handler_, io_service_, ports_.back(), j_))
             {
-                //                list_.push_back(sp);
                 eps.push_back(sp->get_endpoint());
                 sp->run();
             }
