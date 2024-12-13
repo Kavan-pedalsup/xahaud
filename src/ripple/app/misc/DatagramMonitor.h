@@ -996,15 +996,14 @@ private:
     void
     monitorThread()
     {
-
         std::vector<std::pair<EndpointInfo, int>> endpoints;
 
         for (auto const& epStr : app_.config().DATAGRAM_MONITOR)
         {
             auto endpoint = parseEndpoint(epStr);
-            endpoints.push_back(std::make_pair(endpoint, createSocket(endpoint)));
+            endpoints.push_back(
+                std::make_pair(endpoint, createSocket(endpoint)));
         }
-
 
         while (running_)
         {
