@@ -363,6 +363,7 @@ extern uint256 const fixPageCap;
 extern uint256 const fix240911;
 extern uint256 const fixFloatDivide;
 extern uint256 const featureTouch;
+extern uint256 const fixReduceImport;
 
 }  // namespace ripple
 
