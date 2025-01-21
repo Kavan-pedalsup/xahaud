@@ -304,6 +304,7 @@ struct JSRuntime {
     uint32_t operator_count;
 #endif
     void *user_opaque;
+    int64_t instruction_count;
     int64_t instruction_limit;
 };
 
@@ -1637,6 +1638,7 @@ JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque, uint32_t in
     }
     rt->malloc_state = ms;
     rt->malloc_gc_threshold = 256 * 1024;
+    rt->instruction_count = 0;
     rt->instruction_limit = instructionLimit;
 
     bf_context_init(&rt->bf_ctx, js_bf_realloc, rt);
@@ -6878,7 +6880,7 @@ static no_inline __exception int __js_poll_interrupts(JSContext *ctx)
 
 static inline __exception int js_poll_interrupts(JSContext *ctx)
 {
-    if (unlikely(--ctx->rt->instruction_limit <= 0))
+    if (unlikely(ctx->rt->instruction_limit <= ++ctx->rt->instruction_count))
     {
         /* XXX: should set a specific flag to avoid catching */
         /* RHTODO: investigate if this is user-catchable. */
@@ -6891,6 +6893,11 @@ static inline __exception int js_poll_interrupts(JSContext *ctx)
     } else {
         return 0;
     }
+}
+
+int64_t JS_GetInstructionCount(JSContext *ctx)
+{
+    return ctx->rt->instruction_count;
 }
 
 /* return -1 (exception) or TRUE/FALSE */

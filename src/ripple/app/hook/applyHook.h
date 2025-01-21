@@ -1658,6 +1658,10 @@ public:
             {
                 JLOG(j.warn()) << "HookInfo[" << HC_ACC() << "]: JSVM Exited with ROLLBACK";
             }
+            JLOG(j.warn()) << "HookInfo[" << HC_ACC()
+                           << "]: Instruction Count: "
+                           << JS_GetInstructionCount(ctx);
+            hookCtx.result.instructionCount = JS_GetInstructionCount(ctx);
         }
         /*
             // RHTODO: place jsvm_error exit type logic appropriately

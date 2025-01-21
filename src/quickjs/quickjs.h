@@ -1058,6 +1058,8 @@ int js_get_length64(JSContext *ctx, int64_t *pres,
 
 JSValue JS_GetPropertyInt64(JSContext *ctx, JSValueConst obj, int64_t idx);
 
+int64_t JS_GetInstructionCount(JSContext *ctx);
+
 #undef js_unlikely
 #undef js_force_inline
 
