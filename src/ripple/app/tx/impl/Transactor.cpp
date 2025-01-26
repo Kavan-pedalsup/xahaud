@@ -2108,7 +2108,7 @@ Transactor::operator()()
             if (isXRP(amt))
             {
                 // check if there's enough left in the sender's account
-                auto srcBal = sleSrc.getFieldAmount(sfBalance);
+                auto srcBal = sleSrc->getFieldAmount(sfBalance);
 
                 // service fee will only be delivered if the account
                 // contains adequate balance to cover reserves, otherwise
@@ -2125,7 +2125,7 @@ Transactor::operator()()
 
                 // action the transfer
             if (TER const ter{
-                view().transferXRP(view(), src, dst, amt, j_))
+                transferXRP(view(), src, dst, amt, j_)}; 
                 !isTesSuccess(ter))
                 {
                     JLOG(j_.warn())
@@ -2149,7 +2149,7 @@ Transactor::operator()()
                         << "service fee not applied because destination " << dst
                         << " has no trustline for currency: "
                         << amt.getCurrency()
-                        << " issued by: " << amt.getIssuer() << ".";
+                        << " issued by: " << toBase58(amt.getIssuer()) << ".";
                     break;
         }
 
@@ -2166,8 +2166,8 @@ Transactor::operator()()
 
                     JLOG(j_.trace())
                         << "service fee not sent from " << src << " to " << dst
-                        << " for " << amt.getCurrency() " issued by "
-                        << amt.getIssuer() " because "
+                        << " for " << amt.getCurrency() << " issued by "
+                        << toBase58(amt.getIssuer()) << " because "
                         << "accountSend() failed with code " << res << ".";
         }
             }
