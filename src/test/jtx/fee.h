@@ -69,9 +69,7 @@ private:
     Account dest_;
 
 public:
-    explicit sfee(
-        STAmount const& amount,
-        Account const& destination)
+    explicit sfee(STAmount const& amount, Account const& destination)
         : amount_(amount), dest_(destination)
     {
     }
