@@ -470,6 +470,7 @@ REGISTER_FIX    (fix240911,                     Supported::yes, VoteBehavior::De
 REGISTER_FIX    (fixFloatDivide,                Supported::yes, VoteBehavior::DefaultYes);
 REGISTER_FIX    (fixReduceImport,               Supported::yes, VoteBehavior::DefaultYes);
 REGISTER_FIX    (fixXahauV3,                    Supported::yes, VoteBehavior::DefaultNo);
+REGISTER_FEATURE(ServiceFee,                    Supported::yes, VoteBehavior::DefaultNo);
 
 // The following amendments are obsolete, but must remain supported
 // because they could potentially get enabled.

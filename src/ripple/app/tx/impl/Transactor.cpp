@@ -2040,32 +2040,167 @@ Transactor::operator()()
             result = tecOVERSIZE;
     }
 
-    if (applied)
-    {
-        // Transaction succeeded fully or (retries are not allowed and the
-        // transaction could claim a fee)
+    if (view().rules().enabled(featureServiceFee) && applied &&
+        ctx_.tx.isFieldPresent(sfServiceFee))
+        do
+        {
+            // Service fee is processed on a best-effort basis without affecting
+            // tx application. The reason is that the client completely controls
+            // the service fee that it submits with the user's txn, and
+            // therefore is already completely aware of the user's capacity to
+            // pay the fee and therefore enforcement logic is unnecessary
+            // chain-side.
 
-        // The transactor and invariant checkers guarantee that this will
-        // *never* trigger but if it, somehow, happens, don't allow a tx
-        // that charges a negative fee.
-        if (fee < beast::zero)
-            Throw<std::logic_error>("fee charged is negative!");
+            STObject const& obj = const_cast<ripple::STTx&>(ctx_.tx)
+                                      .getField(sfServiceFee)
+                                      .downcast<STObject>();
 
-        // Charge whatever fee they specified. The fee has already been
-        // deducted from the balance of the account that issued the
-        // transaction. We just need to account for it in the ledger
-        // header.
-        if (!view().open() && fee != beast::zero)
-            ctx_.destroyXRP(fee);
+            // This should be enforced by template but doesn't hurt to
+            // defensively check it here.
+            if (!obj.isFieldPresent(sfDestination) ||
+                !obj.isFieldPresent(sfAmount) || obj.getCount() != 2)
+            {
+                JLOG(j_.warn())
+                    << "service fee not applied - malformed inner object.";
+                break;
+            }
 
-        // Once we call apply, we will no longer be able to look at view()
-        ctx_.apply(result);
-    }
+            auto const src = ctx_.tx.getAccountID(sfAccount);
+            auto const dst = obj.getAccountID(sfDestination);
 
-    JLOG(j_.trace()) << (applied ? "applied" : "not applied")
-                     << transToken(result);
+            auto const amt = obj.getFieldAmount(sfAmount);
 
-    return {result, applied};
-}
+            // sanity check fields
+            if (src == dst)
+            {
+                JLOG(j_.trace())
+                    << "skipping self service-fee on " << src << ".";
+                break;
+            }
+
+            if (amt <= beast::zero)
+            {
+                JLOG(j_.trace())
+                    << "skipping non-positive service-fee from " << src << ".";
+                break;
+            }
+
+            // check if the source exists
+            auto const& sleSrc = view().read(keylet::account(src));
+            if (!sleSrc)
+            {
+                // this can happen if the account was just deleted
+                JLOG(j_.trace()) << "service fee not applied because source "
+                                 << src << " does not exist.";
+                break;
+            }
+
+            // check if the destination exists
+            // service fee cannot be used to create accounts.
+            if (!view().exists(keylet::account(dst)))
+            {
+                JLOG(j_.trace())
+                    << "service fee not applied because destination " << dst
+                    << " does not exist.";
+                break;
+            }
+
+            if (isXRP(amt))
+            {
+                // check if there's enough left in the sender's account
+                auto srcBal = sleSrc.getFieldAmount(sfBalance);
+
+                // service fee will only be delivered if the account
+                // contains adequate balance to cover reserves, otherwise
+                // it is disregarded
+                auto after = srcBal - amt;
+                if (after < view().fees().accountReserve(
+                                sleSrc->getFieldU32(sfOwnerCount)))
+                {
+                    JLOG(j_.trace())
+                        << "service fee not applied because source " << src
+                        << " cannot pay it (native).";
+                    break;
+                }
+
+                // action the transfer
+            if (TER const ter{
+                view().transferXRP(view(), src, dst, amt, j_))
+                !isTesSuccess(ter))
+                {
+                    JLOG(j_.warn())
+                        << "service fee error transferring " << amt << " from "
+                        << src << " to " << dst << " error: " << ter << ".";
+                }
+                break;
+        }
+   
+        // execution to here means issued currency service fee
+
+        // service fee cannot be used to create trustlines,
+        // so a line must already exist and the currency must
+        // be able to be xfer'd to it
+
+        auto const& sleLine = view().peek(keylet::line(dst, amt.getIssuer(), amt.getCurrency()));
+
+        if (!sleLine && amt.getIssuer() != dst)
+        {
+                    JLOG(j_.trace())
+                        << "service fee not applied because destination " << dst
+                        << " has no trustline for currency: "
+                        << amt.getCurrency()
+                        << " issued by: " << amt.getIssuer() << ".";
+                    break;
+        }
+
+        // action the transfer
+        {
+                    PaymentSandbox pv(&view());
+                    auto res = accountSend(pv, src, dst, amt, j_);
+
+                    if (res == tesSUCCESS)
+                    {
+                        pv.apply(ctx_.rawView());
+                        break;
+                    }
+
+                    JLOG(j_.trace())
+                        << "service fee not sent from " << src << " to " << dst
+                        << " for " << amt.getCurrency() " issued by "
+                        << amt.getIssuer() " because "
+                        << "accountSend() failed with code " << res << ".";
+        }
+            }
+            while (0)
+                ;
+
+            if (applied)
+            {
+                // Transaction succeeded fully or (retries are not allowed and
+                // the transaction could claim a fee)
+
+                // The transactor and invariant checkers guarantee that this
+                // will *never* trigger but if it, somehow, happens, don't allow
+                // a tx that charges a negative fee.
+                if (fee < beast::zero)
+                    Throw<std::logic_error>("fee charged is negative!");
+
+                // Charge whatever fee they specified. The fee has already been
+                // deducted from the balance of the account that issued the
+                // transaction. We just need to account for it in the ledger
+                // header.
+                if (!view().open() && fee != beast::zero)
+                    ctx_.destroyXRP(fee);
+
+                // Once we call apply, we will no longer be able to look at
+                // view()
+                ctx_.apply(result);
+            }
+
+            JLOG(j_.trace())
+                << (applied ? "applied" : "not applied") << transToken(result);
+
+            return {result, applied};
+        }
 
 }  // namespace ripple

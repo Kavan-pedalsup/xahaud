@@ -157,6 +157,13 @@ InnerObjectFormats::InnerObjectFormats()
             {sfDigest, soeOPTIONAL},
             {sfFlags, soeOPTIONAL},
         });
+
+    add(sfServiceFee.jsonName.c_str(),
+        sfServiceFee.getCode(),
+        {
+            {sfAmount, soeREQUIRED},
+            {sfDestination, soeREQUIRED},
+        });
 }
 
 InnerObjectFormats const&
