@@ -2040,7 +2040,7 @@ Transactor::operator()()
             result = tecOVERSIZE;
     }
 
-    if (view().rules().enabled(featureServiceFee) && applied &&
+    if (applied && view().rules().enabled(featureServiceFee) &&
         ctx_.tx.isFieldPresent(sfServiceFee))
         do
         {
@@ -2124,83 +2124,80 @@ Transactor::operator()()
                 }
 
                 // action the transfer
-            if (TER const ter{
-                transferXRP(view(), src, dst, amt, j_)}; 
-                !isTesSuccess(ter))
+                if (TER const ter{transferXRP(view(), src, dst, amt, j_)};
+                    !isTesSuccess(ter))
                 {
                     JLOG(j_.warn())
                         << "service fee error transferring " << amt << " from "
                         << src << " to " << dst << " error: " << ter << ".";
                 }
                 break;
-        }
-   
-        // execution to here means issued currency service fee
-
-        // service fee cannot be used to create trustlines,
-        // so a line must already exist and the currency must
-        // be able to be xfer'd to it
-
-        auto const& sleLine = view().peek(keylet::line(dst, amt.getIssuer(), amt.getCurrency()));
-
-        if (!sleLine && amt.getIssuer() != dst)
-        {
-                    JLOG(j_.trace())
-                        << "service fee not applied because destination " << dst
-                        << " has no trustline for currency: "
-                        << amt.getCurrency()
-                        << " issued by: " << toBase58(amt.getIssuer()) << ".";
-                    break;
-        }
-
-        // action the transfer
-        {
-                    PaymentSandbox pv(&view());
-                    auto res = accountSend(pv, src, dst, amt, j_);
-
-                    if (res == tesSUCCESS)
-                    {
-                        pv.apply(ctx_.rawView());
-                        break;
-                    }
-
-                    JLOG(j_.trace())
-                        << "service fee not sent from " << src << " to " << dst
-                        << " for " << amt.getCurrency() << " issued by "
-                        << toBase58(amt.getIssuer()) << " because "
-                        << "accountSend() failed with code " << res << ".";
-        }
             }
-            while (0)
-                ;
 
-            if (applied)
+            // execution to here means issued currency service fee
+
+            // service fee cannot be used to create trustlines,
+            // so a line must already exist and the currency must
+            // be able to be xfer'd to it
+
+            auto const& sleLine = view().peek(
+                keylet::line(dst, amt.getIssuer(), amt.getCurrency()));
+
+            if (!sleLine && amt.getIssuer() != dst)
             {
-                // Transaction succeeded fully or (retries are not allowed and
-                // the transaction could claim a fee)
-
-                // The transactor and invariant checkers guarantee that this
-                // will *never* trigger but if it, somehow, happens, don't allow
-                // a tx that charges a negative fee.
-                if (fee < beast::zero)
-                    Throw<std::logic_error>("fee charged is negative!");
-
-                // Charge whatever fee they specified. The fee has already been
-                // deducted from the balance of the account that issued the
-                // transaction. We just need to account for it in the ledger
-                // header.
-                if (!view().open() && fee != beast::zero)
-                    ctx_.destroyXRP(fee);
-
-                // Once we call apply, we will no longer be able to look at
-                // view()
-                ctx_.apply(result);
+                JLOG(j_.trace())
+                    << "service fee not applied because destination " << dst
+                    << " has no trustline for currency: " << amt.getCurrency()
+                    << " issued by: " << toBase58(amt.getIssuer()) << ".";
+                break;
             }
 
-            JLOG(j_.trace())
-                << (applied ? "applied" : "not applied") << transToken(result);
+            // action the transfer
+            {
+                PaymentSandbox pv(&view());
+                auto res = accountSend(pv, src, dst, amt, j_);
 
-            return {result, applied};
-        }
+                if (res == tesSUCCESS)
+                {
+                    pv.apply(ctx_.rawView());
+                    break;
+                }
+
+                JLOG(j_.trace())
+                    << "service fee not sent from " << src << " to " << dst
+                    << " for " << amt.getCurrency() << " issued by "
+                    << toBase58(amt.getIssuer()) << " because "
+                    << "accountSend() failed with code " << res << ".";
+            }
+        } while (0);
+
+    if (applied)
+    {
+        // Transaction succeeded fully or (retries are not allowed and
+        // the transaction could claim a fee)
+
+        // The transactor and invariant checkers guarantee that this
+        // will *never* trigger but if it, somehow, happens, don't allow
+        // a tx that charges a negative fee.
+        if (fee < beast::zero)
+            Throw<std::logic_error>("fee charged is negative!");
+
+        // Charge whatever fee they specified. The fee has already been
+        // deducted from the balance of the account that issued the
+        // transaction. We just need to account for it in the ledger
+        // header.
+        if (!view().open() && fee != beast::zero)
+            ctx_.destroyXRP(fee);
+
+        // Once we call apply, we will no longer be able to look at
+        // view()
+        ctx_.apply(result);
+    }
+
+    JLOG(j_.trace()) << (applied ? "applied" : "not applied")
+                     << transToken(result);
+
+    return {result, applied};
+}
 
 }  // namespace ripple
