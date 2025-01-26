@@ -2122,34 +2122,27 @@ Transactor::operator()()
                         << " cannot pay it (native).";
                     break;
                 }
-
-                // action the transfer
-                if (TER const ter{transferXRP(view(), src, dst, amt, j_)};
-                    !isTesSuccess(ter))
-                {
-                    JLOG(j_.warn())
-                        << "service fee error transferring " << amt << " from "
-                        << src << " to " << dst << " error: " << ter << ".";
-                }
-                break;
             }
-
-            // execution to here means issued currency service fee
-
-            // service fee cannot be used to create trustlines,
-            // so a line must already exist and the currency must
-            // be able to be xfer'd to it
-
-            auto const& sleLine = view().peek(
-                keylet::line(dst, amt.getIssuer(), amt.getCurrency()));
-
-            if (!sleLine && amt.getIssuer() != dst)
+            else
             {
-                JLOG(j_.trace())
-                    << "service fee not applied because destination " << dst
-                    << " has no trustline for currency: " << amt.getCurrency()
-                    << " issued by: " << toBase58(amt.getIssuer()) << ".";
-                break;
+                // issued currency
+
+                // service fee cannot be used to create trustlines,
+                // so a line must already exist and the currency must
+                // be able to be xfer'd to it
+
+                auto const& sleLine = view().peek(
+                    keylet::line(dst, amt.getIssuer(), amt.getCurrency()));
+
+                if (!sleLine && amt.getIssuer() != dst)
+                {
+                    JLOG(j_.trace())
+                        << "service fee not applied because destination " << dst
+                        << " has no trustline for currency: "
+                        << amt.getCurrency()
+                        << " issued by: " << toBase58(amt.getIssuer()) << ".";
+                    break;
+                }
             }
 
             // action the transfer
@@ -2163,12 +2156,22 @@ Transactor::operator()()
                     break;
                 }
 
+                if (isXRP(amt))
+                {
+                    JLOG(j_.trace())
+                        << "service fee not sent from " << src << " to " << dst
+                        << " (native) because accountSend() failed with code "
+                        << res << ".";
+                    break;
+                }
+
                 JLOG(j_.trace())
                     << "service fee not sent from " << src << " to " << dst
                     << " for " << amt.getCurrency() << " issued by "
                     << toBase58(amt.getIssuer()) << " because "
                     << "accountSend() failed with code " << res << ".";
             }
+
         } while (0);
 
     if (applied)
