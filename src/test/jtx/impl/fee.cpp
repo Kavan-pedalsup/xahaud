@@ -34,6 +34,14 @@ fee::operator()(Env&, JTx& jt) const
         jt[jss::Fee] = amount_->getJson(JsonOptions::none);
 }
 
+void
+sfee::operator()(Env&, JTx& jt) const
+{
+    jt.jv[jss::ServiceFee] = Json::objectValue;
+    jt.jv[jss::ServiceFee][jss::Amount] = amount_.getJson(JsonOptions::none);
+    jt.jv[jss::ServiceFee][jss::Destination] = dest_.human();
+}
+
 }  // namespace jtx
 }  // namespace test
 }  // namespace ripple

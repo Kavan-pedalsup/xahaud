@@ -61,6 +61,25 @@ public:
     operator()(Env&, JTx& jt) const;
 };
 
+/** Set the service fee on a JTx. */
+class sfee
+{
+private:
+    STAmount amount_;
+    Account dest_;
+
+public:
+    explicit sfee(
+        STAmount const& amount,
+        Account const& destination)
+        : amount_(amount), dest_(destination)
+    {
+    }
+
+    void
+    operator()(Env&, JTx& jtx) const;
+};
+
 }  // namespace jtx
 }  // namespace test
 }  // namespace ripple
