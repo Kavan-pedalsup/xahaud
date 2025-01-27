@@ -126,8 +126,7 @@ struct ServiceFee_test : public beast::unit_test::suite
         // source does not exist.
         {
             // TODO
-        }
-        // destination does not exist.
+        }  // destination does not exist.
         {
             Env env{*this, features};
             auto const baseFee = env.current()->fees().base;
@@ -144,8 +143,7 @@ struct ServiceFee_test : public beast::unit_test::suite
         // insufficient reserve
         {
             // TODO
-        }
-        // no trustline (source)
+        }  // no trustline (source)
         {
             Env env{*this, features};
             env.fund(XRP(1000), alice, bob, carol, gw);
