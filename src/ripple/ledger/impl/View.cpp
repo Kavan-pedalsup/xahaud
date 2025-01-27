@@ -1583,4 +1583,24 @@ transferXRP(
     return tesSUCCESS;
 }
 
+TER
+requireAuth(ReadView const& view, Issue const& issue, AccountID const& account)
+{
+    if (isXRP(issue) || issue.account == account)
+        return tesSUCCESS;
+    if (auto const issuerAccount = view.read(keylet::account(issue.account));
+        issuerAccount && (*issuerAccount)[sfFlags] & lsfRequireAuth)
+    {
+        if (auto const trustLine =
+                view.read(keylet::line(account, issue.account, issue.currency)))
+            return ((*trustLine)[sfFlags] &
+                    ((account > issue.account) ? lsfLowAuth : lsfHighAuth))
+                ? tesSUCCESS
+                : TER{tecNO_AUTH};
+        return TER{tecNO_LINE};
+    }
+
+    return tesSUCCESS;
+}
+
 }  // namespace ripple
