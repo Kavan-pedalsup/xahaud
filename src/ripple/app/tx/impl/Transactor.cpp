@@ -2131,10 +2131,31 @@ Transactor::operator()()
                 // so a line must already exist and the currency must
                 // be able to be xfer'd to it
 
-                auto const& sleLine = view().peek(
-                    keylet::line(dst, amt.getIssuer(), amt.getCurrency()));
+                if (auto const result = requireAuth(view(), amt.issue(), dst);
+                    !isTesSuccess(result))
+                {
+                    JLOG(j_.trace())
+                        << "service fee not applied because destination " << dst
+                        << " does not have a authorized trustline for "
+                           "currency: "
+                        << amt.getCurrency()
+                        << " issued by: " << toBase58(amt.getIssuer()) << ".";
+                    break;
+                }
 
-                if (!sleLine && amt.getIssuer() != dst)
+                if (amt.getIssuer() != src &&
+                    !view().exists(keylet::line(src, amt.issue())))
+                {
+                    JLOG(j_.trace())
+                        << "service fee not applied because source " << src
+                        << " has no trustline for currency: "
+                        << amt.getCurrency()
+                        << " issued by: " << toBase58(amt.getIssuer()) << ".";
+                    break;
+                }
+
+                if (amt.getIssuer() != dst &&
+                    !view().exists(keylet::line(dst, amt.issue())))
                 {
                     JLOG(j_.trace())
                         << "service fee not applied because destination " << dst
@@ -2142,6 +2163,69 @@ Transactor::operator()()
                         << amt.getCurrency()
                         << " issued by: " << toBase58(amt.getIssuer()) << ".";
                     break;
+                }
+
+                if (dst != amt.getIssuer() && src != amt.getIssuer())
+                {
+                    if (isFrozen(
+                            view(), src, amt.getCurrency(), amt.getIssuer()) ||
+                        isFrozen(
+                            view(), dst, amt.getCurrency(), amt.getIssuer()))
+                    {
+                        JLOG(j_.trace())
+                            << "service fee not applied because destination "
+                            << dst << " has frozen trustline for currency: "
+                            << amt.getCurrency()
+                            << " issued by: " << toBase58(amt.getIssuer())
+                            << ".";
+                        break;
+                    }
+                }
+
+                if (src != amt.getIssuer())
+                {
+                    Keylet const srcLine =
+                        keylet::line(src, amt.getIssuer(), amt.getCurrency());
+                    auto const sleSrcLine = view().read(srcLine);
+                    STAmount srcBalance = src < amt.issue().account
+                        ? (*sleSrcLine)[sfBalance]
+                        : -(*sleSrcLine)[sfBalance];
+                    // TODO: xferRate
+                    if (srcBalance < amt)
+                    {
+                        JLOG(j_.trace())
+                            << "service fee not applied because source " << src
+                            << " has insufficient funds for currency: "
+                            << amt.getCurrency()
+                            << " issued by: " << toBase58(amt.getIssuer())
+                            << ".";
+                        break;
+                    }
+                }
+
+                if (dst != amt.getIssuer())
+                {
+                    Keylet const dstLine =
+                        keylet::line(dst, amt.getIssuer(), amt.getCurrency());
+                    auto const sleDstLine = view().read(dstLine);
+                    STAmount dstLimit = dst < amt.issue().account
+                        ? (*sleDstLine)[sfLowLimit]
+                        : (*sleDstLine)[sfHighLimit];
+                    // TODO: xferRate
+                    if (accountFunds(view(), dst, amt, fhZERO_IF_FROZEN, j_) +
+                            amt >
+                        dstLimit)
+                    {
+                        JLOG(j_.trace())
+                            << "service fee not applied because destination "
+                            << dst
+                            << " has insufficient trustline limit for "
+                               "currency: "
+                            << amt.getCurrency()
+                            << " issued by: " << toBase58(amt.getIssuer())
+                            << ".";
+                        break;
+                    }
                 }
             }
 
@@ -2170,6 +2254,7 @@ Transactor::operator()()
                     << " for " << amt.getCurrency() << " issued by "
                     << toBase58(amt.getIssuer()) << " because "
                     << "accountSend() failed with code " << res << ".";
+                break;
             }
 
         } while (0);
