@@ -63,16 +63,16 @@ struct ServiceFee_test : public beast::unit_test::suite
             auto const preBob = env.balance(bob);
             auto const preCarol = env.balance(carol);
 
+            auto const result = withSFee ? ter(tesSUCCESS) : ter(temDISABLED);
             env(pay(alice, bob, XRP(10)),
                 fee(feeDrops),
                 sfee(XRP(1), carol),
-                ter(tesSUCCESS));
+                result);
             env.close();
 
-            auto const postAlice = withSFee
-                ? preAlice - feeDrops - XRP(10) - XRP(1)
-                : preAlice - feeDrops - XRP(10);
-            auto const postBob = preBob + XRP(10);
+            auto const postAlice =
+                withSFee ? preAlice - feeDrops - XRP(10) - XRP(1) : preAlice;
+            auto const postBob = withSFee ? preBob + XRP(10) : preBob;
             auto const postCarol = withSFee ? preCarol + XRP(1) : preCarol;
             BEAST_EXPECT(env.balance(alice) == postAlice);
             BEAST_EXPECT(env.balance(bob) == postBob);
@@ -98,30 +98,24 @@ struct ServiceFee_test : public beast::unit_test::suite
         // skipping self service-fee
         {
             Env env{*this, features};
-            auto const baseFee = env.current()->fees().base;
             env.fund(XRP(1000), alice, bob);
             env.close();
 
-            auto const preAlice = env.balance(alice);
             auto const amt = XRP(10);
             auto const sfeeAmt = XRP(1);
-            env(pay(alice, bob, amt), sfee(sfeeAmt, alice));
+            env(pay(alice, bob, amt), sfee(sfeeAmt, alice), ter(temDST_IS_SRC));
             env.close();
-            BEAST_EXPECT(env.balance(alice) == preAlice - amt - baseFee);
         }
         // skipping non-positive service-fee
         {
             Env env{*this, features};
-            auto const baseFee = env.current()->fees().base;
-            env.fund(XRP(1000), alice, bob);
+            env.fund(XRP(1000), alice, bob, carol);
             env.close();
 
-            auto const preAlice = env.balance(alice);
             auto const amt = XRP(10);
             auto const sfeeAmt = XRP(-1);
-            env(pay(alice, bob, amt), sfee(sfeeAmt, alice));
+            env(pay(alice, bob, amt), sfee(sfeeAmt, carol), ter(temBAD_AMOUNT));
             env.close();
-            BEAST_EXPECT(env.balance(alice) == preAlice - amt - baseFee);
         }
         // source does not exist.
         {
@@ -259,12 +253,7 @@ struct ServiceFee_test : public beast::unit_test::suite
 
         for (auto const& t : tests)
         {
-            //Env env{*this, features};
-            Env env{
-                *this, envconfig(), features, nullptr,
-                //beast::severities::kWarning
-                beast::severities::kInfo
-            };
+            Env env{*this, features};
             auto const carol = Account("carol");
             auto const USD = t.gw["USD"];
             env.fund(XRP(5000), t.src, t.dst, t.gw, carol);
@@ -574,9 +563,10 @@ struct ServiceFee_test : public beast::unit_test::suite
             auto const sfeeAmt = USD(1);
             env(pay(alice, bob, XRP(100)), sfee(sfeeAmt, carol));
             env.close();
+
+            BEAST_EXPECT(env.balance(alice, USD) == preAlice - sfeeAmt);
             BEAST_EXPECT(
-                env.balance(alice, USD) == preAlice - sfeeAmt - USD(0.25));
-            BEAST_EXPECT(env.balance(carol, USD) == preCarol + sfeeAmt);
+                env.balance(carol, USD) == preCarol + sfeeAmt - USD(0.20));
         }
 
         // test issuer doesnt pay own rate
@@ -603,6 +593,7 @@ struct ServiceFee_test : public beast::unit_test::suite
     void
     testWithFeats(FeatureBitset features)
     {
+        testEnabled(features);
         testInvalid(features);
         testRippleState(features);
         testGateway(features);
@@ -617,7 +608,6 @@ public:
     {
         using namespace test::jtx;
         auto const sa = supported_amendments();
-        testEnabled(sa);
         testWithFeats(sa);
     }
 };

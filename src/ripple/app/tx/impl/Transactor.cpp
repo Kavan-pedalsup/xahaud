@@ -88,6 +88,69 @@ preflight0(PreflightContext const& ctx)
     return tesSUCCESS;
 }
 
+NotTEC
+checkServiceFee(PreflightContext const& ctx)
+{
+    if (!ctx.tx.isFieldPresent(sfServiceFee))
+        return tesSUCCESS;
+
+    if (!ctx.rules.enabled(featureServiceFee))
+    {
+        JLOG(ctx.j.debug())
+            << "ServiceFee: Service fee feature is not enabled.";
+        return temDISABLED;
+    }
+
+    STObject const& obj = const_cast<ripple::STTx&>(ctx.tx)
+                              .getField(sfServiceFee)
+                              .downcast<STObject>();
+
+    // This should be enforced by template but doesn't hurt to
+    // defensively check it here.
+    if (!obj.isFieldPresent(sfDestination) || !obj.isFieldPresent(sfAmount) ||
+        obj.getCount() != 2)
+    {
+        JLOG(ctx.j.debug()) << "ServiceFee: Malformed: Destination and Amount "
+                               "fields are required.";
+        return temINVALID;
+    }
+
+    if (ctx.tx.getAccountID(sfAccount) == obj.getAccountID(sfDestination))
+    {
+        JLOG(ctx.j.debug()) << "ServiceFee: Malformed: Destination may not be "
+                               "the same as the source account.";
+        return temDST_IS_SRC;
+    }
+
+    auto const amount = obj.getFieldAmount(sfAmount);
+
+    if (!isXRP(amount))
+    {
+        if (!isLegalNet(amount))
+        {
+            JLOG(ctx.j.debug())
+                << "ServiceFee: Malformed: Amount must be a valid net amount.";
+            return temBAD_AMOUNT;
+        }
+
+        if (isBadCurrency(amount))
+        {
+            JLOG(ctx.j.debug())
+                << "ServiceFee: Malformed: Currency is not allowed.";
+            return temBAD_CURRENCY;
+        }
+    }
+
+    if (amount <= beast::zero)
+    {
+        JLOG(ctx.j.debug())
+            << "ServiceFee: Malformed: Amount must be a positive value.";
+        return temBAD_AMOUNT;
+    }
+
+    return tesSUCCESS;
+}
+
 /** Performs early sanity checks on the account and fee fields */
 NotTEC
 preflight1(PreflightContext const& ctx)
@@ -96,12 +159,6 @@ preflight1(PreflightContext const& ctx)
     // skip this function, and those do not allow an sfTicketSequence field.
     if (ctx.tx.isFieldPresent(sfTicketSequence) &&
         !ctx.rules.enabled(featureTicketBatch))
-    {
-        return temMALFORMED;
-    }
-
-    if (ctx.tx.isFieldPresent(sfServiceFee) &&
-        !ctx.rules.enabled(featureServiceFee))
     {
         return temMALFORMED;
     }
@@ -170,6 +227,9 @@ preflight1(PreflightContext const& ctx)
     if (ctx.tx.getSeqProxy().isTicket() &&
         ctx.tx.isFieldPresent(sfAccountTxnID))
         return temINVALID;
+
+    if (auto const ret = checkServiceFee(ctx); !isTesSuccess(ret))
+        return ret;
 
     return tesSUCCESS;
 }
@@ -1914,43 +1974,16 @@ Transactor::operator()()
             STObject const& obj = const_cast<ripple::STTx&>(ctx_.tx)
                                       .getField(sfServiceFee)
                                       .downcast<STObject>();
-
-            // This should be enforced by template but doesn't hurt to
-            // defensively check it here.
-            if (!obj.isFieldPresent(sfDestination) ||
-                !obj.isFieldPresent(sfAmount) || obj.getCount() != 2)
-            {
-                JLOG(j_.warn())
-                    << "service fee not applied - malformed inner object.";
-                break;
-            }
-
             auto const src = ctx_.tx.getAccountID(sfAccount);
             auto const dst = obj.getAccountID(sfDestination);
-
             auto const amt = obj.getFieldAmount(sfAmount);
-
-            // sanity check fields
-            if (src == dst)
-            {
-                JLOG(j_.info())
-                    << "skipping self service-fee on " << src << ".";
-                break;
-            }
-
-            if (amt <= beast::zero)
-            {
-                JLOG(j_.info())
-                    << "skipping non-positive service-fee from " << src << ".";
-                break;
-            }
 
             // check if the source exists
             auto const& sleSrc = view().read(keylet::account(src));
             if (!sleSrc)
             {
                 // this can happen if the account was just deleted
-                JLOG(j_.info()) << "service fee not applied because source "
+                JLOG(j_.debug()) << "service fee not applied because source "
                                  << src << " does not exist.";
                 break;
             }
@@ -1959,7 +1992,7 @@ Transactor::operator()()
             // service fee cannot be used to create accounts.
             if (!view().exists(keylet::account(dst)))
             {
-                JLOG(j_.info())
+                JLOG(j_.debug())
                     << "service fee not applied because destination " << dst
                     << " does not exist.";
                 break;
@@ -1977,7 +2010,7 @@ Transactor::operator()()
                 if (after < view().fees().accountReserve(
                                 sleSrc->getFieldU32(sfOwnerCount)))
                 {
-                    JLOG(j_.info())
+                    JLOG(j_.debug())
                         << "service fee not applied because source " << src
                         << " cannot pay it (native).";
                     break;
@@ -1985,14 +2018,14 @@ Transactor::operator()()
 
                 PaymentSandbox pv(&view());
                 auto res = accountSend(pv, src, dst, amt, j_, false);
-                if (res == tesSUCCESS)
+                if (isTesSuccess(res))
                 {
                     pv.apply(ctx_.rawView());
                     break;
                 }
 
                 JLOG(j_.warn()) << "service fee (native) not applied because "
-                                   "accountSend failed.";
+                                    "accountSend failed.";
                 break;
             }
 
@@ -2003,22 +2036,9 @@ Transactor::operator()()
             // be able to be xfer'd to it
 
             auto const issuer = amt.getIssuer();
-
-            if (auto const result = requireAuth(view(), amt.issue(), dst);
-                !isTesSuccess(result))
-            {
-                JLOG(j_.info())
-                    << "service fee not applied because destination " << dst
-                    << " does not have a authorized trustline for "
-                       "currency: "
-                    << amt.getCurrency() << " issued by: " << toBase58(issuer)
-                    << ".";
-                break;
-            }
-
             if (issuer != src && !view().exists(keylet::line(src, amt.issue())))
             {
-                JLOG(j_.info())
+                JLOG(j_.debug())
                     << "service fee not applied because source " << src
                     << " has no trustline for currency: " << amt.getCurrency()
                     << " issued by: " << toBase58(issuer) << ".";
@@ -2027,22 +2047,26 @@ Transactor::operator()()
 
             if (issuer != dst && !view().exists(keylet::line(dst, amt.issue())))
             {
-                JLOG(j_.info())
+                JLOG(j_.debug())
                     << "service fee not applied because destination " << dst
                     << " has no trustline for currency: " << amt.getCurrency()
                     << " issued by: " << toBase58(issuer) << ".";
                 break;
             }
 
-            if (dst != issuer && src != issuer &&
-                !trustTransferAllowed(view(), {src, dst}, amt.issue(), j_))
+            if (dst != issuer && src != issuer)
             {
-                JLOG(j_.info())
-                    << "service fee not applied because destination " << dst
-                    << " has frozen trustline for currency: "
-                    << amt.getCurrency() << " issued by: " << toBase58(issuer)
-                    << ".";
-                break;
+                TER const res =
+                    trustTransferAllowed(view(), {src, dst}, amt.issue(), j_);
+                if (!isTesSuccess(res))
+                {
+                    JLOG(j_.debug())
+                        << "service fee not applied because destination " << dst
+                        << " trust transfer not allowed for currency: "
+                        << amt.getCurrency()
+                        << " issued by: " << toBase58(issuer) << ".";
+                    break;
+                }
             }
 
             if (src != issuer)
@@ -2056,7 +2080,7 @@ Transactor::operator()()
                 // TODO: xferRate
                 if (srcBalance < amt)
                 {
-                    JLOG(j_.info())
+                    JLOG(j_.debug())
                         << "service fee not applied because source " << src
                         << " has insufficient funds for currency: "
                         << amt.getCurrency()
@@ -2076,7 +2100,7 @@ Transactor::operator()()
                 if (accountFunds(view(), dst, amt, fhZERO_IF_FROZEN, j_) + amt >
                     dstLimit)
                 {
-                    JLOG(j_.info())
+                    JLOG(j_.debug())
                         << "service fee not applied because destination " << dst
                         << " has insufficient trustline limit for "
                            "currency: "
@@ -2092,13 +2116,13 @@ Transactor::operator()()
 
                 STAmount saActual;
                 auto res = accountSend(pv, src, dst, amt, j_, false);
-                if (res == tesSUCCESS)
+                if (isTesSuccess(res))
                 {
                     pv.apply(ctx_.rawView());
                     break;
                 }
 
-                JLOG(j_.info())
+                JLOG(j_.warn())
                     << "service fee not sent from " << src << " to " << dst
                     << " for " << amt.getCurrency() << " issued by "
                     << toBase58(issuer) << " because "
