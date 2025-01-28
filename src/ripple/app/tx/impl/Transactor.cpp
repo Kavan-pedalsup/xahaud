@@ -100,6 +100,12 @@ preflight1(PreflightContext const& ctx)
         return temMALFORMED;
     }
 
+    if (ctx.tx.isFieldPresent(sfServiceFee) &&
+        !ctx.rules.enabled(featureServiceFee))
+    {
+        return temMALFORMED;
+    }
+
     auto const ret = preflight0(ctx);
     if (!isTesSuccess(ret))
         return ret;
