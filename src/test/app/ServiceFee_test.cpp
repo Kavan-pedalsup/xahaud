@@ -259,7 +259,12 @@ struct ServiceFee_test : public beast::unit_test::suite
 
         for (auto const& t : tests)
         {
-            Env env{*this, features};
+            //Env env{*this, features};
+            Env env{
+                *this, envconfig(), features, nullptr,
+                //beast::severities::kWarning
+                beast::severities::kInfo
+            };
             auto const carol = Account("carol");
             auto const USD = t.gw["USD"];
             env.fund(XRP(5000), t.src, t.dst, t.gw, carol);
