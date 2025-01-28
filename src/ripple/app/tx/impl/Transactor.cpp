@@ -2025,7 +2025,7 @@ Transactor::operator()()
                 }
 
                 JLOG(j_.warn()) << "service fee (native) not applied because "
-                                    "accountSend failed.";
+                                   "accountSend failed.";
                 break;
             }
 
