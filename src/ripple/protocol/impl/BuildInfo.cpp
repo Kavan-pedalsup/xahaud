@@ -33,13 +33,8 @@ namespace BuildInfo {
 //  and follow the format described at http://semver.org/
 //------------------------------------------------------------------------------
 // clang-format off
-char const* const versionString = "0.0.0"
+char const* const versionString = "0.0.0";
 // clang-format on
-#ifdef DEBUG
-    "+DEBUG"
-#endif
-    //--------------------------------------------------------------------------
-    ;
 
 //
 // Don't touch anything below this line
@@ -51,9 +46,7 @@ getVersionString()
     // if the external build engine fails to populate the version string,
     // then we will do it ourselves.
     static std::string generatedVersionString;
-    if (generatedVersionString == "" &&
-        (versionString == std::string("0.") + std::string("0.0") ||
-         versionString == std::string("0.0.0+DEBUG")))
+    if (generatedVersionString == "" && versionString == std::string("0.0.0"))
     {
         std::string y = std::string(__DATE__ + 7);
         std::string d = std::string(
