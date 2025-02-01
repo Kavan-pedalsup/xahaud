@@ -765,8 +765,18 @@ transactionsSQL(
 
     std::string sql;
 
-    std::string filterClause = options.strict ? "AND (hex(TxnMeta) LIKE '%" +
-            accountHex + "%' OR hex(RawTxn) LIKE '%" + accountHex + "%')"
+    // For metadata search:
+    // 1. Look for account ID not preceded by 8814 (RegularKey field)
+    // 2. OR look for account in raw transaction
+    std::string filterClause = options.strict ? "AND (("
+                                                "hex(TxnMeta) LIKE '%" +
+            accountHex +
+            "%' AND "
+            "hex(TxnMeta) NOT LIKE '%8814" +
+            accountHex +
+            "%'"
+            ") OR hex(RawTxn) LIKE '%" +
+            accountHex + "%')"
                                               : "";
 
     if (count)

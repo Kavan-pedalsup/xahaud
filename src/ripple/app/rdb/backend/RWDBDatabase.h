@@ -51,15 +51,43 @@ private:
         auto const& txn = accountTx.first;
         auto const& meta = accountTx.second;
 
-        // Search metadata
+        // Search metadata, excluding RegularKey false positives
         Blob const metaBlob = meta->getAsObject().getSerializer().peekData();
-        if (metaBlob.size() >= account.size() &&
-            std::search(
-                metaBlob.begin(),
-                metaBlob.end(),
-                account.data(),
-                account.data() + account.size()) != metaBlob.end())
-            return true;
+        if (metaBlob.size() >= account.size())
+        {
+            auto it = metaBlob.begin();
+            while (true)
+            {
+                // Find next occurrence of account
+                it = std::search(
+                    it,
+                    metaBlob.end(),
+                    account.data(),
+                    account.data() + account.size());
+
+                if (it == metaBlob.end())
+                    break;
+
+                // Check if this is a RegularKey field (0x8814 prefix)
+                if (it >= metaBlob.begin() + 2)
+                {
+                    auto prefix = *(it - 2);
+                    auto prefix2 = *(it - 1);
+                    if (prefix != 0x88 || prefix2 != 0x14)
+                    {
+                        // Found account not preceded by RegularKey prefix
+                        return true;
+                    }
+                }
+                else
+                {
+                    // Too close to start to be RegularKey
+                    return true;
+                }
+
+                ++it;  // Move past this occurrence
+            }
+        }
 
         // Search transaction blob
         Blob const txnBlob = txn->getSTransaction()->getSerializer().peekData();
