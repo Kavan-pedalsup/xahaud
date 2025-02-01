@@ -27,6 +27,7 @@
 #include <ripple/app/rdb/backend/detail/Node.h>
 #include <ripple/basics/BasicConfig.h>
 #include <ripple/basics/StringUtilities.h>
+#include <ripple/basics/strHex.h>
 #include <ripple/core/DatabaseCon.h>
 #include <ripple/core/SociDB.h>
 #include <ripple/json/to_string.h>
@@ -758,14 +759,24 @@ transactionsSQL(
             options.minLedger);
     }
 
+    // Convert account ID to hex string for binary search
+    std::string accountHex =
+        strHex(options.account.data(), options.account.size());
+
     std::string sql;
+
+    std::string filterClause = options.strict ? "AND (hex(TxnMeta) LIKE '%" +
+            accountHex + "%' OR hex(RawTxn) LIKE '%" + accountHex + "%')"
+                                              : "";
 
     if (count)
         sql = boost::str(
             boost::format("SELECT %s FROM AccountTransactions "
-                          "WHERE Account = '%s' %s %s LIMIT %u, %u;") %
-            selection % toBase58(options.account) % maxClause % minClause %
-            beast::lexicalCastThrow<std::string>(options.offset) %
+                          "INNER JOIN Transactions ON Transactions.TransID = "
+                          "AccountTransactions.TransID "
+                          "WHERE Account = '%s' %s %s %s LIMIT %u, %u;") %
+            selection % toBase58(options.account) % filterClause % maxClause %
+            minClause % beast::lexicalCastThrow<std::string>(options.offset) %
             beast::lexicalCastThrow<std::string>(numberOfResults));
     else
         sql = boost::str(
@@ -773,15 +784,16 @@ transactionsSQL(
                 "SELECT %s FROM "
                 "AccountTransactions INNER JOIN Transactions "
                 "ON Transactions.TransID = AccountTransactions.TransID "
-                "WHERE Account = '%s' %s %s "
+                "WHERE Account = '%s' %s %s %s "
                 "ORDER BY AccountTransactions.LedgerSeq %s, "
                 "AccountTransactions.TxnSeq %s, AccountTransactions.TransID %s "
                 "LIMIT %u, %u;") %
-            selection % toBase58(options.account) % maxClause % minClause %
+            selection % toBase58(options.account) % filterClause % maxClause %
+            minClause % (descending ? "DESC" : "ASC") %
             (descending ? "DESC" : "ASC") % (descending ? "DESC" : "ASC") %
-            (descending ? "DESC" : "ASC") %
             beast::lexicalCastThrow<std::string>(options.offset) %
             beast::lexicalCastThrow<std::string>(numberOfResults));
+
     JLOG(j.trace()) << "txSQL query: " << sql;
     return sql;
 }

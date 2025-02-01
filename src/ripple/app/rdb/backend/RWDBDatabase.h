@@ -43,6 +43,34 @@ private:
     std::map<uint256, AccountTx> transactionMap_;
     std::map<AccountID, AccountTxData> accountTxMap_;
 
+    // helper function to scan for an account ID inside the tx and meta blobs
+    // used for strict filtering of account_tx
+    bool
+    isAccountInvolvedInTx(AccountID const& account, AccountTx const& accountTx)
+    {
+        auto const& txn = accountTx.first;
+        auto const& meta = accountTx.second;
+
+        // Search metadata
+        Blob const metaBlob = meta->getAsObject().getSerializer().peekData();
+        if (metaBlob.size() >= account.size() &&
+            std::search(
+                metaBlob.begin(),
+                metaBlob.end(),
+                account.data(),
+                account.data() + account.size()) != metaBlob.end())
+            return true;
+
+        // Search transaction blob
+        Blob const txnBlob = txn->getSTransaction()->getSerializer().peekData();
+        return txnBlob.size() >= account.size() &&
+            std::search(
+                txnBlob.begin(),
+                txnBlob.end(),
+                account.data(),
+                account.data() + account.size()) != txnBlob.end();
+    }
+
 public:
     RWDBDatabase(Application& app, Config const& config, JobQueue& jobQueue)
         : app_(app), useTxTables_(config.useTxTables())
@@ -193,7 +221,17 @@ public:
         std::size_t count = 0;
         for (const auto& [_, accountData] : accountTxMap_)
         {
-            count += accountData.transactions.size();
+            for (const auto& tx : accountData.transactions)
+            {
+                // RH NOTE: options isn't provided to this function
+                // but this function is probably only used internally
+                // so make it reflect the true number (unfiltered)
+
+                // if (options.strict &&
+                //    !isAccountInvolvedInTx(options.account, tx))
+                //    continue;
+                count++;
+            }
         }
         return count;
     }
@@ -607,12 +645,17 @@ public:
         {
             for (const auto& [txSeq, txIndex] : txIt->second)
             {
+                AccountTx const accountTx = accountData.transactions[txIndex];
+                if (options.strict &&
+                    !isAccountInvolvedInTx(options.account, accountTx))
+                    continue;
+
                 if (skipped < options.offset)
                 {
                     ++skipped;
                     continue;
                 }
-                AccountTx const accountTx = accountData.transactions[txIndex];
+
                 std::uint32_t const inLedger = rangeCheckedCast<std::uint32_t>(
                     accountTx.second->getLgrSeq());
                 accountTx.first->setStatus(COMMITTED);
@@ -652,13 +695,18 @@ public:
                  innerRIt != rIt->second.rend();
                  ++innerRIt)
             {
+                AccountTx const accountTx =
+                    accountData.transactions[innerRIt->second];
+
+                if (options.strict &&
+                    !isAccountInvolvedInTx(options.account, accountTx))
+                    continue;
+
                 if (skipped < options.offset)
                 {
                     ++skipped;
                     continue;
                 }
-                AccountTx const accountTx =
-                    accountData.transactions[innerRIt->second];
                 std::uint32_t const inLedger = rangeCheckedCast<std::uint32_t>(
                     accountTx.second->getLgrSeq());
                 accountTx.first->setLedger(inLedger);
@@ -694,12 +742,19 @@ public:
         {
             for (const auto& [txSeq, txIndex] : txIt->second)
             {
+                AccountTx const accountTx = accountData.transactions[txIndex];
+
+                if (options.strict &&
+                    !isAccountInvolvedInTx(options.account, accountTx))
+                    continue;
+
+                const auto& [txn, txMeta] = accountTx;
+
                 if (skipped < options.offset)
                 {
                     ++skipped;
                     continue;
                 }
-                const auto& [txn, txMeta] = accountData.transactions[txIndex];
                 result.emplace_back(
                     txn->getSTransaction()->getSerializer().peekData(),
                     txMeta->getAsObject().getSerializer().peekData(),
@@ -738,13 +793,20 @@ public:
                  innerRIt != rIt->second.rend();
                  ++innerRIt)
             {
+                AccountTx const accountTx =
+                    accountData.transactions[innerRIt->second];
+
+                if (options.strict &&
+                    !isAccountInvolvedInTx(options.account, accountTx))
+                    continue;
+
+                const auto& [txn, txMeta] = accountTx;
+
                 if (skipped < options.offset)
                 {
                     ++skipped;
                     continue;
                 }
-                const auto& [txn, txMeta] =
-                    accountData.transactions[innerRIt->second];
                 result.emplace_back(
                     txn->getSTransaction()->getSerializer().peekData(),
                     txMeta->getAsObject().getSerializer().peekData(),
@@ -838,17 +900,22 @@ public:
                         return {newmarker, total};
                     }
 
-                    Blob rawTxn = accountData.transactions[index]
-                                      .first->getSTransaction()
+                    AccountTx const& accountTx =
+                        accountData.transactions[index];
+
+                    Blob rawTxn = accountTx.first->getSTransaction()
                                       ->getSerializer()
                                       .peekData();
-                    Blob rawMeta = accountData.transactions[index]
-                                       .second->getAsObject()
+                    Blob rawMeta = accountTx.second->getAsObject()
                                        .getSerializer()
                                        .peekData();
 
                     if (rawMeta.size() == 0)
                         onUnsavedLedger(ledgerSeq);
+
+                    if (options.strict &&
+                        !isAccountInvolvedInTx(options.account, accountTx))
+                        continue;
 
                     onTransaction(
                         rangeCheckedCast<std::uint32_t>(ledgerSeq),
@@ -893,17 +960,22 @@ public:
                         return {newmarker, total};
                     }
 
-                    Blob rawTxn = accountData.transactions[index]
-                                      .first->getSTransaction()
+                    AccountTx const& accountTx =
+                        accountData.transactions[index];
+
+                    Blob rawTxn = accountTx.first->getSTransaction()
                                       ->getSerializer()
                                       .peekData();
-                    Blob rawMeta = accountData.transactions[index]
-                                       .second->getAsObject()
+                    Blob rawMeta = accountTx.second->getAsObject()
                                        .getSerializer()
                                        .peekData();
 
                     if (rawMeta.size() == 0)
                         onUnsavedLedger(ledgerSeq);
+
+                    if (options.strict &&
+                        !isAccountInvolvedInTx(options.account, accountTx))
+                        continue;
 
                     onTransaction(
                         rangeCheckedCast<std::uint32_t>(ledgerSeq),
