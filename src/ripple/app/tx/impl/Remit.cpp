@@ -72,6 +72,16 @@ Remit::preflight(PreflightContext const& ctx)
         return temREDUNDANT;
     }
 
+    if (ctx.rules.enabled(fix20250131))
+    {
+        if (!dstID || dstID == noAccount())
+        {
+            JLOG(ctx.j.warn())
+                << "Malformed transaction: Remit to invalid account.";
+            return temMALFORMED;
+        }
+    }
+
     if (ctx.tx.isFieldPresent(sfInform))
     {
         AccountID const infID = ctx.tx.getAccountID(sfInform);
@@ -309,7 +319,8 @@ Remit::doApply()
         std::uint32_t const seqno{
             sb.rules().enabled(featureXahauGenesis)
                 ? sb.info().parentCloseTime.time_since_epoch().count()
-                : sb.rules().enabled(featureDeletableAccounts) ? sb.seq() : 1};
+                : sb.rules().enabled(featureDeletableAccounts) ? sb.seq()
+                                                               : 1};
 
         sleDstAcc = std::make_shared<SLE>(keylet::account(dstAccID));
         sleDstAcc->setAccountID(sfAccount, dstAccID);
