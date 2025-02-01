@@ -273,7 +273,18 @@ check_guard(
     int last_import_idx,
     GuardLog guardLog,
     std::string guardLogAccStr,
-    uint64_t rulesVersion = 0)
+    /* RH NOTE:
+     * rules version is a bit field, so rule update 1 is 0x01, update 2 is 0x02
+     * and update 3 is 0x04 ideally at rule version 3 all bits so far are set
+     * (0b111) so the ruleVersion = 7, however if a specific rule update must be
+     * rolled back due to unforeseen behaviour then this may no longer be the
+     * case. using a bit field here leaves us flexible to rollback changes that
+     * might have unforeseen consequences, without also rolling back further
+     * changes that are fine.
+     */
+    uint64_t rulesVersion = 0
+
+)
 {
 #define MAX_GUARD_CALLS 1024
     uint32_t guard_count = 0;
@@ -815,6 +826,15 @@ validateGuards(
     std::vector<uint8_t> const& wasm,
     GuardLog guardLog,
     std::string guardLogAccStr,
+    /* RH NOTE:
+     * rules version is a bit field, so rule update 1 is 0x01, update 2 is 0x02
+     * and update 3 is 0x04 ideally at rule version 3 all bits so far are set
+     * (0b111) so the ruleVersion = 7, however if a specific rule update must be
+     * rolled back due to unforeseen behaviour then this may no longer be the
+     * case. using a bit field here leaves us flexible to rollback changes that
+     * might have unforeseen consequences, without also rolling back further
+     * changes that are fine.
+     */
     uint64_t rulesVersion = 0)
 {
     uint64_t byteCount = wasm.size();
