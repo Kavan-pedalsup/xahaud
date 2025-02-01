@@ -20,6 +20,13 @@ if [[ "$?" -ne "0" ]]; then
   exit 127
 fi
 
+#!/bin/bash
+rm -r Builds CMakeLists.txt &&
+cp Release.Builds/CMakeLists.txt CMakeLists.txt &&
+cp Release.Builds/Builds Builds -r &&
+sed -i 's/ed25519.h/ed25519-donna\/ed25519.h/g' src/ripple/protocol/impl/PublicKey.cpp &&
+sed -i 's/ed25519.h/ed25519-donna\/ed25519.h/g' src/ripple/protocol/impl/SecretKey.cpp &&
+sed -i 's/ed25519.h/ed25519-donna\/ed25519.h/g' src/ripple/rpc/handlers/WalletPropose.cpp &&
 perl -i -pe "s/^(\\s*)-DBUILD_SHARED_LIBS=OFF/\\1-DBUILD_SHARED_LIBS=OFF\\n\\1-DROCKSDB_BUILD_SHARED=OFF/g" Builds/CMake/deps/Rocksdb.cmake &&
 mv Builds/CMake/deps/WasmEdge.cmake Builds/CMake/deps/WasmEdge.old &&
 echo "find_package(LLVM REQUIRED CONFIG)
