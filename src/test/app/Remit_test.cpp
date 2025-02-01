@@ -2104,7 +2104,7 @@ struct Remit_test : public beast::unit_test::suite
         };
         std::array<TestRateData, 10> testCases = {{
             {0.0, USD(100), "900", tesSUCCESS},
-            {-1.0, USD(100), "900", temBAD_TRANSFER_RATE},
+            {-1.0, USD(100), "900", tesSUCCESS}, // -1 is converted to 0
             {0.9, USD(100), "900", temBAD_TRANSFER_RATE},
             {1.0, USD(100), "900", tesSUCCESS},
             {1.1, USD(100), "890", tesSUCCESS},
