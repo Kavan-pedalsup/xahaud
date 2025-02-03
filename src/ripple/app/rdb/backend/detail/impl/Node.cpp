@@ -1136,6 +1136,21 @@ accountTxPage(
     if (limit_used > 0)
         newmarker = options.marker;
 
+    // Convert account ID to hex string for binary search
+    std::string accountHex =
+        strHex(options.account.data(), options.account.size());
+
+    // Add metadata search filter similar to transactionsSQL
+    std::string filterClause = options.strict
+        ? " AND ((hex(TxnMeta) LIKE '%" + accountHex +
+            "%' "
+            "AND hex(TxnMeta) NOT LIKE '%8814" +
+            accountHex +
+            "%') "
+            "OR hex(RawTxn) LIKE '%" +
+            accountHex + "%')"
+        : "";
+
     static std::string const prefix(
         R"(SELECT AccountTransactions.LedgerSeq,AccountTransactions.TxnSeq,
           Status,RawTxn,TxnMeta
@@ -1154,12 +1169,12 @@ accountTxPage(
     {
         sql = boost::str(
             boost::format(
-                prefix + (R"(AccountTransactions.LedgerSeq BETWEEN %u AND %u
+                prefix + (R"(AccountTransactions.LedgerSeq BETWEEN %u AND %u %s
              ORDER BY AccountTransactions.LedgerSeq %s,
              AccountTransactions.TxnSeq %s
              LIMIT %u;)")) %
             toBase58(options.account) % options.minLedger % options.maxLedger %
-            order % order % queryLimit);
+            filterClause % order % order % queryLimit);
     }
     else
     {
@@ -1172,25 +1187,25 @@ accountTxPage(
         auto b58acct = toBase58(options.account);
         sql = boost::str(
             boost::format((
-                R"(SELECT AccountTransactions.LedgerSeq,AccountTransactions.TxnSeq,
-            Status,RawTxn,TxnMeta
+                R"(SELECT AccountTransactions.LedgerSeq,AccountTransactions.TxnSeq,Status,RawTxn,TxnMeta
             FROM AccountTransactions, Transactions WHERE
             (AccountTransactions.TransID = Transactions.TransID AND
             AccountTransactions.Account = '%s' AND
-            AccountTransactions.LedgerSeq BETWEEN %u AND %u)
+            AccountTransactions.LedgerSeq BETWEEN %u AND %u) %s
             UNION
             SELECT AccountTransactions.LedgerSeq,AccountTransactions.TxnSeq,Status,RawTxn,TxnMeta
             FROM AccountTransactions, Transactions WHERE
             (AccountTransactions.TransID = Transactions.TransID AND
             AccountTransactions.Account = '%s' AND
             AccountTransactions.LedgerSeq = %u AND
-            AccountTransactions.TxnSeq %s %u)
+            AccountTransactions.TxnSeq %s %u) %s
             ORDER BY AccountTransactions.LedgerSeq %s,
             AccountTransactions.TxnSeq %s
             LIMIT %u;
             )")) %
-            b58acct % minLedger % maxLedger % b58acct % findLedger % compare %
-            findSeq % order % order % queryLimit);
+            b58acct % minLedger % maxLedger % filterClause % b58acct %
+            findLedger % compare % findSeq % filterClause % order % order %
+            queryLimit);
     }
 
     {
