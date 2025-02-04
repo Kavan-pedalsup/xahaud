@@ -9,6 +9,7 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+#include <optional>
 
 using GuardLog =
     std::optional<std::reference_wrapper<std::basic_ostream<char>>>;
