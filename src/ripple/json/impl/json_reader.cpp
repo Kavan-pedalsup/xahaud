@@ -924,7 +924,8 @@ Reader::getLocationLineAndColumn(Location location) const
 {
     int line, column;
     getLocationLineAndColumn(location, line, column);
-    return "Line " + std::to_string(line) + ", Column " + std::to_string(column);
+    return "Line " + std::to_string(line) + ", Column " +
+        std::to_string(column);
 }
 
 std::string

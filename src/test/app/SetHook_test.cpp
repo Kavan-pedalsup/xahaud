@@ -320,7 +320,7 @@ public:
             HSFEE,
             ter(temMALFORMED));
 
-        env(ripple::test::jtx::hook(alice, {{}}, 0),
+        env(ripple::test::jtx::hook(alice, Json::Value{Json::arrayValue}, 0),
             M("Must have a non-empty hooks field"),
             HSFEE,
             ter(temMALFORMED));
