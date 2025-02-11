@@ -756,6 +756,30 @@ Config::loadFromString(std::string const& fileContents)
         SERVER_DOMAIN = strTemp;
     }
 
+    if (exists(SECTION_MYSQL_SETTINGS))
+    {
+        auto const sec = section(SECTION_MYSQL_SETTINGS);
+        if (!sec.exists("host") || !sec.exists("user") || !sec.exists("pass") ||
+            !sec.exists("port") || !sec.exists("name"))
+        {
+            Throw<std::runtime_error>(
+                "[mysql_settings] requires host=, user=, pass=, name= and "
+                "port= keys.");
+        }
+
+        MysqlSettings my;
+
+        my.host = *sec.get("host");
+        my.user = *sec.get("user");
+        my.pass = *sec.get("pass");
+        my.pass = *sec.get("name");
+
+        std::string portStr = *sec.get("port");
+        my.port = beast::lexicalCastThrow<int>(portStr);
+
+        mysql = my;
+    }
+
     if (exists(SECTION_OVERLAY))
     {
         auto const sec = section(SECTION_OVERLAY);

@@ -102,6 +102,7 @@ struct ConfigSection
 #define SECTION_NETWORK_ID "network_id"
 #define SECTION_IMPORT_VL_KEYS "import_vl_keys"
 #define SECTION_DATAGRAM_MONITOR "datagram_monitor"
+#define SECTION_MYSQL_SETTINGS "mysql_settings"
 
 }  // namespace ripple
 

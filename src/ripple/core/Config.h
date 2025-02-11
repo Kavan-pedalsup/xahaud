@@ -175,6 +175,17 @@ public:
     // Network parameters
     uint32_t NETWORK_ID = 0;
 
+    struct MysqlSettings
+    {
+        std::string host;
+        std::string user;
+        std::string pass;
+        std::string name;
+        uint16_t port;
+    };
+
+    std::optional<MysqlSettings> mysql;
+
     // DEPRECATED - Fee units for a reference transction.
     // Only provided for backwards compatibility in a couple of places
     static constexpr std::uint32_t FEE_UNITS_DEPRECATED = 10;
