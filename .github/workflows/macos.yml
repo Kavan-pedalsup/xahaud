@@ -19,10 +19,29 @@ jobs:
       NUM_PROCESSORS: 12
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+      - name: install Conan
+        run: |
+          brew install conan@1
+          echo '/opt/homebrew/opt/conan@1/bin' >> $GITHUB_PATH
       - name: install Ninja
         if: matrix.generator == 'Ninja'
         run: brew install ninja
+      - name: install python
+        run: | 
+          if which python > /dev/null 2>&1; then
+              echo "Python executable exists"
+          else
+              brew install python@3.13
+              ln -s /opt/homebrew/bin/python3 /opt/homebrew/bin/python
+          fi
+      - name: install cmake
+        run: |
+          if which cmake > /dev/null 2>&1; then
+              echo "cmake executable exists"
+          else
+              brew install cmake
+          fi
       - name: check environment
         run: |
           echo ${PATH} | tr ':' '\n'
@@ -30,6 +49,11 @@ jobs:
           conan --version
           cmake --version
           env
+      - name: configure Conan
+        run : |
+          conan profile new default --detect || true
+          conan profile update settings.compiler.cppstd=20 default
+          conan profile update 'conf.tools.build:cxxflags+=["-DBOOST_ASIO_DISABLE_CONCEPTS"]' default
       - name: build
         uses: ./.github/actions/build
         with:
