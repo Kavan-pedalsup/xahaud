@@ -36,6 +36,8 @@ using IniFileSections = std::map<std::string, std::vector<std::string>>;
 
 //------------------------------------------------------------------------------
 
+class Config;
+
 /** Holds a collection of configuration values.
     A configuration file contains zero or more sections.
 */
@@ -48,11 +50,22 @@ private:
     std::vector<std::string> values_;
     bool had_trailing_comments_ = false;
 
+    Config const* parent_;
+
     using const_iterator = decltype(lookup_)::const_iterator;
 
 public:
+    // throws if no parent for this section
+    Config const&
+    getParent() const
+    {
+        if (!parent_)
+            Throw<std::runtime_error>("No parent_ for config section");
+        return *parent_;
+    }
+
     /** Create an empty section. */
-    explicit Section(std::string const& name = "");
+    explicit Section(std::string const& name = "", Config* parent = nullptr);
 
     /** Returns the name of this section. */
     std::string const&
@@ -218,6 +231,8 @@ private:
     std::map<std::string, Section, boost::beast::iless> map_;
 
 public:
+    virtual ~BasicConfig() = default;
+
     /** Returns `true` if a section with the given name exists. */
     bool
     exists(std::string const& name) const;

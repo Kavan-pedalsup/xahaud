@@ -772,7 +772,7 @@ Config::loadFromString(std::string const& fileContents)
         my.host = *sec.get("host");
         my.user = *sec.get("user");
         my.pass = *sec.get("pass");
-        my.pass = *sec.get("name");
+        my.name = *sec.get("name");
 
         std::string portStr = *sec.get("port");
         my.port = beast::lexicalCastThrow<int>(portStr);

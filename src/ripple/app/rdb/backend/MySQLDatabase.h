@@ -13,13 +13,13 @@
 
 namespace ripple {
 
-class MySQLDatabase : public SQLiteDatabase 
+class MySQLDatabase : public SQLiteDatabase
 {
 private:
     Application& app_;
     bool const useTxTables_;
     std::unique_ptr<MYSQL, decltype(&mysql_close)> mysql_;
-    
+
     // Schema creation statements
     static constexpr auto CREATE_LEDGERS_TABLE = R"SQL(
         CREATE TABLE IF NOT EXISTS ledgers (
@@ -60,10 +60,22 @@ private:
     )SQL";
 
 public:
-    MySQLDatabase(
-        Application& app,
-        Config const& config,
-        JobQueue& jobQueue)
+    // In the MySQLDatabase constructor, after the mysql_real_connect call:
+
+    // Add this to the private section with other table definitions
+    static constexpr auto CREATE_NODES_TABLE = R"SQL(
+    CREATE TABLE IF NOT EXISTS nodes (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        public_key VARCHAR(64) NOT NULL,
+        ledger_hash VARCHAR(64) NOT NULL,
+        type VARCHAR(32) NOT NULL,
+        data MEDIUMBLOB NOT NULL,
+        UNIQUE INDEX idx_key_hash (public_key, ledger_hash)
+    )
+)SQL";
+
+    // Then modify the constructor:
+    MySQLDatabase(Application& app, Config const& config, JobQueue& jobQueue)
         : app_(app)
         , useTxTables_(config.useTxTables())
         , mysql_(mysql_init(nullptr), mysql_close)
@@ -72,7 +84,8 @@ public:
             throw std::runtime_error("Failed to initialize MySQL");
 
         if (!config.mysql.has_value())
-            throw std::runtime_error("[mysql_settings] stanza missing from config!");
+            throw std::runtime_error(
+                "[mysql_settings] stanza missing from config!");
 
         // Read MySQL connection details from config
         auto* conn = mysql_real_connect(
@@ -80,7 +93,7 @@ public:
             config.mysql->host.c_str(),
             config.mysql->user.c_str(),
             config.mysql->pass.c_str(),
-            config.mysql->name.c_str(),
+            nullptr,  // Don't select database in connection
             config.mysql->port,
             nullptr,
             0);
@@ -88,6 +101,28 @@ public:
         if (!conn)
             throw std::runtime_error(
                 std::string("Failed to connect to MySQL: ") +
+                mysql_error(mysql_.get()));
+
+        // Create database if it doesn't exist
+        std::string create_db =
+            "CREATE DATABASE IF NOT EXISTS " + config.mysql->name;
+        std::cout << "create_db: `" << create_db << "`\n";
+
+        if (mysql_query(mysql_.get(), create_db.c_str()))
+            throw std::runtime_error(
+                std::string("Failed to create database (2): ") +
+                mysql_error(mysql_.get()));
+
+        // Select the database
+        if (mysql_select_db(mysql_.get(), config.mysql->name.c_str()))
+            throw std::runtime_error(
+                std::string("Failed to select database: ") +
+                mysql_error(mysql_.get()));
+
+        // Create nodes table first
+        if (mysql_query(mysql_.get(), CREATE_NODES_TABLE))
+            throw std::runtime_error(
+                std::string("Failed to create nodes table: ") +
                 mysql_error(mysql_.get()));
 
         // Create schema if not exists
@@ -105,7 +140,8 @@ public:
 
             if (mysql_query(mysql_.get(), CREATE_ACCOUNT_TRANSACTIONS_TABLE))
                 throw std::runtime_error(
-                    std::string("Failed to create account_transactions table: ") +
+                    std::string(
+                        "Failed to create account_transactions table: ") +
                     mysql_error(mysql_.get()));
         }
     }
@@ -130,8 +166,7 @@ public:
         sql << "INSERT INTO ledgers ("
             << "ledger_seq, ledger_hash, parent_hash, total_coins, "
             << "closing_time, prev_closing_time, close_time_resolution, "
-            << "close_flags, account_hash, tx_hash) VALUES ("
-            << seq << ", "
+            << "close_flags, account_hash, tx_hash) VALUES (" << seq << ", "
             << "'" << strHex(ledger->info().hash) << "', "
             << "'" << strHex(ledger->info().parentHash) << "', "
             << ledger->info().drops.drops() << ", "
@@ -153,7 +188,8 @@ public:
 
         if (mysql_query(mysql_.get(), sql.str().c_str()))
         {
-            JLOG(j.fatal()) << "Failed to save ledger: " << mysql_error(mysql_.get());
+            JLOG(j.fatal())
+                << "Failed to save ledger: " << mysql_error(mysql_.get());
             return false;
         }
 
@@ -162,7 +198,8 @@ public:
             std::shared_ptr<AcceptedLedger> aLedger;
             try
             {
-                aLedger = app_.getAcceptedLedgerCache().fetch(ledger->info().hash);
+                aLedger =
+                    app_.getAcceptedLedgerCache().fetch(ledger->info().hash);
                 if (!aLedger)
                 {
                     aLedger = std::make_shared<AcceptedLedger>(ledger, app_);
@@ -179,8 +216,8 @@ public:
             // Start a transaction for saving all transactions
             if (mysql_query(mysql_.get(), "START TRANSACTION"))
             {
-                JLOG(j.fatal()) << "Failed to start transaction: " 
-                               << mysql_error(mysql_.get());
+                JLOG(j.fatal()) << "Failed to start transaction: "
+                                << mysql_error(mysql_.get());
                 return false;
             }
 
@@ -195,9 +232,9 @@ public:
                     // Save transaction
                     std::stringstream txSql;
                     txSql << "INSERT INTO transactions ("
-                          << "tx_hash, ledger_seq, tx_seq, raw_tx, meta_data) VALUES ("
-                          << "'" << strHex(id) << "', "
-                          << seq << ", "
+                          << "tx_hash, ledger_seq, tx_seq, raw_tx, meta_data) "
+                             "VALUES ("
+                          << "'" << strHex(id) << "', " << seq << ", "
                           << acceptedLedgerTx->getTxnSeq() << ", "
                           << "?, ?) "  // Using placeholders for BLOB data
                           << "ON DUPLICATE KEY UPDATE "
@@ -209,10 +246,12 @@ public:
                     MYSQL_STMT* stmt = mysql_stmt_init(mysql_.get());
                     if (!stmt)
                     {
-                        throw std::runtime_error("Failed to initialize statement");
+                        throw std::runtime_error(
+                            "Failed to initialize statement");
                     }
 
-                    if (mysql_stmt_prepare(stmt, txSql.str().c_str(), txSql.str().length()))
+                    if (mysql_stmt_prepare(
+                            stmt, txSql.str().c_str(), txSql.str().length()))
                     {
                         mysql_stmt_close(stmt);
                         throw std::runtime_error("Failed to prepare statement");
@@ -230,7 +269,7 @@ public:
 
                     Serializer s2;
                     meta.getAsObject().addWithoutSigningFields(s2);
-                    
+
                     bind[1].buffer_type = MYSQL_TYPE_BLOB;
                     bind[1].buffer = (void*)s2.data();
                     bind[1].buffer_length = s2.size();
@@ -254,13 +293,13 @@ public:
                     {
                         std::stringstream accTxSql;
                         accTxSql << "INSERT INTO account_transactions ("
-                                << "account_id, tx_hash, ledger_seq, tx_seq) VALUES ("
-                                << "'" << strHex(account) << "', "
-                                << "'" << strHex(id) << "', "
-                                << seq << ", "
-                                << acceptedLedgerTx->getTxnSeq() << ") "
-                                << "ON DUPLICATE KEY UPDATE "
-                                << "tx_hash = VALUES(tx_hash)";
+                                 << "account_id, tx_hash, ledger_seq, tx_seq) "
+                                    "VALUES ("
+                                 << "'" << strHex(account) << "', "
+                                 << "'" << strHex(id) << "', " << seq << ", "
+                                 << acceptedLedgerTx->getTxnSeq() << ") "
+                                 << "ON DUPLICATE KEY UPDATE "
+                                 << "tx_hash = VALUES(tx_hash)";
 
                         if (mysql_query(mysql_.get(), accTxSql.str().c_str()))
                         {
@@ -269,7 +308,10 @@ public:
                     }
 
                     app_.getMasterTransaction().inLedger(
-                        id, seq, acceptedLedgerTx->getTxnSeq(), app_.config().NETWORK_ID);
+                        id,
+                        seq,
+                        acceptedLedgerTx->getTxnSeq(),
+                        app_.config().NETWORK_ID);
                 }
 
                 if (mysql_query(mysql_.get(), "COMMIT"))
@@ -316,7 +358,8 @@ public:
         if (!useTxTables_)
             return {};
 
-        if (mysql_query(mysql_.get(), "SELECT MIN(ledger_seq) FROM transactions"))
+        if (mysql_query(
+                mysql_.get(), "SELECT MIN(ledger_seq) FROM transactions"))
             return std::nullopt;
 
         MYSQL_RES* result = mysql_store_result(mysql_.get());
@@ -364,7 +407,8 @@ public:
             return;
 
         std::stringstream sql;
-        sql << "DELETE FROM account_transactions WHERE ledger_seq = " << ledgerSeq;
+        sql << "DELETE FROM account_transactions WHERE ledger_seq = "
+            << ledgerSeq;
         mysql_query(mysql_.get(), sql.str().c_str());
 
         sql.str("");
@@ -378,7 +422,8 @@ public:
         if (useTxTables_)
         {
             std::stringstream sql;
-            sql << "DELETE FROM account_transactions WHERE ledger_seq < " << ledgerSeq;
+            sql << "DELETE FROM account_transactions WHERE ledger_seq < "
+                << ledgerSeq;
             mysql_query(mysql_.get(), sql.str().c_str());
 
             sql.str("");
@@ -398,7 +443,8 @@ public:
             return;
 
         std::stringstream sql;
-        sql << "DELETE FROM account_transactions WHERE ledger_seq < " << ledgerSeq;
+        sql << "DELETE FROM account_transactions WHERE ledger_seq < "
+            << ledgerSeq;
         mysql_query(mysql_.get(), sql.str().c_str());
 
         sql.str("");
@@ -413,7 +459,8 @@ public:
             return;
 
         std::stringstream sql;
-        sql << "DELETE FROM account_transactions WHERE ledger_seq < " << ledgerSeq;
+        sql << "DELETE FROM account_transactions WHERE ledger_seq < "
+            << ledgerSeq;
         mysql_query(mysql_.get(), sql.str().c_str());
     }
 
@@ -448,7 +495,8 @@ public:
         if (!useTxTables_)
             return 0;
 
-        if (mysql_query(mysql_.get(), "SELECT COUNT(*) FROM account_transactions"))
+        if (mysql_query(
+                mysql_.get(), "SELECT COUNT(*) FROM account_transactions"))
             return 0;
 
         MYSQL_RES* result = mysql_store_result(mysql_.get());
@@ -470,8 +518,10 @@ public:
     CountMinMax
     getLedgerCountMinMax() override
     {
-        if (mysql_query(mysql_.get(), 
-            "SELECT COUNT(*), MIN(ledger_seq), MAX(ledger_seq) FROM ledgers"))
+        if (mysql_query(
+                mysql_.get(),
+                "SELECT COUNT(*), MIN(ledger_seq), MAX(ledger_seq) FROM "
+                "ledgers"))
             return {0, 0, 0};
 
         MYSQL_RES* result = mysql_store_result(mysql_.get());
@@ -488,8 +538,7 @@ public:
         CountMinMax ret{
             std::stoull(row[0]),
             static_cast<LedgerIndex>(std::stoll(row[1])),
-            static_cast<LedgerIndex>(std::stoll(row[2]))
-        };
+            static_cast<LedgerIndex>(std::stoll(row[2]))};
         mysql_free_result(result);
         return ret;
     }
@@ -500,7 +549,7 @@ public:
         std::stringstream sql;
         sql << "SELECT ledger_hash, parent_hash, total_coins, closing_time, "
             << "prev_closing_time, close_time_resolution, close_flags, "
-            << "account_hash, tx_hash FROM ledgers WHERE ledger_seq = " 
+            << "account_hash, tx_hash FROM ledgers WHERE ledger_seq = "
             << ledgerSeq;
 
         if (mysql_query(mysql_.get(), sql.str().c_str()))
@@ -522,8 +571,10 @@ public:
         info.hash = uint256(row[0]);
         info.parentHash = uint256(row[1]);
         info.drops = XRPAmount(std::stoull(row[2]));
-        info.closeTime = NetClock::time_point{NetClock::duration{std::stoll(row[3])}};
-        info.parentCloseTime = NetClock::time_point{NetClock::duration{std::stoll(row[4])}};
+        info.closeTime =
+            NetClock::time_point{NetClock::duration{std::stoll(row[3])}};
+        info.parentCloseTime =
+            NetClock::time_point{NetClock::duration{std::stoll(row[4])}};
         info.closeTimeResolution = NetClock::duration{std::stoll(row[5])};
         info.closeFlags = std::stoul(row[6]);
         info.accountHash = uint256(row[7]);
@@ -537,7 +588,7 @@ public:
     getLimitedOldestLedgerInfo(LedgerIndex ledgerFirstIndex) override
     {
         std::stringstream sql;
-        sql << "SELECT ledger_seq FROM ledgers WHERE ledger_seq >= " 
+        sql << "SELECT ledger_seq FROM ledgers WHERE ledger_seq >= "
             << ledgerFirstIndex << " ORDER BY ledger_seq ASC LIMIT 1";
 
         if (mysql_query(mysql_.get(), sql.str().c_str()))
@@ -563,7 +614,7 @@ public:
     getLimitedNewestLedgerInfo(LedgerIndex ledgerFirstIndex) override
     {
         std::stringstream sql;
-        sql << "SELECT ledger_seq FROM ledgers WHERE ledger_seq >= " 
+        sql << "SELECT ledger_seq FROM ledgers WHERE ledger_seq >= "
             << ledgerFirstIndex << " ORDER BY ledger_seq DESC LIMIT 1";
 
         if (mysql_query(mysql_.get(), sql.str().c_str()))
@@ -615,7 +666,7 @@ public:
     getHashByIndex(LedgerIndex ledgerIndex) override
     {
         std::stringstream sql;
-        sql << "SELECT ledger_hash FROM ledgers WHERE ledger_seq = " 
+        sql << "SELECT ledger_hash FROM ledgers WHERE ledger_seq = "
             << ledgerIndex;
 
         if (mysql_query(mysql_.get(), sql.str().c_str()))
@@ -641,7 +692,8 @@ public:
     getHashesByIndex(LedgerIndex ledgerIndex) override
     {
         std::stringstream sql;
-        sql << "SELECT ledger_hash, parent_hash FROM ledgers WHERE ledger_seq = " 
+        sql << "SELECT ledger_hash, parent_hash FROM ledgers WHERE ledger_seq "
+               "= "
             << ledgerIndex;
 
         if (mysql_query(mysql_.get(), sql.str().c_str()))
@@ -682,10 +734,10 @@ public:
         MYSQL_ROW row;
         while ((row = mysql_fetch_row(sqlResult)))
         {
-            LedgerIndex const seq = 
+            LedgerIndex const seq =
                 static_cast<LedgerIndex>(std::stoull(row[0]));
-            result.emplace(seq, 
-                LedgerHashPair{uint256{row[1]}, uint256{row[2]}});
+            result.emplace(
+                seq, LedgerHashPair{uint256{row[1]}, uint256{row[2]}});
         }
 
         mysql_free_result(sqlResult);
@@ -698,8 +750,9 @@ public:
         if (!useTxTables_)
             return {};
 
-        if (mysql_query(mysql_.get(), 
-            "SELECT MIN(ledger_seq) FROM account_transactions"))
+        if (mysql_query(
+                mysql_.get(),
+                "SELECT MIN(ledger_seq) FROM account_transactions"))
             return std::nullopt;
 
         MYSQL_RES* result = mysql_store_result(mysql_.get());
@@ -718,12 +771,13 @@ public:
         return seq;
     }
 
-
     std::optional<LedgerInfo>
     getNewestLedgerInfo() override
     {
-        if (mysql_query(mysql_.get(), 
-            "SELECT ledger_seq FROM ledgers ORDER BY ledger_seq DESC LIMIT 1"))
+        if (mysql_query(
+                mysql_.get(),
+                "SELECT ledger_seq FROM ledgers ORDER BY ledger_seq DESC LIMIT "
+                "1"))
             return std::nullopt;
 
         MYSQL_RES* result = mysql_store_result(mysql_.get());
@@ -757,8 +811,8 @@ public:
 
         if (range)
         {
-            sql << " AND t.ledger_seq BETWEEN " 
-                << range->first() << " AND " << range->last();
+            sql << " AND t.ledger_seq BETWEEN " << range->first() << " AND "
+                << range->last();
         }
 
         if (mysql_query(mysql_.get(), sql.str().c_str()))
@@ -816,7 +870,9 @@ public:
             auto txn = std::make_shared<STTx const>(sit);
 
             auto meta = std::make_shared<TxMeta>(
-                id, static_cast<uint32_t>(std::stoull(row[2])), Blob(row[1], row[1] + lengths[1]));
+                id,
+                static_cast<uint32_t>(std::stoull(row[2])),
+                Blob(row[1], row[1] + lengths[1]));
 
             mysql_free_result(result);
 
@@ -861,9 +917,8 @@ public:
             << "FROM account_transactions at "
             << "JOIN transactions t ON at.tx_hash = t.tx_hash "
             << "WHERE at.account_id = '" << strHex(options.account) << "' "
-            << "AND at.ledger_seq BETWEEN " << options.minLedger 
-            << " AND " << options.maxLedger
-            << " ORDER BY at.ledger_seq, at.tx_seq"
+            << "AND at.ledger_seq BETWEEN " << options.minLedger << " AND "
+            << options.maxLedger << " ORDER BY at.ledger_seq, at.tx_seq"
             << " LIMIT " << (options.limit + 1);
 
         if (mysql_query(mysql_.get(), sql.str().c_str()))
@@ -877,7 +932,7 @@ public:
         std::size_t count = 0;
         MYSQL_ROW row;
 
-        while ((row = mysql_fetch_row(result)) && 
+        while ((row = mysql_fetch_row(result)) &&
                (!options.limit || count < options.limit))
         {
             unsigned long* lengths = mysql_fetch_lengths(result);
@@ -886,9 +941,9 @@ public:
 
             Blob rawTxn(row[0], row[0] + lengths[0]);
             Blob rawMeta(row[1], row[1] + lengths[1]);
-            std::uint32_t ledgerSeq = 
+            std::uint32_t ledgerSeq =
                 static_cast<std::uint32_t>(std::stoull(row[2]));
-            std::uint32_t txSeq = 
+            std::uint32_t txSeq =
                 static_cast<std::uint32_t>(std::stoull(row[3]));
 
             if (count == options.limit)
@@ -897,7 +952,8 @@ public:
                 break;
             }
 
-            onTransaction(ledgerSeq, "COMMITTED", std::move(rawTxn), std::move(rawMeta));
+            onTransaction(
+                ledgerSeq, "COMMITTED", std::move(rawTxn), std::move(rawMeta));
             ++count;
         }
 
@@ -930,8 +986,8 @@ public:
             << "FROM account_transactions at "
             << "JOIN transactions t ON at.tx_hash = t.tx_hash "
             << "WHERE at.account_id = '" << strHex(options.account) << "' "
-            << "AND at.ledger_seq BETWEEN " << options.minLedger 
-            << " AND " << options.maxLedger
+            << "AND at.ledger_seq BETWEEN " << options.minLedger << " AND "
+            << options.maxLedger
             << " ORDER BY at.ledger_seq DESC, at.tx_seq DESC"
             << " LIMIT " << (options.limit + 1);
 
@@ -946,7 +1002,7 @@ public:
         std::size_t count = 0;
         MYSQL_ROW row;
 
-        while ((row = mysql_fetch_row(result)) && 
+        while ((row = mysql_fetch_row(result)) &&
                (!options.limit || count < options.limit))
         {
             unsigned long* lengths = mysql_fetch_lengths(result);
@@ -955,9 +1011,9 @@ public:
 
             Blob rawTxn(row[0], row[0] + lengths[0]);
             Blob rawMeta(row[1], row[1] + lengths[1]);
-            std::uint32_t ledgerSeq = 
+            std::uint32_t ledgerSeq =
                 static_cast<std::uint32_t>(std::stoull(row[2]));
-            std::uint32_t txSeq = 
+            std::uint32_t txSeq =
                 static_cast<std::uint32_t>(std::stoull(row[3]));
 
             if (count == options.limit)
@@ -966,7 +1022,8 @@ public:
                 break;
             }
 
-            onTransaction(ledgerSeq, "COMMITTED", std::move(rawTxn), std::move(rawMeta));
+            onTransaction(
+                ledgerSeq, "COMMITTED", std::move(rawTxn), std::move(rawMeta));
             ++count;
         }
 
@@ -981,7 +1038,7 @@ public:
         return true;
     }
 
- std::vector<std::shared_ptr<Transaction>>
+    std::vector<std::shared_ptr<Transaction>>
     getTxHistory(LedgerIndex startIndex) override
     {
         if (!useTxTables_)
@@ -1013,10 +1070,9 @@ public:
                 SerialIter sit(row[0], lengths[0]);
                 auto txn = std::make_shared<STTx const>(sit);
                 std::string reason;
-                auto tx = std::make_shared<Transaction>(
-                    txn, reason, app_);
+                auto tx = std::make_shared<Transaction>(txn, reason, app_);
 
-                auto const ledgerSeq = 
+                auto const ledgerSeq =
                     static_cast<std::uint32_t>(std::stoull(row[1]));
                 tx->setStatus(COMMITTED);
                 tx->setLedger(ledgerSeq);
@@ -1052,8 +1108,8 @@ public:
             << "FROM account_transactions at "
             << "JOIN transactions t ON at.tx_hash = t.tx_hash "
             << "WHERE at.account_id = '" << strHex(options.account) << "' "
-            << "AND at.ledger_seq BETWEEN " << options.minLedger 
-            << " AND " << options.maxLedger
+            << "AND at.ledger_seq BETWEEN " << options.minLedger << " AND "
+            << options.maxLedger
             << " ORDER BY at.ledger_seq ASC, at.tx_seq ASC ";
 
         if (!options.bUnlimited)
@@ -1082,10 +1138,9 @@ public:
                 SerialIter sit(row[0], lengths[0]);
                 auto txn = std::make_shared<STTx const>(sit);
                 std::string reason;
-                auto tx = std::make_shared<Transaction>(
-                    txn, reason, app_);
+                auto tx = std::make_shared<Transaction>(txn, reason, app_);
 
-                auto const ledgerSeq = 
+                auto const ledgerSeq =
                     static_cast<std::uint32_t>(std::stoull(row[2]));
 
                 auto meta = std::make_shared<TxMeta>(
@@ -1120,8 +1175,8 @@ public:
             << "FROM account_transactions at "
             << "JOIN transactions t ON at.tx_hash = t.tx_hash "
             << "WHERE at.account_id = '" << strHex(options.account) << "' "
-            << "AND at.ledger_seq BETWEEN " << options.minLedger 
-            << " AND " << options.maxLedger
+            << "AND at.ledger_seq BETWEEN " << options.minLedger << " AND "
+            << options.maxLedger
             << " ORDER BY at.ledger_seq DESC, at.tx_seq DESC ";
 
         if (!options.bUnlimited)
@@ -1150,10 +1205,9 @@ public:
                 SerialIter sit(row[0], lengths[0]);
                 auto txn = std::make_shared<STTx const>(sit);
                 std::string reason;
-                auto tx = std::make_shared<Transaction>(
-                    txn, reason, app_);
+                auto tx = std::make_shared<Transaction>(txn, reason, app_);
 
-                auto const ledgerSeq = 
+                auto const ledgerSeq =
                     static_cast<std::uint32_t>(std::stoull(row[2]));
 
                 auto meta = std::make_shared<TxMeta>(
@@ -1188,8 +1242,8 @@ public:
             << "FROM account_transactions at "
             << "JOIN transactions t ON at.tx_hash = t.tx_hash "
             << "WHERE at.account_id = '" << strHex(options.account) << "' "
-            << "AND at.ledger_seq BETWEEN " << options.minLedger 
-            << " AND " << options.maxLedger
+            << "AND at.ledger_seq BETWEEN " << options.minLedger << " AND "
+            << options.maxLedger
             << " ORDER BY at.ledger_seq ASC, at.tx_seq ASC ";
 
         if (!options.bUnlimited)
@@ -1213,7 +1267,7 @@ public:
             if (!lengths)
                 continue;
 
-            auto const ledgerSeq = 
+            auto const ledgerSeq =
                 static_cast<std::uint32_t>(std::stoull(row[2]));
 
             result.emplace_back(
@@ -1238,8 +1292,8 @@ public:
             << "FROM account_transactions at "
             << "JOIN transactions t ON at.tx_hash = t.tx_hash "
             << "WHERE at.account_id = '" << strHex(options.account) << "' "
-            << "AND at.ledger_seq BETWEEN " << options.minLedger 
-            << " AND " << options.maxLedger
+            << "AND at.ledger_seq BETWEEN " << options.minLedger << " AND "
+            << options.maxLedger
             << " ORDER BY at.ledger_seq DESC, at.tx_seq DESC ";
 
         if (!options.bUnlimited)
@@ -1263,7 +1317,7 @@ public:
             if (!lengths)
                 continue;
 
-            auto const ledgerSeq = 
+            auto const ledgerSeq =
                 static_cast<std::uint32_t>(std::stoull(row[2]));
 
             result.emplace_back(
@@ -1288,8 +1342,8 @@ public:
             << "FROM account_transactions at "
             << "JOIN transactions t ON at.tx_hash = t.tx_hash "
             << "WHERE at.account_id = '" << strHex(options.account) << "' "
-            << "AND at.ledger_seq BETWEEN " << options.minLedger 
-            << " AND " << options.maxLedger;
+            << "AND at.ledger_seq BETWEEN " << options.minLedger << " AND "
+            << options.maxLedger;
 
         if (options.marker)
         {
@@ -1318,8 +1372,7 @@ public:
             {
                 marker = AccountTxMarker{
                     static_cast<std::uint32_t>(std::stoull(row[2])),
-                    static_cast<std::uint32_t>(std::stoull(row[3]))
-                };
+                    static_cast<std::uint32_t>(std::stoull(row[3]))};
                 break;
             }
 
@@ -1327,7 +1380,7 @@ public:
             if (!lengths)
                 continue;
 
-            auto const ledgerSeq = 
+            auto const ledgerSeq =
                 static_cast<std::uint32_t>(std::stoull(row[2]));
 
             result.emplace_back(
@@ -1354,8 +1407,8 @@ public:
             << "FROM account_transactions at "
             << "JOIN transactions t ON at.tx_hash = t.tx_hash "
             << "WHERE at.account_id = '" << strHex(options.account) << "' "
-            << "AND at.ledger_seq BETWEEN " << options.minLedger 
-            << " AND " << options.maxLedger;
+            << "AND at.ledger_seq BETWEEN " << options.minLedger << " AND "
+            << options.maxLedger;
 
         if (options.marker)
         {
@@ -1384,8 +1437,7 @@ public:
             {
                 marker = AccountTxMarker{
                     static_cast<std::uint32_t>(std::stoull(row[2])),
-                    static_cast<std::uint32_t>(std::stoull(row[3]))
-                };
+                    static_cast<std::uint32_t>(std::stoull(row[3]))};
                 break;
             }
 
@@ -1393,7 +1445,7 @@ public:
             if (!lengths)
                 continue;
 
-            auto const ledgerSeq = 
+            auto const ledgerSeq =
                 static_cast<std::uint32_t>(std::stoull(row[2]));
 
             result.emplace_back(
@@ -1414,11 +1466,12 @@ public:
         std::uint32_t total = 0;
 
         // Get ledger table size
-        if (!mysql_query(mysql_.get(), 
-            "SELECT ROUND(SUM(data_length + index_length) / 1024) "
-            "FROM information_schema.tables "
-            "WHERE table_schema = DATABASE() "
-            "AND table_name = 'ledgers'"))
+        if (!mysql_query(
+                mysql_.get(),
+                "SELECT ROUND(SUM(data_length + index_length) / 1024) "
+                "FROM information_schema.tables "
+                "WHERE table_schema = DATABASE() "
+                "AND table_name = 'ledgers'"))
         {
             MYSQL_RES* result = mysql_store_result(mysql_.get());
             if (result)
@@ -1433,19 +1486,21 @@ public:
         // Get transaction tables size
         if (useTxTables_)
         {
-            if (!mysql_query(mysql_.get(), 
-                "SELECT ROUND(SUM(data_length + index_length) / 1024) "
-                "FROM information_schema.tables "
-                "WHERE table_schema = DATABASE() "
-                "AND (table_name = 'transactions' "
-                "OR table_name = 'account_transactions')"))
+            if (!mysql_query(
+                    mysql_.get(),
+                    "SELECT ROUND(SUM(data_length + index_length) / 1024) "
+                    "FROM information_schema.tables "
+                    "WHERE table_schema = DATABASE() "
+                    "AND (table_name = 'transactions' "
+                    "OR table_name = 'account_transactions')"))
             {
                 MYSQL_RES* result = mysql_store_result(mysql_.get());
                 if (result)
                 {
                     MYSQL_ROW row = mysql_fetch_row(result);
                     if (row && row[0])
-                        total += static_cast<std::uint32_t>(std::stoull(row[0]));
+                        total +=
+                            static_cast<std::uint32_t>(std::stoull(row[0]));
                     mysql_free_result(result);
                 }
             }
@@ -1459,11 +1514,12 @@ public:
     {
         std::uint32_t total = 0;
 
-        if (!mysql_query(mysql_.get(), 
-            "SELECT ROUND(SUM(data_length + index_length) / 1024) "
-            "FROM information_schema.tables "
-            "WHERE table_schema = DATABASE() "
-            "AND table_name = 'ledgers'"))
+        if (!mysql_query(
+                mysql_.get(),
+                "SELECT ROUND(SUM(data_length + index_length) / 1024) "
+                "FROM information_schema.tables "
+                "WHERE table_schema = DATABASE() "
+                "AND table_name = 'ledgers'"))
         {
             MYSQL_RES* result = mysql_store_result(mysql_.get());
             if (result)
@@ -1486,12 +1542,13 @@ public:
 
         std::uint32_t total = 0;
 
-        if (!mysql_query(mysql_.get(), 
-            "SELECT ROUND(SUM(data_length + index_length) / 1024) "
-            "FROM information_schema.tables "
-            "WHERE table_schema = DATABASE() "
-            "AND (table_name = 'transactions' "
-            "OR table_name = 'account_transactions')"))
+        if (!mysql_query(
+                mysql_.get(),
+                "SELECT ROUND(SUM(data_length + index_length) / 1024) "
+                "FROM information_schema.tables "
+                "WHERE table_schema = DATABASE() "
+                "AND (table_name = 'transactions' "
+                "OR table_name = 'account_transactions')"))
         {
             MYSQL_RES* result = mysql_store_result(mysql_.get());
             if (result)
@@ -1519,7 +1576,6 @@ public:
         // No explicit closing needed for MySQL
         // The connection will be closed when mysql_ is destroyed
     }
-
 };
 
 // Factory function

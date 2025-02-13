@@ -8,9 +8,9 @@
 #include <ripple/nodestore/impl/EncodedBlob.h>
 #include <ripple/nodestore/impl/codec.h>
 #include <boost/beast/core/string.hpp>
-#include <mysql/mysql.h>
-#include <memory>
 #include <cstdint>
+#include <memory>
+#include <mysql/mysql.h>
 #include <sstream>
 
 namespace ripple {
@@ -19,10 +19,18 @@ namespace NodeStore {
 class MySQLBackend : public Backend
 {
 private:
-    std::string const name_;
+    std::string name_;
     beast::Journal journal_;
     bool isOpen_{false};
     std::unique_ptr<MYSQL, decltype(&mysql_close)> mysql_;
+
+    Config const& config_;
+
+    static constexpr auto CREATE_DATABASE = R"SQL(
+        CREATE DATABASE IF NOT EXISTS `%s` 
+        CHARACTER SET utf8mb4 
+        COLLATE utf8mb4_unicode_ci
+    )SQL";
 
     static constexpr auto CREATE_NODES_TABLE = R"SQL(
         CREATE TABLE IF NOT EXISTS nodes (
@@ -40,24 +48,30 @@ public:
         : name_(get(keyValues, "path", "nodestore"))
         , journal_(journal)
         , mysql_(mysql_init(nullptr), mysql_close)
+        , config_(keyValues.getParent())
     {
+        // mysql names are limited to alphanumeric
+        name_.erase(
+            std::remove_if(
+                name_.begin(),
+                name_.end(),
+                [](char c) { return !std::isalnum(c); }),
+            name_.end());
+
         if (!mysql_)
             Throw<std::runtime_error>("Failed to initialize MySQL");
 
-        std::string const host = get(keyValues, "host", "localhost");
-        std::string const user = get(keyValues, "user", "ripple");
-        std::string const password = get(keyValues, "pass", "");
-        std::string const database = get(keyValues, "db", "rippledb");
-        uint16_t const port = 
-            static_cast<uint16_t>(std::stoul(get(keyValues, "port", "3306")));
+        if (!config_.mysql.has_value())
+            throw std::runtime_error(
+                "[mysql_settings] stanza missing from config!");
 
         auto* conn = mysql_real_connect(
             mysql_.get(),
-            host.c_str(),
-            user.c_str(),
-            password.c_str(),
-            database.c_str(),
-            port,
+            config_.mysql->host.c_str(),
+            config_.mysql->user.c_str(),
+            config_.mysql->pass.c_str(),
+            nullptr,
+            config_.mysql->port,
             nullptr,
             0);
 
@@ -70,6 +84,22 @@ public:
 
         uint8_t const reconnect = 1;
         mysql_options(mysql_.get(), MYSQL_OPT_RECONNECT, &reconnect);
+    }
+
+    void
+    createDatabase()
+    {
+        std::string query(1024, '\0');
+        int length =
+            snprintf(&query[0], query.size(), CREATE_DATABASE, name_.c_str());
+        query.resize(length);
+
+        if (mysql_query(mysql_.get(), query.c_str()))
+        {
+            Throw<std::runtime_error>(
+                std::string("Failed to create database: ") +
+                mysql_error(mysql_.get()) + " (1)");
+        }
     }
 
     ~MySQLBackend() override
@@ -88,6 +118,20 @@ public:
     {
         if (isOpen_)
             Throw<std::runtime_error>("already open");
+
+        // Ensure database is selected
+        if (!config_.mysql.has_value())
+            throw std::runtime_error(
+                "[mysql_settings] stanza missing from config!");
+
+        createDatabase();
+
+        if (mysql_select_db(mysql_.get(), name_.c_str()))
+        {
+            Throw<std::runtime_error>(
+                std::string("Failed to select database: ") +
+                mysql_error(mysql_.get()));
+        }
 
         if (createIfMissing)
         {
@@ -126,9 +170,8 @@ public:
         if (!stmt)
             return dataCorrupt;
 
-        std::string const sql = 
-            "SELECT data FROM nodes WHERE hash = ?";
-        
+        std::string const sql = "SELECT data FROM nodes WHERE hash = ?";
+
         if (mysql_stmt_prepare(stmt, sql.c_str(), sql.length()))
         {
             mysql_stmt_close(stmt);
@@ -138,7 +181,8 @@ public:
         MYSQL_BIND bindParam;
         std::memset(&bindParam, 0, sizeof(bindParam));
         bindParam.buffer_type = MYSQL_TYPE_BLOB;
-        bindParam.buffer = const_cast<void*>(static_cast<void const*>(hash.data()));
+        bindParam.buffer =
+            const_cast<void*>(static_cast<void const*>(hash.data()));
         bindParam.buffer_length = hash.size();
 
         if (mysql_stmt_bind_param(stmt, &bindParam))
@@ -198,13 +242,13 @@ public:
         mysql_stmt_close(stmt);
 
         nudb::detail::buffer decompressed;
-        auto const result = 
+        auto const result =
             nodeobject_decompress(buffer.data(), buffer.size(), decompressed);
-        
+
         DecodedBlob decoded(hash.data(), result.first, result.second);
         if (!decoded.wasOk())
             return dataCorrupt;
-        
+
         *pObject = decoded.createObject();
         return ok;
     }
@@ -250,14 +294,14 @@ public:
 
         EncodedBlob encoded(object);
         nudb::detail::buffer compressed;
-        auto const result = 
-            nodeobject_compress(encoded.getData(), encoded.getSize(), compressed);
+        auto const result = nodeobject_compress(
+            encoded.getData(), encoded.getSize(), compressed);
 
         MYSQL_STMT* stmt = mysql_stmt_init(mysql_.get());
         if (!stmt)
             return;
 
-        std::string const sql = 
+        std::string const sql =
             "INSERT INTO nodes (hash, data) VALUES (?, ?) "
             "ON DUPLICATE KEY UPDATE data = VALUES(data)";
 
@@ -272,11 +316,13 @@ public:
 
         auto const& hash = object->getHash();
         bind[0].buffer_type = MYSQL_TYPE_BLOB;
-        bind[0].buffer = const_cast<void*>(static_cast<void const*>(hash.data()));
+        bind[0].buffer =
+            const_cast<void*>(static_cast<void const*>(hash.data()));
         bind[0].buffer_length = hash.size();
 
         bind[1].buffer_type = MYSQL_TYPE_BLOB;
-        bind[1].buffer = const_cast<void*>(static_cast<void const*>(result.first));
+        bind[1].buffer =
+            const_cast<void*>(static_cast<void const*>(result.first));
         bind[1].buffer_length = result.second;
 
         if (mysql_stmt_bind_param(stmt, bind))
@@ -329,8 +375,9 @@ public:
         if (!isOpen_)
             return;
 
-        if (mysql_query(mysql_.get(), 
-            "SELECT hash, data FROM nodes ORDER BY created_at"))
+        if (mysql_query(
+                mysql_.get(),
+                "SELECT hash, data FROM nodes ORDER BY created_at"))
             return;
 
         MYSQL_RES* result = mysql_store_result(mysql_.get());
@@ -346,14 +393,10 @@ public:
 
             nudb::detail::buffer decompressed;
             auto const decomp_result = nodeobject_decompress(
-                row[1], 
-                static_cast<std::size_t>(lengths[1]), 
-                decompressed);
-            
+                row[1], static_cast<std::size_t>(lengths[1]), decompressed);
+
             DecodedBlob decoded(
-                row[0], 
-                decomp_result.first, 
-                decomp_result.second);
+                row[0], decomp_result.first, decomp_result.second);
 
             if (decoded.wasOk())
                 f(decoded.createObject());
@@ -417,4 +460,4 @@ static MySQLFactory mysqlFactory;
 }  // namespace NodeStore
 }  // namespace ripple
 
-#endif // RIPPLE_NODESTORE_MYSQLBACKEND_H_INCLUDED
+#endif  // RIPPLE_NODESTORE_MYSQLBACKEND_H_INCLUDED

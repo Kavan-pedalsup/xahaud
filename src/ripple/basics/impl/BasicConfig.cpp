@@ -24,7 +24,10 @@
 
 namespace ripple {
 
-Section::Section(std::string const& name) : name_(name)
+class Config;
+
+Section::Section(std::string const& name, Config* parent)
+    : name_(name), parent_(parent)
 {
 }
 
@@ -175,12 +178,14 @@ BasicConfig::legacy(std::string const& sectionName) const
 void
 BasicConfig::build(IniFileSections const& ifs)
 {
+    Config* config_this = dynamic_cast<Config*>(this);
     for (auto const& entry : ifs)
     {
         auto const result = map_.emplace(
             std::piecewise_construct,
             std::make_tuple(entry.first),
-            std::make_tuple(entry.first));
+            std::make_tuple(
+                entry.first, config_this));  // Will be nullptr if cast failed
         result.first->second.append(entry.second);
     }
 }
