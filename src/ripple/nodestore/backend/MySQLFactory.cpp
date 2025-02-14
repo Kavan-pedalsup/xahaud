@@ -282,14 +282,14 @@ public:
     {
         if (!isOpen_)
         {
-            std::cout << "fetch: Database not open\n";
+            JLOG(journal_.warn()) << "fetch: Database not open";
             return notFound;
         }
 
         auto* conn = getConnection();
         if (!conn->ensureConnection())
         {
-            std::cout << "fetch: Failed to ensure connection\n";
+            JLOG(journal_.warn()) << "fetch: Failed to ensure connection";
             return dataCorrupt;
         }
 
@@ -298,7 +298,8 @@ public:
         MYSQL_STMT* stmt = mysql_stmt_init(conn->get());
         if (!stmt)
         {
-            std::cout << "fetch: Failed to initialize prepared statement\n";
+            JLOG(journal_.warn())
+                << "fetch: Failed to initialize prepared statement";
             return dataCorrupt;
         }
 
@@ -306,8 +307,9 @@ public:
 
         if (mysql_stmt_prepare(stmt, sql.c_str(), sql.length()))
         {
-            std::cout << "fetch: Failed to prepare statement. Error: "
-                      << mysql_stmt_error(stmt) << "\n";
+            JLOG(journal_.warn())
+                << "fetch: Failed to prepare statement. Error: "
+                << mysql_stmt_error(stmt);
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
@@ -321,16 +323,17 @@ public:
 
         if (mysql_stmt_bind_param(stmt, &bindParam))
         {
-            std::cout << "fetch: Failed to bind parameter. Error: "
-                      << mysql_stmt_error(stmt) << "\n";
+            JLOG(journal_.warn()) << "fetch: Failed to bind parameter. Error: "
+                                  << mysql_stmt_error(stmt);
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
 
         if (mysql_stmt_execute(stmt))
         {
-            std::cout << "fetch: Failed to execute statement. Error: "
-                      << mysql_stmt_error(stmt) << "\n";
+            JLOG(journal_.warn())
+                << "fetch: Failed to execute statement. Error: "
+                << mysql_stmt_error(stmt);
             mysql_stmt_close(stmt);
             return notFound;
         }
@@ -345,17 +348,17 @@ public:
 
         if (mysql_stmt_bind_result(stmt, &bindResult))
         {
-            std::cout << "fetch: Failed to bind result. Error: "
-                      << mysql_stmt_error(stmt) << "\n";
+            JLOG(journal_.warn()) << "fetch: Failed to bind result. Error: "
+                                  << mysql_stmt_error(stmt);
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
 
-        // After binding the result...
+        // After binding the initial result...
         if (mysql_stmt_store_result(stmt))
         {
-            std::cout << "fetch: Failed to store result. Error: "
-                      << mysql_stmt_error(stmt) << "\n";
+            JLOG(journal_.warn()) << "fetch: Failed to store result. Error: "
+                                  << mysql_stmt_error(stmt);
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
@@ -366,49 +369,78 @@ public:
             return notFound;
         }
 
-        // Get the metadata to find out the length of the BLOB column
-        MYSQL_RES* metadata = mysql_stmt_result_metadata(stmt);
-        if (!metadata)
+        // Allocate buffer - MEDIUMBLOB can store up to 16MB
+        constexpr size_t MEDIUM_BLOB_MAX = 16 * 1024 * 1024;
+        std::vector<uint8_t> buffer(MEDIUM_BLOB_MAX);
+        bindResult.buffer = buffer.data();
+        bindResult.buffer_length = MEDIUM_BLOB_MAX;
+
+        // Re-bind with the allocated buffer
+        if (mysql_stmt_bind_result(stmt, &bindResult))
         {
-            std::cout << "fetch: Failed to get result metadata\n";
+            JLOG(journal_.warn()) << "fetch: Failed to re-bind result. Error: "
+                                  << mysql_stmt_error(stmt);
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
-        unsigned long max_length = mysql_fetch_field(metadata)->max_length;
-        mysql_free_result(metadata);
-
-        // Allocate buffer with the max length
-        std::vector<uint8_t> buffer(max_length);
-        bindResult.buffer = buffer.data();
-        bindResult.buffer_length = max_length;
 
         // Single fetch for the row
         if (mysql_stmt_fetch(stmt))
         {
-            std::cout << "fetch: Failed to fetch row. Error: "
-                      << mysql_stmt_error(stmt) << "\n";
+            JLOG(journal_.warn()) << "fetch: Failed to fetch row. Error: "
+                                  << mysql_stmt_error(stmt);
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
+
+        // Use the actual length for subsequent operations
+        size_t actual_length = *bindResult.length;
+
+        // Re-bind with properly sized buffer
+        if (mysql_stmt_bind_result(stmt, &bindResult))
+        {
+            JLOG(journal_.warn()) << "fetch: Failed to re-bind result. Error: "
+                                  << mysql_stmt_error(stmt);
+            mysql_stmt_close(stmt);
+            return dataCorrupt;
+        }
+
+        // Seek back to start of results
+        mysql_stmt_data_seek(stmt, 0);
+
+        // Fetch again with proper buffer
+        if (mysql_stmt_fetch(stmt))
+        {
+            JLOG(journal_.warn()) << "fetch: Failed to fetch row. Error: "
+                                  << mysql_stmt_error(stmt);
+            mysql_stmt_close(stmt);
+            return dataCorrupt;
+        }
+
+        // After successful fetch
+        JLOG(journal_.trace()) << "fetch: Successfully fetched row. "
+                               << "Length: " << *bindResult.length
+                               << ", is_null: " << *bindResult.is_null
+                               << ", buffer size: " << buffer.size();
 
         mysql_stmt_close(stmt);
 
         nudb::detail::buffer decompressed;
         auto const result =
-            nodeobject_decompress(buffer.data(), buffer.size(), decompressed);
+            nodeobject_decompress(buffer.data(), actual_length, decompressed);
 
-        std::cout << "fetch: Decompression result - size: " << result.second
-                  << ", success: " << (result.first != nullptr) << "\n";
+        JLOG(journal_.trace())
+            << "fetch: Decompression result - size: " << result.second
+            << ", success: " << (result.first != nullptr);
 
         DecodedBlob decoded(hash.data(), result.first, result.second);
         if (!decoded.wasOk())
         {
-            std::cout << "fetch: Blob decoding failed\n";
+            JLOG(journal_.warn()) << "fetch: Blob decoding failed";
             return dataCorrupt;
         }
 
         *pObject = decoded.createObject();
-        std::cout << "fetch: Successfully created object\n";
         return ok;
     }
 
