@@ -150,21 +150,6 @@ private:
     )SQL";
 
 public:
-    // In the MySQLDatabase constructor, after the mysql_real_connect call:
-
-    // Add this to the private section with other table definitions
-    static constexpr auto CREATE_NODES_TABLE = R"SQL(
-    CREATE TABLE IF NOT EXISTS nodes (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        public_key VARCHAR(64) NOT NULL,
-        ledger_hash VARCHAR(64) NOT NULL,
-        type VARCHAR(32) NOT NULL,
-        data MEDIUMBLOB NOT NULL,
-        UNIQUE INDEX idx_key_hash (public_key, ledger_hash)
-    )
-)SQL";
-
-    // Then modify the constructor:
     MySQLDatabase(Application& app, Config const& config, JobQueue& jobQueue)
         : app_(app), useTxTables_(config.useTxTables())
     {
@@ -190,11 +175,6 @@ public:
                 mysql_error(mysql));
 
         // Create schema tables
-        if (mysql_query(mysql, CREATE_NODES_TABLE))
-            throw std::runtime_error(
-                std::string("Failed to create nodes table: ") +
-                mysql_error(mysql));
-
         if (mysql_query(mysql, CREATE_LEDGERS_TABLE))
             throw std::runtime_error(
                 std::string("Failed to create ledgers table: ") +

@@ -230,11 +230,15 @@ public:
     {
         // Sanitize table name
         name_.erase(
-            std::remove_if(
+            std::unique(
                 name_.begin(),
-                name_.end(),
-                [](char c) { return !std::isalnum(c); }),
+                std::transform(
+                    name_.begin(),
+                    name_.end(),
+                    name_.begin(),
+                    [](char c) { return std::isalnum(c) ? c : '_'; })),
             name_.end());
+
         name_ = "nodes_" + name_;
     }
 
