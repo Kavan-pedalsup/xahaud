@@ -45,7 +45,6 @@ private:
     };
     MySQLConfig config_;
 
-    // Initialize a new MySQL connection using stored config
     MYSQL*
     initializeConnection()
     {
@@ -71,7 +70,24 @@ private:
                 std::string("Failed to connect to MySQL: ") + error);
         }
 
-        // Select the database
+        // Try to select the database first
+        if (mysql_select_db(mysql, config_.name.c_str()))
+        {
+            // Database selection failed, try to create it
+            std::string create_db_query = "CREATE DATABASE IF NOT EXISTS " +
+                std::string(config_.name.c_str());
+
+            if (mysql_query(mysql, create_db_query.c_str()))
+            {
+                // Creation failed for some reason
+                auto error = mysql_error(mysql);
+                mysql_close(mysql);
+                throw std::runtime_error(
+                    std::string("Failed to create database: ") + error);
+            }
+        }
+
+        // Try selecting again (either after creation or if it existed already)
         if (mysql_select_db(mysql, config_.name.c_str()))
         {
             auto error = mysql_error(mysql);
