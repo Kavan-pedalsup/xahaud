@@ -40,6 +40,10 @@ static constexpr auto INSERT_NODE = R"SQL(
     ON DUPLICATE KEY UPDATE data = VALUES(data)
 )SQL";
 
+static constexpr auto SET_ISOLATION_LEVEL = R"SQL(
+    SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+)SQL";
+
 class MySQLConnection
 {
 private:
@@ -75,6 +79,14 @@ private:
 
         if (!conn)
             return false;
+
+        // Set isolation level for dirty reads
+        if (mysql_query(mysql_.get(), SET_ISOLATION_LEVEL))
+        {
+            JLOG(journal_.warn()) << "Failed to set isolation level: "
+                                  << mysql_error(mysql_.get());
+            return false;
+        }
 
         // Create database (unconditionally)
         std::string query(1024, '\0');
@@ -532,12 +544,7 @@ public:
             return;
         }
 
-        if (mysql_stmt_execute(stmt))
-        {
-            mysql_stmt_close(stmt);
-            return;
-        }
-
+        mysql_stmt_execute(stmt);
         mysql_stmt_close(stmt);
     }
 
@@ -551,20 +558,20 @@ public:
         if (!conn->ensureConnection())
             return;
 
-        if (mysql_query(conn->get(), "START TRANSACTION"))
-            return;
+        //        if (mysql_query(conn->get(), "START TRANSACTION"))
+        //            return;
 
         try
         {
             for (auto const& e : batch)
                 store(e);
 
-            if (mysql_query(conn->get(), "COMMIT"))
-                mysql_query(conn->get(), "ROLLBACK");
+            //            if (mysql_query(conn->get(), "COMMIT"))
+            //                mysql_query(conn->get(), "ROLLBACK");
         }
         catch (...)
         {
-            mysql_query(conn->get(), "ROLLBACK");
+            //            mysql_query(conn->get(), "ROLLBACK");
             throw;
         }
     }
