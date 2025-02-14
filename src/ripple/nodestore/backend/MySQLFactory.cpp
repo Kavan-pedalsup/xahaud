@@ -281,22 +281,33 @@ public:
     fetch(void const* key, std::shared_ptr<NodeObject>* pObject) override
     {
         if (!isOpen_)
+        {
+            std::cout << "fetch: Database not open\n";
             return notFound;
+        }
 
         auto* conn = getConnection();
         if (!conn->ensureConnection())
+        {
+            std::cout << "fetch: Failed to ensure connection\n";
             return dataCorrupt;
+        }
 
         uint256 const hash(uint256::fromVoid(key));
 
         MYSQL_STMT* stmt = mysql_stmt_init(conn->get());
         if (!stmt)
+        {
+            std::cout << "fetch: Failed to initialize prepared statement\n";
             return dataCorrupt;
+        }
 
-        std::string const sql = "SELECT data FROM nodes WHERE hash = ?";
+        std::string const sql = "SELECT data FROM " + name_ + " WHERE hash = ?";
 
         if (mysql_stmt_prepare(stmt, sql.c_str(), sql.length()))
         {
+            std::cout << "fetch: Failed to prepare statement. Error: "
+                      << mysql_stmt_error(stmt) << "\n";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
@@ -310,12 +321,16 @@ public:
 
         if (mysql_stmt_bind_param(stmt, &bindParam))
         {
+            std::cout << "fetch: Failed to bind parameter. Error: "
+                      << mysql_stmt_error(stmt) << "\n";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
 
         if (mysql_stmt_execute(stmt))
         {
+            std::cout << "fetch: Failed to execute statement. Error: "
+                      << mysql_stmt_error(stmt) << "\n";
             mysql_stmt_close(stmt);
             return notFound;
         }
@@ -330,12 +345,16 @@ public:
 
         if (mysql_stmt_bind_result(stmt, &bindResult))
         {
+            std::cout << "fetch: Failed to bind result. Error: "
+                      << mysql_stmt_error(stmt) << "\n";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
 
         if (mysql_stmt_store_result(stmt))
         {
+            std::cout << "fetch: Failed to store result. Error: "
+                      << mysql_stmt_error(stmt) << "\n";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
@@ -348,9 +367,13 @@ public:
 
         if (mysql_stmt_fetch(stmt))
         {
+            std::cout << "fetch: Failed to fetch row. Error: "
+                      << mysql_stmt_error(stmt) << "\n";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
+
+        std::cout << "fetch: Retrieved data length: " << length << "\n";
 
         std::vector<uint8_t> buffer(length);
         bindResult.buffer = buffer.data();
@@ -358,6 +381,8 @@ public:
 
         if (mysql_stmt_fetch_column(stmt, &bindResult, 0, 0))
         {
+            std::cout << "fetch: Failed to fetch column. Error: "
+                      << mysql_stmt_error(stmt) << "\n";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
@@ -368,11 +393,18 @@ public:
         auto const result =
             nodeobject_decompress(buffer.data(), buffer.size(), decompressed);
 
+        std::cout << "fetch: Decompression result - size: " << result.second
+                  << ", success: " << (result.first != nullptr) << "\n";
+
         DecodedBlob decoded(hash.data(), result.first, result.second);
         if (!decoded.wasOk())
+        {
+            std::cout << "fetch: Blob decoding failed\n";
             return dataCorrupt;
+        }
 
         *pObject = decoded.createObject();
+        std::cout << "fetch: Successfully created object\n";
         return ok;
     }
 
@@ -432,8 +464,8 @@ public:
         if (!stmt)
             return;
 
-        std::string const sql =
-            "INSERT INTO nodes (hash, data) VALUES (?, ?) "
+        std::string const sql = "INSERT INTO " + name_ +
+            " (hash, data) VALUES (?, ?) "
             "ON DUPLICATE KEY UPDATE data = VALUES(data)";
 
         if (mysql_stmt_prepare(stmt, sql.c_str(), sql.length()))
@@ -518,7 +550,8 @@ public:
 
         if (mysql_query(
                 conn->get(),
-                "SELECT hash, data FROM nodes ORDER BY created_at"))
+                ("SELECT hash, data FROM " + name_ + " ORDER BY created_at")
+                    .c_str()))
             return;
 
         MYSQL_RES* result = mysql_store_result(conn->get());
