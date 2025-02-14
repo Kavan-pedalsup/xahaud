@@ -12,52 +12,29 @@
 #include <memory>
 #include <mysql/mysql.h>
 #include <sstream>
+#include <thread>
 
 namespace ripple {
 namespace NodeStore {
 
-class MySQLBackend : public Backend
+class MySQLConnection
 {
 private:
-    std::string name_;
-    beast::Journal journal_;
-    bool isOpen_{false};
     std::unique_ptr<MYSQL, decltype(&mysql_close)> mysql_;
-
     Config const& config_;
-
-    static constexpr auto CREATE_DATABASE = R"SQL(
-        CREATE DATABASE IF NOT EXISTS `%s` 
-        CHARACTER SET utf8mb4 
-        COLLATE utf8mb4_unicode_ci
-    )SQL";
-
-    static constexpr auto CREATE_NODES_TABLE = R"SQL(
-        CREATE TABLE IF NOT EXISTS nodes (
-            hash BINARY(32) PRIMARY KEY,
-            data MEDIUMBLOB NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB
-    )SQL";
+    std::string const& dbName_;
+    beast::Journal journal_;
 
 public:
-    MySQLBackend(
-        std::size_t keyBytes,
-        Section const& keyValues,
+    MySQLConnection(
+        Config const& config,
+        std::string const& dbName,
         beast::Journal journal)
-        : name_(get(keyValues, "path", "nodestore"))
+        : mysql_(mysql_init(nullptr), mysql_close)
+        , config_(config)
+        , dbName_(dbName)
         , journal_(journal)
-        , mysql_(mysql_init(nullptr), mysql_close)
-        , config_(keyValues.getParent())
     {
-        // mysql names are limited to alphanumeric
-        name_.erase(
-            std::remove_if(
-                name_.begin(),
-                name_.end(),
-                [](char c) { return !std::isalnum(c); }),
-            name_.end());
-
         if (!mysql_)
             Throw<std::runtime_error>("Failed to initialize MySQL");
 
@@ -70,7 +47,7 @@ public:
             config_.mysql->host.c_str(),
             config_.mysql->user.c_str(),
             config_.mysql->pass.c_str(),
-            nullptr,
+            dbName_.c_str(),
             config_.mysql->port,
             nullptr,
             0);
@@ -86,19 +63,117 @@ public:
         mysql_options(mysql_.get(), MYSQL_OPT_RECONNECT, &reconnect);
     }
 
+    MYSQL*
+    get()
+    {
+        return mysql_.get();
+    }
+
+    bool
+    ensureConnection()
+    {
+        if (!mysql_ || !mysql_.get() || mysql_ping(mysql_.get()) != 0)
+        {
+            JLOG(journal_.error())
+                << "MySQL connection lost, attempting reconnect";
+            try
+            {
+                mysql_.reset(mysql_init(nullptr));
+                auto* conn = mysql_real_connect(
+                    mysql_.get(),
+                    config_.mysql->host.c_str(),
+                    config_.mysql->user.c_str(),
+                    config_.mysql->pass.c_str(),
+                    dbName_.c_str(),
+                    config_.mysql->port,
+                    nullptr,
+                    0);
+
+                if (!conn)
+                    return false;
+
+                uint8_t const reconnect = 1;
+                mysql_options(mysql_.get(), MYSQL_OPT_RECONNECT, &reconnect);
+                return true;
+            }
+            catch (...)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
+class MySQLBackend : public Backend
+{
+private:
+    std::string name_;
+    beast::Journal journal_;
+    bool isOpen_{false};
+    Config const& config_;
+
+    // Thread-local MySQL connection
+    static thread_local std::unique_ptr<MySQLConnection> threadConnection_;
+
+    static constexpr auto CREATE_DATABASE = R"SQL(
+        CREATE DATABASE IF NOT EXISTS `%s` 
+        CHARACTER SET utf8mb4 
+        COLLATE utf8mb4_unicode_ci
+    )SQL";
+
+    static constexpr auto CREATE_NODES_TABLE = R"SQL(
+        CREATE TABLE IF NOT EXISTS nodes (
+            hash BINARY(32) PRIMARY KEY,
+            data MEDIUMBLOB NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB
+    )SQL";
+
+    MySQLConnection*
+    getConnection()
+    {
+        if (!threadConnection_)
+        {
+            threadConnection_ =
+                std::make_unique<MySQLConnection>(config_, name_, journal_);
+        }
+        return threadConnection_.get();
+    }
+
+public:
+    MySQLBackend(
+        std::size_t keyBytes,
+        Section const& keyValues,
+        beast::Journal journal)
+        : name_(get(keyValues, "path", "nodestore"))
+        , journal_(journal)
+        , config_(keyValues.getParent())
+    {
+        // mysql names are limited to alphanumeric
+        name_.erase(
+            std::remove_if(
+                name_.begin(),
+                name_.end(),
+                [](char c) { return !std::isalnum(c); }),
+            name_.end());
+    }
+
     void
     createDatabase()
     {
+        auto conn = std::make_unique<MySQLConnection>(config_, "", journal_);
+
         std::string query(1024, '\0');
         int length =
             snprintf(&query[0], query.size(), CREATE_DATABASE, name_.c_str());
         query.resize(length);
 
-        if (mysql_query(mysql_.get(), query.c_str()))
+        if (mysql_query(conn->get(), query.c_str()))
         {
             Throw<std::runtime_error>(
                 std::string("Failed to create database: ") +
-                mysql_error(mysql_.get()) + " (1)");
+                mysql_error(conn->get()));
         }
     }
 
@@ -119,27 +194,23 @@ public:
         if (isOpen_)
             Throw<std::runtime_error>("already open");
 
-        // Ensure database is selected
         if (!config_.mysql.has_value())
             throw std::runtime_error(
                 "[mysql_settings] stanza missing from config!");
 
         createDatabase();
 
-        if (mysql_select_db(mysql_.get(), name_.c_str()))
-        {
-            Throw<std::runtime_error>(
-                std::string("Failed to select database: ") +
-                mysql_error(mysql_.get()));
-        }
+        auto* conn = getConnection();
+        if (!conn->ensureConnection())
+            Throw<std::runtime_error>("Failed to establish MySQL connection");
 
         if (createIfMissing)
         {
-            if (mysql_query(mysql_.get(), CREATE_NODES_TABLE))
+            if (mysql_query(conn->get(), CREATE_NODES_TABLE))
             {
                 Throw<std::runtime_error>(
                     std::string("Failed to create nodes table: ") +
-                    mysql_error(mysql_.get()));
+                    mysql_error(conn->get()));
             }
         }
 
@@ -155,6 +226,7 @@ public:
     void
     close() override
     {
+        threadConnection_.reset();
         isOpen_ = false;
     }
 
@@ -164,9 +236,13 @@ public:
         if (!isOpen_)
             return notFound;
 
+        auto* conn = getConnection();
+        if (!conn->ensureConnection())
+            return dataCorrupt;
+
         uint256 const hash(uint256::fromVoid(key));
 
-        MYSQL_STMT* stmt = mysql_stmt_init(mysql_.get());
+        MYSQL_STMT* stmt = mysql_stmt_init(conn->get());
         if (!stmt)
             return dataCorrupt;
 
@@ -262,7 +338,11 @@ public:
         if (!isOpen_)
             return {results, notFound};
 
-        if (mysql_query(mysql_.get(), "START TRANSACTION"))
+        auto* conn = getConnection();
+        if (!conn->ensureConnection())
+            return {results, dataCorrupt};
+
+        if (mysql_query(conn->get(), "START TRANSACTION"))
             return {results, dataCorrupt};
 
         try
@@ -274,14 +354,14 @@ public:
                 results.push_back(status == ok ? nObj : nullptr);
             }
 
-            if (mysql_query(mysql_.get(), "COMMIT"))
+            if (mysql_query(conn->get(), "COMMIT"))
                 return {results, dataCorrupt};
 
             return {results, ok};
         }
         catch (...)
         {
-            mysql_query(mysql_.get(), "ROLLBACK");
+            mysql_query(conn->get(), "ROLLBACK");
             throw;
         }
     }
@@ -292,12 +372,16 @@ public:
         if (!isOpen_ || !object)
             return;
 
+        auto* conn = getConnection();
+        if (!conn->ensureConnection())
+            return;
+
         EncodedBlob encoded(object);
         nudb::detail::buffer compressed;
         auto const result = nodeobject_compress(
             encoded.getData(), encoded.getSize(), compressed);
 
-        MYSQL_STMT* stmt = mysql_stmt_init(mysql_.get());
+        MYSQL_STMT* stmt = mysql_stmt_init(conn->get());
         if (!stmt)
             return;
 
@@ -307,6 +391,8 @@ public:
 
         if (mysql_stmt_prepare(stmt, sql.c_str(), sql.length()))
         {
+            JLOG(journal_.error()) << "Failed to prepare MySQL statement: "
+                                   << mysql_stmt_error(stmt);
             mysql_stmt_close(stmt);
             return;
         }
@@ -346,7 +432,11 @@ public:
         if (!isOpen_)
             return;
 
-        if (mysql_query(mysql_.get(), "START TRANSACTION"))
+        auto* conn = getConnection();
+        if (!conn->ensureConnection())
+            return;
+
+        if (mysql_query(conn->get(), "START TRANSACTION"))
             return;
 
         try
@@ -354,12 +444,12 @@ public:
             for (auto const& e : batch)
                 store(e);
 
-            if (mysql_query(mysql_.get(), "COMMIT"))
-                mysql_query(mysql_.get(), "ROLLBACK");
+            if (mysql_query(conn->get(), "COMMIT"))
+                mysql_query(conn->get(), "ROLLBACK");
         }
         catch (...)
         {
-            mysql_query(mysql_.get(), "ROLLBACK");
+            mysql_query(conn->get(), "ROLLBACK");
             throw;
         }
     }
@@ -375,12 +465,16 @@ public:
         if (!isOpen_)
             return;
 
+        auto* conn = getConnection();
+        if (!conn->ensureConnection())
+            return;
+
         if (mysql_query(
-                mysql_.get(),
+                conn->get(),
                 "SELECT hash, data FROM nodes ORDER BY created_at"))
             return;
 
-        MYSQL_RES* result = mysql_store_result(mysql_.get());
+        MYSQL_RES* result = mysql_store_result(conn->get());
         if (!result)
             return;
 
@@ -423,6 +517,9 @@ public:
         return 1;
     }
 };
+
+// Initialize the thread_local connection
+thread_local std::unique_ptr<MySQLConnection> MySQLBackend::threadConnection_;
 
 class MySQLFactory : public Factory
 {
