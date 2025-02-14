@@ -351,6 +351,7 @@ public:
             return dataCorrupt;
         }
 
+        // After binding the result...
         if (mysql_stmt_store_result(stmt))
         {
             std::cout << "fetch: Failed to store result. Error: "
@@ -365,23 +366,26 @@ public:
             return notFound;
         }
 
-        if (mysql_stmt_fetch(stmt))
+        // Get the metadata to find out the length of the BLOB column
+        MYSQL_RES* metadata = mysql_stmt_result_metadata(stmt);
+        if (!metadata)
         {
-            std::cout << "fetch: Failed to fetch row. Error: "
-                      << mysql_stmt_error(stmt) << "\n";
+            std::cout << "fetch: Failed to get result metadata\n";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
+        unsigned long max_length = mysql_fetch_field(metadata)->max_length;
+        mysql_free_result(metadata);
 
-        std::cout << "fetch: Retrieved data length: " << length << "\n";
-
-        std::vector<uint8_t> buffer(length);
+        // Allocate buffer with the max length
+        std::vector<uint8_t> buffer(max_length);
         bindResult.buffer = buffer.data();
-        bindResult.buffer_length = length;
+        bindResult.buffer_length = max_length;
 
-        if (mysql_stmt_fetch_column(stmt, &bindResult, 0, 0))
+        // Single fetch for the row
+        if (mysql_stmt_fetch(stmt))
         {
-            std::cout << "fetch: Failed to fetch column. Error: "
+            std::cout << "fetch: Failed to fetch row. Error: "
                       << mysql_stmt_error(stmt) << "\n";
             mysql_stmt_close(stmt);
             return dataCorrupt;
