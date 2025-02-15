@@ -500,12 +500,16 @@ private:
 
         MYSQL_STMT* stmt = mysql_stmt_init(conn->get());
         if (!stmt)
+        {
+            JLOG(journal_.warn()) << "fetch: Failed to init stmt";
             return dataCorrupt;
+        }
 
         std::string const sql = "SELECT data FROM " + name_ + " WHERE hash = ?";
 
         if (mysql_stmt_prepare(stmt, sql.c_str(), sql.length()))
         {
+            JLOG(journal_.warn()) << "fetch: Failed to prepare stmt";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
@@ -519,6 +523,7 @@ private:
 
         if (mysql_stmt_bind_param(stmt, &bindParam))
         {
+            JLOG(journal_.warn()) << "fetch: Failed to bind param";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
@@ -537,14 +542,20 @@ private:
         bindResult.length = &length;
         bindResult.is_null = &is_null;
 
+        std::vector<uint8_t> buffer(16 * 1024 * 1024);  // 16MB buffer
+        bindResult.buffer = buffer.data();
+        bindResult.buffer_length = buffer.size();
+
         if (mysql_stmt_bind_result(stmt, &bindResult))
         {
+            JLOG(journal_.warn()) << "fetch: Failed to bind result";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
 
         if (mysql_stmt_store_result(stmt))
         {
+            JLOG(journal_.warn()) << "fetch: Failed to store result";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
@@ -555,17 +566,16 @@ private:
             return notFound;
         }
 
-        std::vector<uint8_t> buffer(16 * 1024 * 1024);  // 16MB buffer
-        bindResult.buffer = buffer.data();
-        bindResult.buffer_length = buffer.size();
-
         if (mysql_stmt_fetch(stmt))
         {
+            JLOG(journal_.warn()) << "fetch: Failed to fetch stmt";
             mysql_stmt_close(stmt);
             return dataCorrupt;
         }
 
         mysql_stmt_close(stmt);
+
+        std::cout << "length: " << length << "\n";
 
         // Add to cache
         std::vector<uint8_t> cached_data(
@@ -579,7 +589,10 @@ private:
 
         DecodedBlob decoded(hash.data(), result.first, result.second);
         if (!decoded.wasOk())
+        {
+            JLOG(journal_.warn()) << "fetch: Failed to decode blob";
             return dataCorrupt;
+        }
 
         *pObject = decoded.createObject();
         return ok;
