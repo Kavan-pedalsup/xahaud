@@ -575,8 +575,6 @@ private:
 
         mysql_stmt_close(stmt);
 
-        std::cout << "length: " << length << "\n";
-
         // Add to cache
         std::vector<uint8_t> cached_data(
             buffer.begin(), buffer.begin() + length);
