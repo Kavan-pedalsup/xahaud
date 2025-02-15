@@ -537,7 +537,13 @@ private:
         MYSQL_BIND bindResult;
         std::memset(&bindResult, 0, sizeof(bindResult));
         uint64_t length = 0;
-        bool is_null = false;
+
+#if MYSQL_VERSION_ID < 80000
+        char
+#else
+        bool
+#endif
+            is_null = 0;
         bindResult.buffer_type = MYSQL_TYPE_BLOB;
         bindResult.length = &length;
         bindResult.is_null = &is_null;
