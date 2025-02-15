@@ -69,7 +69,7 @@ fi
 mkdir .nih_c;
 mkdir .nih_toolchain;
 cd .nih_toolchain &&
-yum install -y wget lz4 lz4-devel git llvm13-static.x86_64 llvm13-devel.x86_64 devtoolset-10-binutils zlib-static ncurses-static -y \
+yum install -y wget lz4 lz4-devel git llvm13-static.x86_64 llvm13-devel.x86_64 devtoolset-10-binutils zlib-static ncurses-static mysql-devel -y \
   devtoolset-7-gcc-c++ \
   devtoolset-9-gcc-c++ \
   devtoolset-10-gcc-c++ \
