@@ -1,8 +1,7 @@
 #[===================================================================[
    dep: MySQL
-   MySQL client library integration for rippled
+   MySQL client library integration for rippled (static linking)
 #]===================================================================]
-
 # Create an IMPORTED target for MySQL
 add_library(mysql_client UNKNOWN IMPORTED)
 
@@ -16,15 +15,17 @@ find_path(MYSQL_INCLUDE_DIR
     DOC "MySQL include directory"
 )
 
+# Modified to specifically look for static library
 find_library(MYSQL_LIBRARY
-    NAMES mysqlclient
+    NAMES libmysqlclient.a mysqlclient.a    # Look for static libraries first
     PATHS
         /usr/lib
         /usr/lib/x86_64-linux-gnu
         /usr/lib/mysql
         /usr/local/lib/mysql
         /opt/mysql/mysql/lib
-    DOC "MySQL client library"
+    DOC "MySQL client static library"
+    NO_DEFAULT_PATH    # Prevents finding dynamic library first
 )
 
 # Set properties on the imported target
@@ -32,12 +33,13 @@ if(MYSQL_INCLUDE_DIR AND MYSQL_LIBRARY)
     set_target_properties(mysql_client PROPERTIES
         IMPORTED_LOCATION "${MYSQL_LIBRARY}"
         INTERFACE_INCLUDE_DIRECTORIES "${MYSQL_INCLUDE_DIR}"
+        IMPORTED_LINK_INTERFACE_LANGUAGES "CXX"    # Added for static linking
+        IMPORTED_LINK_INTERFACE_MULTIPLICITY "1"    # Added for static linking
     )
-    
     message(STATUS "Found MySQL include dir: ${MYSQL_INCLUDE_DIR}")
     message(STATUS "Found MySQL library: ${MYSQL_LIBRARY}")
 else()
-    message(FATAL_ERROR "Could not find MySQL development files. Please install libmysqlclient-dev")
+    message(FATAL_ERROR "Could not find MySQL static development files. Please install libmysqlclient-dev")
 endif()
 
 # Add MySQL backend source to rippled sources
@@ -45,8 +47,8 @@ list(APPEND rippled_src
     src/ripple/nodestore/backend/MySQLBackend.cpp)
 
 # Link MySQL to rippled
-target_link_libraries(ripple_libs 
-    INTERFACE 
+target_link_libraries(ripple_libs
+    INTERFACE
         mysql_client
 )
 
