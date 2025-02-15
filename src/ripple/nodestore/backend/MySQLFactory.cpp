@@ -215,6 +215,7 @@ private:
     {
         std::chrono::steady_clock::time_point last_access;
         size_t size;
+        bool pending{false};
     };
 
     std::map<uint256, CacheEntry> cacheMetadata_;
@@ -272,7 +273,8 @@ private:
             std::lock_guard<std::mutex> metadataLock(metadataMutex_);
             for (const auto& [hash, metadata] : cacheMetadata_)
             {
-                entries.emplace_back(hash, metadata.last_access);
+                if (!metadata.pending)
+                    entries.emplace_back(hash, metadata.last_access);
             }
         }
 
@@ -449,7 +451,21 @@ private:
                     }
 
                     if (success)
-                        mysql_query(conn->get(), "COMMIT");
+                    {
+                        if (mysql_query(conn->get(), "COMMIT") == 0)
+                        {
+                            // Clear pending flag for successfully written
+                            // entries
+                            std::lock_guard<std::mutex> metadataLock(
+                                metadataMutex_);
+                            for (const auto& op : batch)
+                            {
+                                auto it = cacheMetadata_.find(op.hash);
+                                if (it != cacheMetadata_.end())
+                                    it->second.pending = false;
+                            }
+                        }
+                    }
                     else
                         mysql_query(conn->get(), "ROLLBACK");
                 }
@@ -460,6 +476,11 @@ private:
     void
     queueWrite(uint256 const& hash, std::vector<std::uint8_t> const& data)
     {
+        {
+            std::lock_guard<std::mutex> metadataLock(metadataMutex_);
+            auto& entry = cacheMetadata_[hash];
+            entry.pending = true;
+        }
         std::lock_guard<std::mutex> lock(queueMutex_);
         writeQueue_.push({hash, data});
         queueCV_.notify_one();
