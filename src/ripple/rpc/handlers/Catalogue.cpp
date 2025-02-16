@@ -595,6 +595,9 @@ doCatalogueLoad(RPC::JsonContext& context)
     if (!context.params.isMember(jss::input_file))
         return rpcError(rpcINVALID_PARAMS, "expected input_file");
 
+    bool force = context.params.isMember(jss::force) &&
+        context.params[jss::force].asBool();
+
     std::string filepath = context.params[jss::input_file].asString();
     if (filepath.empty() || filepath.front() != '/')
         return rpcError(
@@ -632,7 +635,6 @@ doCatalogueLoad(RPC::JsonContext& context)
     std::set<uint256, uint256RefCompare> allKeys;
 
     // Map to store latest version of each key per ledger
-    // We use references to the keys in allKeys to avoid copies
     std::map<
         std::reference_wrapper<const uint256>,
         std::vector<StatePosition>,
@@ -652,7 +654,6 @@ doCatalogueLoad(RPC::JsonContext& context)
 
         auto [keyIt, inserted] = allKeys.insert(key);
 
-        // Either find existing vector of positions or insert a new empty one
         auto [stateIt, stateInserted] = stateVersions.emplace(
             std::cref(*keyIt), std::vector<StatePosition>{});
         std::vector<StatePosition>& positions = stateIt->second;
@@ -812,24 +813,128 @@ doCatalogueLoad(RPC::JsonContext& context)
         ledger->updateSkipList();
     }
 
-    // Import ledgers into the ledger master
-    for (auto const& ledger : ledgers)
-    {
-        ledger->setValidated();
-        ledger->setAccepted(
-            ledger->info().closeTime,
-            ledger->info().closeTimeResolution,
-            ledger->info().closeFlags & sLCF_NoConsensusTime);
-
-        context.app.getLedgerMaster().storeLedger(ledger);
-    }
-
     Json::Value jvResult;
     jvResult[jss::ledger_min] = header.min_ledger;
     jvResult[jss::ledger_max] = header.max_ledger;
-    jvResult[jss::ledger_count] = static_cast<Json::UInt>(ledgers.size());
-    jvResult[jss::status] = jss::success;
 
+    // Track statistics and issues
+    uint32_t imported = 0;
+    uint32_t skipped = 0;
+    uint32_t failed = 0;
+    std::vector<uint32_t> failedSeqs;
+    std::vector<uint32_t> hashMismatchSeqs;
+
+    auto& ledgerMaster = context.app.getLedgerMaster();
+
+    // Validate and import ledgers
+    for (auto const& ledger : ledgers)
+    {
+        bool shouldImport = true;
+        std::string failureReason;
+
+        try
+        {
+            // Check if ledger already exists
+            auto existingLedger =
+                ledgerMaster.getLedgerBySeq(ledger->info().seq);
+            if (existingLedger)
+            {
+                if (existingLedger->info().hash == ledger->info().hash)
+                {
+                    // Exact match - skip
+                    ++skipped;
+                    shouldImport = false;
+                }
+                else
+                {
+                    // Hash mismatch
+                    hashMismatchSeqs.push_back(ledger->info().seq);
+                    if (!force)
+                    {
+                        ++skipped;
+                        shouldImport = false;
+                    }
+                }
+            }
+
+            if (shouldImport)
+            {
+                // Verify account state hash
+                if (ledger->stateMap().getHash().isNonZero() &&
+                    ledger->stateMap().getHash() != ledger->info().accountHash)
+                {
+                    failureReason = "Account state hash mismatch";
+                    throw std::runtime_error(failureReason);
+                }
+
+                // Verify transaction set hash
+                if (ledger->txMap().getHash().isNonZero() &&
+                    ledger->txMap().getHash() != ledger->info().txHash)
+                {
+                    failureReason = "Transaction set hash mismatch";
+                    throw std::runtime_error(failureReason);
+                }
+
+                // Additional sanity checks for transactions
+                for (auto& i : ledger->txs)
+                {
+                    if (!i.first)
+                    {
+                        failureReason = "Invalid transaction found";
+                        throw std::runtime_error(failureReason);
+                    }
+
+                    // Verify transaction metadata if present
+                    if (i.second && i.second->getLedger() != ledger->info().seq)
+                    {
+                        failureReason =
+                            "Transaction metadata sequence mismatch";
+                        throw std::runtime_error(failureReason);
+                    }
+                }
+
+                // All checks passed, import the ledger
+                ledger->setValidated();
+                ledger->setAccepted(
+                    ledger->info().closeTime,
+                    ledger->info().closeTimeResolution,
+                    ledger->info().closeFlags & sLCF_NoConsensusTime);
+
+                ledgerMaster.storeLedger(ledger);
+                ++imported;
+            }
+        }
+        catch (std::exception const& e)
+        {
+            // Log the failure and continue with next ledger
+            failedSeqs.push_back(ledger->info().seq);
+            ++failed;
+            JLOG(context.j.error()) << "Failed to import ledger "
+                                    << ledger->info().seq << ": " << e.what();
+        }
+    }
+
+    // Report results
+    jvResult[jss::imported] = imported;
+    jvResult[jss::skipped] = skipped;
+    jvResult[jss::failed] = failed;
+
+    if (!hashMismatchSeqs.empty())
+    {
+        auto& hashMismatches =
+            (jvResult[jss::hash_mismatches] = Json::arrayValue);
+        for (auto seq : hashMismatchSeqs)
+            hashMismatches.append(seq);
+    }
+
+    if (!failedSeqs.empty())
+    {
+        auto& failures = (jvResult[jss::failed_ledgers] = Json::arrayValue);
+        for (auto seq : failedSeqs)
+            failures.append(seq);
+    }
+
+    jvResult[jss::status] = jss::success;
     return jvResult;
 }
 }  // namespace ripple

@@ -311,6 +311,7 @@ JSS(expiration);            // out: AccountOffers, AccountChannels,
                             //      ValidatorList
 JSS(fail_hard);             // in: Sign, Submit
 JSS(failed);                // out: InboundLedger
+JSS(failed_ledgers);        // out: catalogue
 JSS(feature);               // in: Feature
 JSS(features);              // out: Feature
 JSS(fee);                   // out: NetworkOPs, Peers
@@ -328,6 +329,7 @@ JSS(finished);
 JSS(fix_txns);              // in: LedgerCleaner
 JSS(flags);                 // out: AccountOffers,
                             //      NetworkOPs
+JSS(force);                 // in: catalogue
 JSS(forward);               // in: AccountTx
 JSS(freeze);                // out: AccountLines
 JSS(freeze_peer);           // out: AccountLines
@@ -337,6 +339,7 @@ JSS(full_reply);            // out: PathFind
 JSS(fullbelow_size);        // out: GetCounts
 JSS(good);                  // out: RPCVersion
 JSS(hash);                  // out: NetworkOPs, InboundLedger,
+JSS(hash_mismatches);       // out: catalogue
                             //      LedgerToJson, STTx; field
 JSS(hashes);                // in: AccountObjects
 JSS(have_header);           // out: InboundLedger
@@ -356,6 +359,7 @@ JSS(ident);                 // in: AccountCurrencies, AccountInfo,
                             //     OwnerInfo
 JSS(ignore_default);        // in: AccountLines
 JSS(import_vlseq);          // in: LedgerEntry
+JSS(imported);              // out: catalogue
 JSS(inLedger);              // out: tx/Transaction
 JSS(in_queue);
 JSS(inbound);  // out: PeerImp
@@ -622,6 +626,7 @@ JSS(signing_keys);              // out: ValidatorList
 JSS(signing_time);              // out: NetworkOPs
 JSS(signer_list);               // in: AccountObjects
 JSS(signer_lists);              // in/out: AccountInfo
+JSS(skipped);                   // out: catalogue
 JSS(snapshot);                  // in: Subscribe
 JSS(source_account);            // in: PathRequest, RipplePathFind
 JSS(source_amount);             // in: PathRequest, RipplePathFind
