@@ -376,22 +376,23 @@ JSS(issuer);               // in: RipplePathFind, Subscribe,
 JSS(job);
 JSS(job_queue);
 JSS(jobs);
-JSS(jsonrpc);                     // json version
-JSS(jq_trans_overflow);           // JobQueue transaction limit overflow.
-JSS(kept);                        // out: SubmitTransaction
-JSS(key);                         // out
-JSS(key_type);                    // in/out: WalletPropose, TransactionSign
-JSS(latency);                     // out: PeerImp
-JSS(last);                        // out: RPCVersion
-JSS(lastSequence);                // out: NodeToShardStatus
-JSS(lastShardIndex);              // out: NodeToShardStatus
-JSS(last_close);                  // out: NetworkOPs
-JSS(last_refresh_time);           // out: ValidatorSite
-JSS(last_refresh_status);         // out: ValidatorSite
-JSS(last_refresh_message);        // out: ValidatorSite
-JSS(ledger);                      // in: NetworkOPs, LedgerCleaner,
-                                  //     RPCHelpers
-                                  // out: NetworkOPs, PeerImp
+JSS(jsonrpc);               // json version
+JSS(jq_trans_overflow);     // JobQueue transaction limit overflow.
+JSS(kept);                  // out: SubmitTransaction
+JSS(key);                   // out
+JSS(key_type);              // in/out: WalletPropose, TransactionSign
+JSS(latency);               // out: PeerImp
+JSS(last);                  // out: RPCVersion
+JSS(lastSequence);          // out: NodeToShardStatus
+JSS(lastShardIndex);        // out: NodeToShardStatus
+JSS(last_close);            // out: NetworkOPs
+JSS(last_refresh_time);     // out: ValidatorSite
+JSS(last_refresh_status);   // out: ValidatorSite
+JSS(last_refresh_message);  // out: ValidatorSite
+JSS(ledger);                // in: NetworkOPs, LedgerCleaner,
+                            //     RPCHelpers
+                            // out: NetworkOPs, PeerImp
+JSS(ledger_count);
 JSS(ledger_current_index);        // out: NetworkOPs, RPCHelpers,
                                   //      LedgerCurrent, LedgerAccept,
                                   //      AccountLines
@@ -529,6 +530,7 @@ JSS(paths);              // in: RipplePathFind
 JSS(paths_canonical);    // out: RipplePathFind
 JSS(paths_computed);     // out: PathRequest, RipplePathFind
 JSS(output_file);        // in: CatalogueCreate
+JSS(input_file);         // in: CatalogueLoad
 JSS(payment_channel);    // in: LedgerEntry
 JSS(pclose);
 JSS(peer);                        // in: AccountLines
