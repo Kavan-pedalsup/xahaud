@@ -31,13 +31,37 @@
 #include <ripple/rpc/impl/RPCHelpers.h>
 #include <ripple/rpc/impl/Tuning.h>
 #include <ripple/shamap/SHAMapItem.h>
+#include <atomic>
+#include <future>
+#include <thread>
 
 namespace ripple {
 
 static constexpr uint32_t HAS_NEXT_FLAG = 0x80000000;
 static constexpr uint32_t SIZE_MASK = 0x0FFFFFFF;
+static constexpr size_t NUM_SHARDS =
+    16;  // Number of parallel processing shards
+static constexpr size_t WRITE_BUFFER_SIZE = 1024 * 1024;  // 1MB write buffer
 
-#pragma pack(push, 1)  // pack the struct tightly
+// Stores file position information for a state entry version
+struct StatePosition
+{
+    std::streampos filePos;  // Position of the data in file
+    uint32_t sequence;       // Ledger sequence this version applies to
+    uint32_t size;           // Size of the data
+};
+
+// Custom comparator for uint256 references
+struct uint256RefCompare
+{
+    bool
+    operator()(uint256 const& a, uint256 const& b) const
+    {
+        return a < b;
+    }
+};
+
+#pragma pack(push, 1)
 struct CATLHeader
 {
     char magic[4] = {'C', 'A', 'T', 'L'};
@@ -49,199 +73,409 @@ struct CATLHeader
 };
 #pragma pack(pop)
 
-class StreamingLedgerIterator
+// Buffered writing system to minimize disk I/O
+class BufferedWriter
 {
-private:
-    struct LedgerEntry
-    {
-        decltype(std::declval<ReadView>().sles.begin()) iter;
-        decltype(std::declval<ReadView>().sles.end()) end;
-        LedgerIndex seq;
+    std::vector<uint8_t> buffer;
+    std::vector<std::pair<std::streampos, uint32_t>> flagPositions;
+    std::ofstream& outfile;
+    std::mutex mutex;
+    std::streampos currentPos{0};
 
-        bool
-        operator<(const LedgerEntry& other) const
+public:
+    explicit BufferedWriter(std::ofstream& out) : outfile(out)
+    {
+        buffer.reserve(WRITE_BUFFER_SIZE);
+    }
+
+    std::streampos
+    getPos() const
+    {
+        return currentPos;
+    }
+
+    void
+    write(const void* data, size_t size)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        size_t currentBufferPos = buffer.size();
+        buffer.resize(currentBufferPos + size);
+        std::memcpy(buffer.data() + currentBufferPos, data, size);
+        currentPos += size;
+        flushIfNeeded();
+    }
+
+    void
+    recordFlagPosition(std::streampos pos, uint32_t flags)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        flagPositions.emplace_back(pos, flags);
+    }
+
+    void
+    flushIfNeeded()
+    {
+        if (buffer.size() >= WRITE_BUFFER_SIZE)
         {
-            return (*iter)->key() < (*other.iter)->key();
+            flush();
+        }
+    }
+
+    void
+    flush()
+    {
+        if (!buffer.empty())
+        {
+            outfile.write(
+                reinterpret_cast<const char*>(buffer.data()), buffer.size());
+            buffer.clear();
+        }
+    }
+
+    void
+    updateFlags()
+    {
+        flush();  // Ensure all data is written
+        for (const auto& [pos, flags] : flagPositions)
+        {
+            outfile.seekp(pos);
+            outfile.write(reinterpret_cast<const char*>(&flags), sizeof(flags));
+        }
+        flagPositions.clear();
+    }
+};
+
+class DataChangeTracker
+{
+    struct VersionData
+    {
+        Blob data;
+        std::mutex mutex;
+
+        // Add proper constructors
+        VersionData() = default;
+        VersionData(VersionData&&) = default;
+        VersionData&
+        operator=(VersionData&&) = default;
+
+        // Copy operations deleted due to mutex
+        VersionData(const VersionData&) = delete;
+        VersionData&
+        operator=(const VersionData&) = delete;
+    };
+
+    class KeyDataMap
+    {
+        std::map<uint256, std::unique_ptr<VersionData>> data;
+        std::mutex mutex;
+
+    public:
+        std::pair<VersionData*, bool>
+        getOrCreate(uint256 const& key)
+        {
+            std::lock_guard lock(mutex);
+            auto [it, inserted] = data.try_emplace(key, nullptr);
+            if (inserted)
+            {
+                it->second = std::make_unique<VersionData>();
+            }
+            return {it->second.get(), inserted};
         }
     };
 
-    std::vector<std::shared_ptr<ReadView const>>& ledgers;
-    LedgerIndex minSeq;
-    std::ofstream& outfile;
+    KeyDataMap lastSeenData;
 
-    std::vector<LedgerEntry>
-    getLedgerIterators(size_t ledgerIndex)
-    {
-        std::vector<LedgerEntry> result;
-        auto begin = ledgers[ledgerIndex]->sles.begin();
-        auto end = ledgers[ledgerIndex]->sles.end();
-        if (begin != end)
-        {
-            result.push_back(
-                {begin, end, static_cast<LedgerIndex>(minSeq + ledgerIndex)});
-        }
-        return result;
-    }
-
-    std::shared_ptr<SLE const>
-    findSLEInLedger(
-        const ReadView::key_type& key,
-        const std::vector<LedgerEntry>& ledgerIters)
-    {
-        for (const auto& entry : ledgerIters)
-        {
-            auto iter = entry.iter;
-            while (iter != entry.end)
-            {
-                if ((*iter)->key() == key)
-                    return *iter;
-                if ((*iter)->key() > key)
-                    break;
-                ++iter;
-            }
-        }
-        return nullptr;
-    }
-
+public:
     bool
-    hasDataChanged(
-        std::shared_ptr<SLE const> const& prevSLE,
-        std::shared_ptr<SLE const> const& currentSLE)
+    hasChanged(uint256 const& key, Serializer const& s)
     {
-        if (!prevSLE || !currentSLE)
+        auto const& newData = s.peekData();
+        auto [versionData, inserted] = lastSeenData.getOrCreate(key);
+
+        std::lock_guard dataLock(versionData->mutex);
+        if (inserted || versionData->data != newData)
+        {
+            versionData->data = newData;
             return true;
-
-        Serializer s1, s2;
-        prevSLE->add(s1);
-        currentSLE->add(s2);
-
-        auto const& v1 = s1.peekData();
-        auto const& v2 = s2.peekData();
-
-        return v1.size() != v2.size() ||
-            !std::equal(v1.begin(), v1.end(), v2.begin());
-    }
-
-    void
-    writeVersionData(
-        const std::shared_ptr<SLE const>& sle,
-        LedgerIndex seq,
-        bool isDeleted,
-        bool hasNext,
-        std::streampos& lastFlagsPos)
-    {
-        uint32_t flagsAndSize = 0;
-        Serializer s;
-
-        if (!isDeleted && sle)
-        {
-            sle->add(s);
-            auto const& data = s.peekData();
-            flagsAndSize = data.size() & SIZE_MASK;
         }
-
-        if (hasNext)
-            flagsAndSize |= HAS_NEXT_FLAG;
-
-        outfile.write(reinterpret_cast<const char*>(&seq), 4);
-        lastFlagsPos = outfile.tellp();
-        outfile.write(reinterpret_cast<const char*>(&flagsAndSize), 4);
-
-        if (!isDeleted && sle)
-        {
-            auto const& data = s.peekData();
-            outfile.write(
-                reinterpret_cast<const char*>(data.data()), data.size());
-        }
+        return false;
     }
+};
 
-    void
-    writeKeyEntry(const ReadView::key_type& key)
+class KeyStore
+{
+    struct VersionList
     {
-        outfile.write(key.cdata(), 32);
+        std::vector<std::pair<LedgerIndex, std::shared_ptr<SLE const>>>
+            versions;
+        std::mutex mutex;
 
-        std::streampos lastFlagsPos;
-        bool wrote_any = false;
-        std::shared_ptr<SLE const> prevSLE;
+        VersionList() = default;
+        VersionList(VersionList&&) = default;
+        VersionList&
+        operator=(VersionList&&) = default;
 
-        for (size_t i = 0; i < ledgers.size(); ++i)
+        VersionList(const VersionList&) = delete;
+        VersionList&
+        operator=(const VersionList&) = delete;
+    };
+
+    class ShardMap
+    {
+        std::map<uint256, std::unique_ptr<VersionList>> data;
+        std::mutex mutex;
+
+    public:
+        VersionList*
+        getOrCreate(uint256 const& key)
         {
-            auto currentIters = getLedgerIterators(i);
-            auto currentSLE = findSLEInLedger(key, currentIters);
-
-            bool shouldWrite = false;
-            bool isDeleted = false;
-
-            if (currentSLE)
+            std::lock_guard lock(mutex);
+            auto [it, inserted] = data.try_emplace(key, nullptr);
+            if (inserted)
             {
-                // Write if the data has changed from previous version
-                if (hasDataChanged(prevSLE, currentSLE))
+                it->second = std::make_unique<VersionList>();
+            }
+            return it->second.get();
+        }
+
+        template <typename Callback>
+        void
+        forEach(Callback&& cb)
+        {
+            std::lock_guard lock(mutex);
+            for (auto& [key, list] : data)
+            {
+                if (list)
                 {
-                    shouldWrite = true;
+                    std::lock_guard listLock(list->mutex);
+                    cb(key, list->versions);
                 }
             }
-            else if (prevSLE)
-            {
-                // Object was deleted
-                shouldWrite = true;
-                isDeleted = true;
-            }
-
-            if (shouldWrite)
-            {
-                bool hasNext = (i < ledgers.size() - 1);
-                writeVersionData(
-                    currentSLE, minSeq + i, isDeleted, hasNext, lastFlagsPos);
-                wrote_any = true;
-            }
-
-            prevSLE = currentSLE;
         }
+    };
 
-        if (wrote_any)
-        {
-            auto currentPos = outfile.tellp();
-            outfile.seekp(lastFlagsPos);
-            uint32_t finalFlags = SIZE_MASK & outfile.tellp();
-            outfile.write(reinterpret_cast<const char*>(&finalFlags), 4);
-            outfile.seekp(currentPos);
-        }
+    std::array<ShardMap, NUM_SHARDS> shards;
+
+    size_t
+    getShardIndex(uint256 const& key) const
+    {
+        return key.data()[0] % NUM_SHARDS;  // Use first byte for sharding
     }
 
 public:
-    StreamingLedgerIterator(
+    void
+    addEntry(
+        uint256 const& key,
+        LedgerIndex seq,
+        std::shared_ptr<SLE const> const& sle)
+    {
+        auto shardIdx = getShardIndex(key);
+        auto list = shards[shardIdx].getOrCreate(key);
+        std::lock_guard listLock(list->mutex);
+        list->versions.emplace_back(seq, sle);
+    }
+
+    template <typename Callback>
+    void
+    forEachInShard(size_t shardIdx, Callback&& cb)
+    {
+        shards[shardIdx].forEach(std::forward<Callback>(cb));
+    }
+};
+
+class ParallelCatalogueBuilder
+{
+private:
+    std::vector<std::shared_ptr<ReadView const>>& ledgers;
+    LedgerIndex minSeq;
+    KeyStore keyStore;
+    BufferedWriter writer;
+    DataChangeTracker changeTracker;
+
+    void
+    buildIndices()
+    {
+        std::vector<std::thread> workers;
+        std::atomic<size_t> ledgerIdx{0};
+
+        for (size_t t = 0; t < std::thread::hardware_concurrency(); ++t)
+        {
+            workers.emplace_back([this, &ledgerIdx]() {
+                while (true)
+                {
+                    size_t idx = ledgerIdx.fetch_add(1);
+                    if (idx >= ledgers.size())
+                        break;
+
+                    auto& ledger = ledgers[idx];
+                    for (auto const& sle : ledger->sles)
+                    {
+                        keyStore.addEntry(sle->key(), minSeq + idx, sle);
+                    }
+                }
+            });
+        }
+
+        for (auto& worker : workers)
+            worker.join();
+    }
+
+    void
+    processKeyShard(size_t shardIdx)
+    {
+        keyStore.forEachInShard(
+            shardIdx, [this](auto const& key, auto const& versions) {
+                std::vector<StatePosition> positions;
+                std::shared_ptr<SLE const> prevSLE;
+
+                for (auto const& [seq, sle] : versions)
+                {
+                    Serializer s;
+                    sle->add(s);
+
+                    if (changeTracker.hasChanged(key, s))
+                    {
+                        auto pos = writer.getPos();
+                        writer.write(s.data(), s.getLength());
+                        positions.push_back(
+                            {pos, seq, static_cast<uint32_t>(s.getLength())});
+                    }
+                    prevSLE = sle;
+                }
+
+                if (!positions.empty())
+                {
+                    writer.write(key.data(), key.size());
+                    for (size_t i = 0; i < positions.size(); ++i)
+                    {
+                        bool hasNext = i < positions.size() - 1;
+                        uint32_t flags = positions[i].size;
+                        if (hasNext)
+                            flags |= HAS_NEXT_FLAG;
+                        writer.recordFlagPosition(positions[i].filePos, flags);
+                    }
+                }
+            });
+    }
+
+public:
+    ParallelCatalogueBuilder(
         std::vector<std::shared_ptr<ReadView const>>& ledgers_,
         LedgerIndex minSeq_,
-        std::ofstream& out)
-        : ledgers(ledgers_), minSeq(minSeq_), outfile(out)
+        std::ofstream& outfile)
+        : ledgers(ledgers_), minSeq(minSeq_), writer(outfile)
     {
     }
 
     void
-    streamAll()
+    build()
     {
-        std::set<ReadView::key_type> allKeys;
+        buildIndices();
 
-        for (size_t i = 0; i < ledgers.size(); ++i)
+        std::vector<std::thread> workers;
+        for (size_t i = 0; i < NUM_SHARDS; ++i)
         {
-            auto iters = getLedgerIterators(i);
-            for (auto& entry : iters)
+            workers.emplace_back([this, i]() { processKeyShard(i); });
+        }
+
+        for (auto& worker : workers)
+            worker.join();
+
+        writer.updateFlags();
+    }
+};
+
+void
+writeLedgerAndTransactions(
+    std::ofstream& outfile,
+    std::vector<std::shared_ptr<ReadView const>>& ledgers)
+{
+    for (auto const& ledger : ledgers)
+    {
+        auto headerStart = outfile.tellp();
+
+        uint64_t nextHeaderOffset = 0;
+        outfile.write(
+            reinterpret_cast<const char*>(&nextHeaderOffset),
+            sizeof(nextHeaderOffset));
+
+        auto const& info = ledger->info();
+
+        outfile.write(
+            reinterpret_cast<const char*>(&info.seq), sizeof(info.seq));
+        outfile.write(
+            reinterpret_cast<const char*>(&info.parentCloseTime),
+            sizeof(info.parentCloseTime));
+        outfile.write(info.hash.cdata(), 32);
+        outfile.write(info.txHash.cdata(), 32);
+        outfile.write(info.accountHash.cdata(), 32);
+        outfile.write(info.parentHash.cdata(), 32);
+        outfile.write(
+            reinterpret_cast<const char*>(&info.drops), sizeof(info.drops));
+        outfile.write(
+            reinterpret_cast<const char*>(&info.validated),
+            sizeof(info.validated));
+        outfile.write(
+            reinterpret_cast<const char*>(&info.accepted),
+            sizeof(info.accepted));
+        outfile.write(
+            reinterpret_cast<const char*>(&info.closeFlags),
+            sizeof(info.closeFlags));
+        outfile.write(
+            reinterpret_cast<const char*>(&info.closeTimeResolution),
+            sizeof(info.closeTimeResolution));
+        outfile.write(
+            reinterpret_cast<const char*>(&info.closeTime),
+            sizeof(info.closeTime));
+
+        try
+        {
+            for (auto& i : ledger->txs)
             {
-                auto iter = entry.iter;
-                while (iter != entry.end)
+                auto const& txnId = i.first->getTransactionID();
+                outfile.write(txnId.cdata(), 32);
+
+                Serializer sTxn = i.first->getSerializer();
+                uint32_t txnSize = sTxn.getLength();
+                outfile.write(
+                    reinterpret_cast<const char*>(&txnSize), sizeof(txnSize));
+                outfile.write(
+                    reinterpret_cast<const char*>(sTxn.data()), txnSize);
+
+                uint32_t metaSize = 0;
+                if (i.second)
                 {
-                    allKeys.insert((*iter)->key());
-                    ++iter;
+                    Serializer sMeta = i.second->getSerializer();
+                    metaSize = sMeta.getLength();
+                    outfile.write(
+                        reinterpret_cast<const char*>(&metaSize),
+                        sizeof(metaSize));
+                    outfile.write(
+                        reinterpret_cast<const char*>(sMeta.data()), metaSize);
+                }
+                else
+                {
+                    outfile.write(
+                        reinterpret_cast<const char*>(&metaSize),
+                        sizeof(metaSize));
                 }
             }
         }
-
-        for (const auto& key : allKeys)
+        catch (std::exception const& e)
         {
-            writeKeyEntry(key);
+            std::cout << e.what() << "\n";
+            // Log error but continue processing
         }
+
+        auto currentPos = outfile.tellp();
+        outfile.seekp(headerStart);
+        nextHeaderOffset = currentPos;
+        outfile.write(
+            reinterpret_cast<const char*>(&nextHeaderOffset),
+            sizeof(nextHeaderOffset));
+        outfile.seekp(currentPos);
     }
-};
+}
 
 Json::Value
 doCatalogueCreate(RPC::JsonContext& context)
@@ -252,7 +486,6 @@ doCatalogueCreate(RPC::JsonContext& context)
             rpcINVALID_PARAMS, "expected min_ledger and max_ledger");
 
     std::string filepath;
-
     if (!context.params.isMember(jss::output_file) ||
         (filepath = context.params[jss::output_file].asString()).empty() ||
         filepath.front() != '/')
@@ -260,11 +493,11 @@ doCatalogueCreate(RPC::JsonContext& context)
             rpcINVALID_PARAMS,
             "expected output_file: <absolute writeable filepath>");
 
-    // check output file isn't already populated and can be written to
+    // Validate output file
     {
         struct stat st;
         if (stat(filepath.c_str(), &st) == 0)
-        {  // file exists
+        {
             if (st.st_size > 0)
             {
                 return rpcError(
@@ -273,9 +506,11 @@ doCatalogueCreate(RPC::JsonContext& context)
             }
         }
         else if (errno != ENOENT)
+        {
             return rpcError(
                 rpcINTERNAL,
                 "cannot stat output_file: " + std::string(strerror(errno)));
+        }
 
         if (std::ofstream(filepath.c_str(), std::ios::out).fail())
             return rpcError(
@@ -297,11 +532,9 @@ doCatalogueCreate(RPC::JsonContext& context)
         return rpcError(rpcINVALID_PARAMS, "min_ledger must be <= max_ledger");
 
     std::vector<std::shared_ptr<ReadView const>> lpLedgers;
+    lpLedgers.reserve(max_ledger - min_ledger + 1);
 
-    lpLedgers.reserve(max_ledger - min_ledger);
-
-    // grab all ledgers of interest
-
+    // Load all ledgers
     for (auto i = min_ledger; i <= max_ledger; ++i)
     {
         std::shared_ptr<ReadView const> ptr = nullptr;
@@ -311,36 +544,27 @@ doCatalogueCreate(RPC::JsonContext& context)
         lpLedgers.emplace_back(ptr);
     }
 
-    // execution to here means we'll output the catalogue file
-    // we won't write the header yet, but we need to skip forward a header
-    // length to start writing
-
+    // Skip header space
     outfile.seekp(sizeof(CATLHeader), std::ios::beg);
     if (outfile.fail())
         return rpcError(
             rpcINTERNAL,
             "failed to seek in output_file: " + std::string(strerror(errno)));
 
-    StreamingLedgerIterator streamer(lpLedgers, min_ledger, outfile);
-    streamer.streamAll();
+    // Build catalogue
+    ParallelCatalogueBuilder builder(lpLedgers, min_ledger, outfile);
+    builder.build();
 
-    // After streaming is complete, write the header
-    auto endPosition = outfile.tellp();  // Remember where we ended
-
-    // Seek back to start
+    // Write header
+    auto endPosition = outfile.tellp();
     outfile.seekp(0, std::ios::beg);
-    if (outfile.fail())
-        return rpcError(
-            rpcINTERNAL,
-            "failed to seek to start of file: " + std::string(strerror(errno)));
 
-    // Create and write header
     CATLHeader header;
-    header.version = 1;  // or whatever version number you want
+    header.version = 1;
     header.min_ledger = min_ledger;
     header.max_ledger = max_ledger;
     header.network_id = context.app.config().NETWORK_ID;
-    header.ledger_tx_offset = endPosition;  // store where the data ends
+    header.ledger_tx_offset = endPosition;
 
     outfile.write(reinterpret_cast<const char*>(&header), sizeof(CATLHeader));
     if (outfile.fail())
@@ -348,106 +572,8 @@ doCatalogueCreate(RPC::JsonContext& context)
             rpcINTERNAL,
             "failed to write header: " + std::string(strerror(errno)));
 
-    outfile.seekp(endPosition);
-    if (outfile.fail())
-        return rpcError(
-            rpcINTERNAL,
-            "failed to seek back to end: " + std::string(strerror(errno)));
-
-    auto writeLedgerAndTransactions =
-        [&outfile, &context](std::shared_ptr<ReadView const> const& ledger) {
-            auto headerStart = outfile.tellp();
-
-            uint64_t nextHeaderOffset = 0;
-            outfile.write(
-                reinterpret_cast<const char*>(&nextHeaderOffset),
-                sizeof(nextHeaderOffset));
-
-            auto const& info = ledger->info();
-
-            outfile.write(
-                reinterpret_cast<const char*>(&info.seq), sizeof(info.seq));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.parentCloseTime),
-                sizeof(info.parentCloseTime));
-            outfile.write(info.hash.cdata(), 32);
-            outfile.write(info.txHash.cdata(), 32);
-            outfile.write(info.accountHash.cdata(), 32);
-            outfile.write(info.parentHash.cdata(), 32);
-            outfile.write(
-                reinterpret_cast<const char*>(&info.drops), sizeof(info.drops));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.validated),
-                sizeof(info.validated));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.accepted),
-                sizeof(info.accepted));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.closeFlags),
-                sizeof(info.closeFlags));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.closeTimeResolution),
-                sizeof(info.closeTimeResolution));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.closeTime),
-                sizeof(info.closeTime));
-
-            try
-            {
-                for (auto& i : ledger->txs)
-                {
-                    assert(i.first);
-                    auto const& txnId = i.first->getTransactionID();
-                    outfile.write(txnId.cdata(), 32);
-
-                    Serializer sTxn = i.first->getSerializer();
-                    uint32_t txnSize = sTxn.getLength();
-                    outfile.write(
-                        reinterpret_cast<const char*>(&txnSize),
-                        sizeof(txnSize));
-                    outfile.write(
-                        reinterpret_cast<const char*>(sTxn.data()), txnSize);
-
-                    uint32_t metaSize = 0;
-                    if (i.second)
-                    {
-                        Serializer sMeta = i.second->getSerializer();
-                        metaSize = sMeta.getLength();
-                        outfile.write(
-                            reinterpret_cast<const char*>(&metaSize),
-                            sizeof(metaSize));
-                        outfile.write(
-                            reinterpret_cast<const char*>(sMeta.data()),
-                            metaSize);
-                    }
-                    else
-                    {
-                        outfile.write(
-                            reinterpret_cast<const char*>(&metaSize),
-                            sizeof(metaSize));
-                    }
-                }
-            }
-            catch (std::exception const& e)
-            {
-                JLOG(context.j.error())
-                    << "Error serializing transaction in ledger " << info.seq;
-            }
-
-            auto currentPos = outfile.tellp();
-            outfile.seekp(headerStart);
-            nextHeaderOffset = currentPos;
-            outfile.write(
-                reinterpret_cast<const char*>(&nextHeaderOffset),
-                sizeof(nextHeaderOffset));
-            outfile.seekp(currentPos);
-        };
-
-    // Write all ledger headers and transactions
-    for (auto const& ledger : lpLedgers)
-    {
-        writeLedgerAndTransactions(ledger);
-    }
+    // Write ledger data - this part remains largely unchanged
+    writeLedgerAndTransactions(outfile, lpLedgers);
 
     std::streampos bytes_written = outfile.tellp();
     outfile.close();
@@ -462,24 +588,6 @@ doCatalogueCreate(RPC::JsonContext& context)
 
     return jvResult;
 }
-
-// Stores file position information for a state entry version
-struct StatePosition
-{
-    std::streampos filePos;  // Position of the data in file
-    uint32_t sequence;       // Ledger sequence this version applies to
-    uint32_t size;           // Size of the data
-};
-
-// Custom comparator for uint256 references
-struct uint256RefCompare
-{
-    bool
-    operator()(uint256 const& a, uint256 const& b) const
-    {
-        return a < b;
-    }
-};
 
 Json::Value
 doCatalogueLoad(RPC::JsonContext& context)
