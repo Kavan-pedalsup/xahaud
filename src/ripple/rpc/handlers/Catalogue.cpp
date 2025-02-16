@@ -247,11 +247,11 @@ doCatalogueCreate(RPC::JsonContext& context)
 
     for (auto i = min_ledger; i <= max_ledger; ++i)
     {
-        std::shared_ptr<ReadView const> ptr;
+        std::shared_ptr<ReadView const> ptr = nullptr;
         auto jvResult = RPC::lookupLedger(ptr, context);
         if (!ptr)
-            return jvResult;
-        lpLedgers[i - min_ledger] = std::move(ptr);
+            return rpcError(rpcLEDGER_MISSING);
+        lpLedgers.emplace_back(ptr);
     }
 
     // execution to here means we'll output the catalogue file
