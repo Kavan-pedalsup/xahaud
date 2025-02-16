@@ -170,6 +170,10 @@ Json::Value
 doValidatorListSites(RPC::JsonContext&);
 Json::Value
 doValidatorInfo(RPC::JsonContext&);
+Json::Value
+doCatalogueCreate(RPC::JsonContext&);
+Json::Value
+doCatalogueLoad(RPC::JsonContext&);
 }  // namespace ripple
 
 #endif

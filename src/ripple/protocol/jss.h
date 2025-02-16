@@ -199,20 +199,21 @@ JSS(balances);            // out: GatewayBalances
 JSS(base);                // out: LogLevel
 JSS(base_fee);            // out: NetworkOPs
 JSS(base_fee_no_hooks);
-JSS(base_fee_xrp);           // out: NetworkOPs
-JSS(base_fee_native);        // out: NetworkOPs
-JSS(bids);                   // out: Subscribe
-JSS(binary);                 // in: AccountTX, LedgerEntry,
-                             //     AccountTxOld, Tx LedgerData
-JSS(blob);                   // out: ValidatorList
-JSS(blobs_v2);               // out: ValidatorList
-                             // in: UNL
-JSS(books);                  // in: Subscribe, Unsubscribe
-JSS(both);                   // in: Subscribe, Unsubscribe
-JSS(both_sides);             // in: Subscribe, Unsubscribe
-JSS(broadcast);              // out: SubmitTransaction
-JSS(build_path);             // in: TransactionSign
-JSS(build_version);          // out: NetworkOPs
+JSS(base_fee_xrp);     // out: NetworkOPs
+JSS(base_fee_native);  // out: NetworkOPs
+JSS(bids);             // out: Subscribe
+JSS(binary);           // in: AccountTX, LedgerEntry,
+                       //     AccountTxOld, Tx LedgerData
+JSS(blob);             // out: ValidatorList
+JSS(blobs_v2);         // out: ValidatorList
+                       // in: UNL
+JSS(books);            // in: Subscribe, Unsubscribe
+JSS(both);             // in: Subscribe, Unsubscribe
+JSS(both_sides);       // in: Subscribe, Unsubscribe
+JSS(broadcast);        // out: SubmitTransaction
+JSS(build_path);       // in: TransactionSign
+JSS(build_version);    // out: NetworkOPs
+JSS(bytes_written);
 JSS(cancel_after);           // out: AccountChannels
 JSS(can_delete);             // out: CanDelete
 JSS(changes);                // out: BookChanges
@@ -527,6 +528,7 @@ JSS(password);           // in: Subscribe
 JSS(paths);              // in: RipplePathFind
 JSS(paths_canonical);    // out: RipplePathFind
 JSS(paths_computed);     // out: PathRequest, RipplePathFind
+JSS(output_file);        // in: CatalogueCreate
 JSS(payment_channel);    // in: LedgerEntry
 JSS(pclose);
 JSS(peer);                        // in: AccountLines
