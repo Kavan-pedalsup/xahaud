@@ -69,7 +69,14 @@ fi
 mkdir .nih_c;
 mkdir .nih_toolchain;
 cd .nih_toolchain &&
-yum install -y wget lz4 lz4-devel git llvm13-static.x86_64 llvm13-devel.x86_64 devtoolset-10-binutils zlib-static ncurses-static mysql-devel -y \
+(cat > /etc/yum.repos.d/MariaDB.repo << EOF
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/10.5/centos7-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1
+EOF ) &&
+yum install -y wget lz4 lz4-devel git llvm13-static.x86_64 llvm13-devel.x86_64 devtoolset-10-binutils zlib-static ncurses-static MariaDB-devel MariaDB-shared -y \
   devtoolset-7-gcc-c++ \
   devtoolset-9-gcc-c++ \
   devtoolset-10-gcc-c++ \
