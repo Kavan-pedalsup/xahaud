@@ -174,6 +174,7 @@ private:
         for (const auto& key : batch.keys)
         {
             std::shared_ptr<SLE const> prevSLE;
+            bool first_ledger = true;
 
             // Process the key through all ledgers sequentially
             for (size_t i = 0; i < ledgers.size(); ++i)
@@ -182,26 +183,31 @@ private:
                 auto currentSLE = ledger->read(keylet::unchecked(key));
 
                 bool shouldRecord = false;
-                StateChange change{
-                    ledger->info().seq,  // Use actual ledger sequence
-                    false,               // isDeleted
-                    false,               // hasDataChange
-                    0                    // dataSize
-                };
+                StateChange change{ledger->info().seq, false, false, 0};
 
-                if (!currentSLE && prevSLE)
+                if (first_ledger && currentSLE)
+                {
+                    // Record initial state for objects that exist in first
+                    // ledger
+                    shouldRecord = true;
+                    change.hasDataChange = true;
+                    Serializer s;
+                    currentSLE->add(s);
+                    change.dataSize = s.getLength();
+                }
+                else if (!currentSLE && prevSLE)
                 {
                     // Object was deleted
                     shouldRecord = true;
                     change.isDeleted = true;
                 }
-                else if (currentSLE)
+                else if (currentSLE && !first_ledger)
                 {
                     auto [changed, serializedLen] =
                         hasDataChanged(prevSLE, currentSLE);
-                    if (!prevSLE || changed)
+                    if (changed)
                     {
-                        // New object or data changed
+                        // Data changed
                         shouldRecord = true;
                         change.hasDataChange = true;
                         change.dataSize = serializedLen;
@@ -214,6 +220,7 @@ private:
                 }
 
                 prevSLE = currentSLE;
+                first_ledger = false;
             }
         }
         completedBatches++;
@@ -309,12 +316,18 @@ public:
                 // Only write anything if there's an actual change
                 if (change.isDeleted || change.hasDataChange)
                 {
+                    if (change.isDeleted &&
+                        change.sequence == ledgers.front()->info().seq)
+                        continue;
+
                     outfile.write(
                         reinterpret_cast<const char*>(&change.sequence), 4);
 
-                    uint32_t flagsAndSize = change.dataSize & SIZE_MASK;
+                    uint32_t flagsAndSize =
+                        change.isDeleted ? 0 : change.dataSize & SIZE_MASK;
                     if (hasNext)
                         flagsAndSize |= HAS_NEXT_FLAG;
+
                     outfile.write(
                         reinterpret_cast<const char*>(&flagsAndSize), 4);
 
