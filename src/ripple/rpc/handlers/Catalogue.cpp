@@ -181,7 +181,6 @@ private:
         for (const auto& key : batch.keys)
         {
             std::shared_ptr<SLE const> prevSLE;
-            bool first_ledger = true;
 
             // Process the key through all ledgers sequentially
             for (size_t i = 0; i < ledgers.size(); ++i)
@@ -550,8 +549,6 @@ struct uint256RefCompare
     }
 };
 
-#include <iostream>  // Add this at the top with other includes
-
 Json::Value
 doCatalogueLoad(RPC::JsonContext& context)
 {
@@ -808,18 +805,18 @@ doCatalogueLoad(RPC::JsonContext& context)
         std::cout << "Applied " << txCount << " transactions" << std::endl;
 
         size_t stateChangeCount = 0;
-        // Apply state changes for this ledger
+        // Apply state changes for this ledger only
         for (auto const& [keyRef, positions] : stateVersions)
         {
             auto const& key = keyRef.get();
 
-            // Find applicable state version
+            // Look for a state change specifically for this ledger sequence
             auto it = std::find_if(
-                positions.rbegin(), positions.rend(), [&](auto const& pos) {
-                    return pos.sequence <= currentLedger->info().seq;
+                positions.begin(), positions.end(), [&](auto const& pos) {
+                    return pos.sequence == currentLedger->info().seq;
                 });
 
-            if (it != positions.rend())
+            if (it != positions.end())
             {
                 if (it->size > 0)
                 {
@@ -886,4 +883,5 @@ doCatalogueLoad(RPC::JsonContext& context)
 
     return jvResult;
 }
+
 }  // namespace ripple
