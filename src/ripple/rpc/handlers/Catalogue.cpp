@@ -65,8 +65,6 @@ private:
     struct StateChange
     {
         uint32_t sequence;
-        bool isDeleted;
-        bool hasDataChange;
         uint32_t dataSize;
     };
 
@@ -151,20 +149,28 @@ private:
         std::shared_ptr<SLE const> const& prevSLE,
         std::shared_ptr<SLE const> const& currentSLE)
     {
-        if (!prevSLE || !currentSLE)
-            return {true, 0};  // Length will be computed later if needed
+        if (prevSLE && !currentSLE)
+            return {true, 0};  // deletion
+
+        if (!prevSLE && !currentSLE)
+            return {false, 0};  // still deleted
 
         Serializer s1, s2;
-        prevSLE->add(s1);
         currentSLE->add(s2);
+        int l2 = s2.getLength();
 
-        auto const& v1 = s1.peekData();
-        auto const& v2 = s2.peekData();
+        if (!prevSLE)
+            return {true, l2};
 
-        bool changed = v1.size() != v2.size() ||
-            !std::equal(v1.begin(), v1.end(), v2.begin());
+        prevSLE->add(s1);
+        int l1 = s1.getLength();
 
-        return {changed, changed ? v2.size() : 0};
+        bool changed = l1 != l2 ||
+            !std::equal(s1.peekData().begin(),
+                        s1.peekData().end(),
+                        s2.peekData().begin());
+
+        return {changed, changed ? l2 : 0};
     }
 
     void
@@ -181,46 +187,12 @@ private:
             {
                 auto& ledger = ledgers[i];
                 auto currentSLE = ledger->read(keylet::unchecked(key));
-
-                bool shouldRecord = false;
-                StateChange change{ledger->info().seq, false, false, 0};
-
-                if (first_ledger && currentSLE)
-                {
-                    // Record initial state for objects that exist in first
-                    // ledger
-                    shouldRecord = true;
-                    change.hasDataChange = true;
-                    Serializer s;
-                    currentSLE->add(s);
-                    change.dataSize = s.getLength();
-                }
-                else if (!currentSLE && prevSLE)
-                {
-                    // Object was deleted
-                    shouldRecord = true;
-                    change.isDeleted = true;
-                }
-                else if (currentSLE && !first_ledger)
-                {
-                    auto [changed, serializedLen] =
+                if (auto [changed, serializedLen] =
                         hasDataChanged(prevSLE, currentSLE);
-                    if (changed)
-                    {
-                        // Data changed
-                        shouldRecord = true;
-                        change.hasDataChange = true;
-                        change.dataSize = serializedLen;
-                    }
-                }
-
-                if (shouldRecord)
-                {
-                    stateChanges.addChange(key, std::move(change));
-                }
-
+                    changed)
+                    stateChanges.addChange(
+                        key, {ledger->info().seq, serializedLen});
                 prevSLE = currentSLE;
-                first_ledger = false;
             }
         }
         completedBatches++;
@@ -304,51 +276,32 @@ public:
                 auto& change = keyChanges[i];
                 bool hasNext = i < keyChanges.size() - 1;
 
-                // Ensure sequence is in valid range
-                if (change.sequence < ledgers.front()->info().seq ||
-                    change.sequence > ledgers.back()->info().seq)
+                outfile.write(
+                    reinterpret_cast<const char*>(&change.sequence), 4);
+
+                uint32_t flagsAndSize = change.dataSize & SIZE_MASK;
+                if (hasNext)
+                    flagsAndSize |= HAS_NEXT_FLAG;
+
+                outfile.write(reinterpret_cast<const char*>(&flagsAndSize), 4);
+
+                if (change.dataSize > 0)
                 {
-                    std::cout << "invalid change sequence: " << change.sequence
-                              << "\n";
-                    continue;  // Skip invalid sequence
-                }
-
-                // Only write anything if there's an actual change
-                if (change.isDeleted || change.hasDataChange)
-                {
-                    if (change.isDeleted &&
-                        change.sequence == ledgers.front()->info().seq)
-                        continue;
-
-                    outfile.write(
-                        reinterpret_cast<const char*>(&change.sequence), 4);
-
-                    uint32_t flagsAndSize =
-                        change.isDeleted ? 0 : change.dataSize & SIZE_MASK;
-                    if (hasNext)
-                        flagsAndSize |= HAS_NEXT_FLAG;
-
-                    outfile.write(
-                        reinterpret_cast<const char*>(&flagsAndSize), 4);
-
-                    if (change.hasDataChange)
+                    // Find the ledger with this sequence
+                    size_t ledgerIndex =
+                        change.sequence - ledgers.front()->info().seq;
+                    if (ledgerIndex < ledgers.size())
                     {
-                        // Find the ledger with this sequence
-                        size_t ledgerIndex =
-                            change.sequence - ledgers.front()->info().seq;
-                        if (ledgerIndex < ledgers.size())
+                        auto sle =
+                            ledgers[ledgerIndex]->read(keylet::unchecked(key));
+                        if (sle)
                         {
-                            auto sle = ledgers[ledgerIndex]->read(
-                                keylet::unchecked(key));
-                            if (sle)
-                            {
-                                Serializer s;
-                                sle->add(s);
-                                auto const& data = s.peekData();
-                                outfile.write(
-                                    reinterpret_cast<const char*>(data.data()),
-                                    data.size());
-                            }
+                            Serializer s;
+                            sle->add(s);
+                            auto const& data = s.peekData();
+                            outfile.write(
+                                reinterpret_cast<const char*>(data.data()),
+                                data.size());
                         }
                     }
                 }
