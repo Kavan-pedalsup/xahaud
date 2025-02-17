@@ -34,6 +34,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -549,6 +550,8 @@ struct uint256RefCompare
     }
 };
 
+#include <iostream>  // Add this at the top with other includes
+
 Json::Value
 doCatalogueLoad(RPC::JsonContext& context)
 {
@@ -561,12 +564,16 @@ doCatalogueLoad(RPC::JsonContext& context)
             rpcINVALID_PARAMS,
             "expected input_file: <absolute readable filepath>");
 
+    std::cout << "Opening catalogue file: " << filepath << std::endl;
+
     // Check if file exists and is readable
     std::ifstream infile(filepath.c_str(), std::ios::in | std::ios::binary);
     if (infile.fail())
         return rpcError(
             rpcINTERNAL,
             "cannot open input_file: " + std::string(strerror(errno)));
+
+    std::cout << "Reading catalogue header..." << std::endl;
 
     // Read and validate header
     CATLHeader header;
@@ -576,6 +583,12 @@ doCatalogueLoad(RPC::JsonContext& context)
 
     if (std::memcmp(header.magic, "CATL", 4) != 0)
         return rpcError(rpcINVALID_PARAMS, "invalid catalogue file magic");
+
+    std::cout << "Catalogue version: " << header.version << std::endl;
+    std::cout << "Ledger range: " << header.min_ledger << " - "
+              << header.max_ledger << std::endl;
+    std::cout << "Network ID: " << header.network_id << std::endl;
+    std::cout << "Ledger/TX offset: " << header.ledger_tx_offset << std::endl;
 
     if (header.version != 1)
         return rpcError(
@@ -591,6 +604,8 @@ doCatalogueLoad(RPC::JsonContext& context)
     // Track all unique keys we encounter
     std::set<uint256, uint256RefCompare> allKeys;
 
+    std::cout << "Reading state data..." << std::endl;
+
     // Map to store state versions for each key
     std::map<
         std::reference_wrapper<const uint256>,
@@ -601,6 +616,9 @@ doCatalogueLoad(RPC::JsonContext& context)
         stateVersions(
             [](auto const& a, auto const& b) { return a.get() < b.get(); });
 
+    size_t stateEntryCount = 0;
+    size_t stateVersionCount = 0;
+
     // First pass: Read all keys and their positions
     while (infile.tellg() < header.ledger_tx_offset)
     {
@@ -610,6 +628,16 @@ doCatalogueLoad(RPC::JsonContext& context)
             break;
 
         auto [keyIt, inserted] = allKeys.insert(key);
+        if (inserted)
+        {
+            stateEntryCount++;
+            if (stateEntryCount % 10000 == 0)
+            {
+                std::cout << "Processed " << stateEntryCount
+                          << " unique state entries..." << std::endl;
+            }
+        }
+
         auto [stateIt, stateInserted] = stateVersions.emplace(
             std::cref(*keyIt), std::vector<StatePosition>{});
         std::vector<StatePosition>& positions = stateIt->second;
@@ -625,6 +653,8 @@ doCatalogueLoad(RPC::JsonContext& context)
 
         // Store ALL state changes, including deletions
         positions.push_back({infile.tellg(), seq, size});
+        stateVersionCount++;
+
         if (size > 0)
         {
             infile.seekg(size, std::ios::cur);
@@ -639,6 +669,8 @@ doCatalogueLoad(RPC::JsonContext& context)
             hasNext = (flagsAndSize & HAS_NEXT_FLAG) != 0;
 
             positions.push_back({infile.tellg(), seq, size});
+            stateVersionCount++;
+
             if (size > 0)
             {
                 infile.seekg(size, std::ios::cur);
@@ -646,20 +678,42 @@ doCatalogueLoad(RPC::JsonContext& context)
         }
     }
 
+    std::cout << "Found " << stateEntryCount << " unique state entries with "
+              << stateVersionCount << " total versions" << std::endl;
+    std::cout << "Processing ledgers..." << std::endl;
+
     // Process ledgers sequentially
     infile.seekg(header.ledger_tx_offset);
     std::shared_ptr<Ledger> previousLedger;
     uint32_t ledgerCount = 0;
+    size_t totalTxCount = 0;
 
     while (!infile.eof())
     {
         uint64_t nextOffset;
+        auto currentPos = infile.tellg();
         infile.read(reinterpret_cast<char*>(&nextOffset), sizeof(nextOffset));
         if (infile.fail())
+        {
+            std::cout << "Failed to read next offset at position " << currentPos
+                      << std::endl;
             break;
+        }
+
+        std::cout << "Current file position: " << currentPos
+                  << ", Next offset: " << nextOffset << std::endl;
 
         LedgerInfo info;
+        auto ledgerHeaderPos = infile.tellg();
         infile.read(reinterpret_cast<char*>(&info.seq), sizeof(info.seq));
+
+        if (info.seq < header.min_ledger || info.seq > header.max_ledger)
+        {
+            std::cout << "WARNING: Ledger sequence " << info.seq
+                      << " is outside expected range " << header.min_ledger
+                      << "-" << header.max_ledger << " at position "
+                      << ledgerHeaderPos << std::endl;
+        }
         infile.read(
             reinterpret_cast<char*>(&info.parentCloseTime),
             sizeof(info.parentCloseTime));
@@ -680,10 +734,14 @@ doCatalogueLoad(RPC::JsonContext& context)
         infile.read(
             reinterpret_cast<char*>(&info.closeTime), sizeof(info.closeTime));
 
+        std::cout << "Processing ledger " << info.seq
+                  << " (hash: " << to_string(info.hash) << ")" << std::endl;
+
         // Create current ledger based on previous
         std::shared_ptr<Ledger> currentLedger;
         if (!previousLedger)
         {
+            std::cout << "Creating initial ledger..." << std::endl;
             currentLedger = std::make_shared<Ledger>(
                 info, context.app.config(), context.app.getNodeFamily());
         }
@@ -693,6 +751,7 @@ doCatalogueLoad(RPC::JsonContext& context)
                 std::make_shared<Ledger>(*previousLedger, info.closeTime);
         }
 
+        size_t txCount = 0;
         // Read and apply transactions
         while (infile.tellg() < nextOffset)
         {
@@ -741,8 +800,14 @@ doCatalogueLoad(RPC::JsonContext& context)
 
             currentLedger->rawTxInsert(
                 txID, std::move(s), std::move(metaSerializer));
+
+            txCount++;
+            totalTxCount++;
         }
 
+        std::cout << "Applied " << txCount << " transactions" << std::endl;
+
+        size_t stateChangeCount = 0;
         // Apply state changes for this ledger
         for (auto const& [keyRef, positions] : stateVersions)
         {
@@ -772,8 +837,12 @@ doCatalogueLoad(RPC::JsonContext& context)
                     // Handle deletion
                     currentLedger->stateMap().delItem(key);
                 }
+                stateChangeCount++;
             }
         }
+
+        std::cout << "Applied " << stateChangeCount << " state changes"
+                  << std::endl;
 
         currentLedger->stateMap().flushDirty(hotACCOUNT_NODE);
         currentLedger->updateSkipList();
@@ -792,7 +861,22 @@ doCatalogueLoad(RPC::JsonContext& context)
 
         previousLedger = currentLedger;
         ledgerCount++;
-    }
+
+        if (nextOffset > 0)
+        {
+            infile.seekg(nextOffset, std::ios::beg);
+            if (infile.fail())
+            {
+                std::cout << "Failed to seek to next offset " << nextOffset
+                          << std::endl;
+                break;
+            }
+        }
+    }  // end of while (!infile.eof())
+
+    std::cout << "Catalogue load complete!" << std::endl;
+    std::cout << "Processed " << ledgerCount << " ledgers containing "
+              << totalTxCount << " transactions" << std::endl;
 
     Json::Value jvResult;
     jvResult[jss::ledger_min] = header.min_ledger;
