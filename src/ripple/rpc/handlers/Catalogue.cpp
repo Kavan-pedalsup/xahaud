@@ -297,31 +297,45 @@ public:
                 auto& change = keyChanges[i];
                 bool hasNext = i < keyChanges.size() - 1;
 
-                outfile.write(
-                    reinterpret_cast<const char*>(&change.sequence), 4);
-
-                uint32_t flagsAndSize = change.dataSize & SIZE_MASK;
-                if (hasNext)
-                    flagsAndSize |= HAS_NEXT_FLAG;
-                outfile.write(reinterpret_cast<const char*>(&flagsAndSize), 4);
-
-                if (!change.isDeleted && change.hasDataChange)
+                // Ensure sequence is in valid range
+                if (change.sequence < ledgers.front()->info().seq ||
+                    change.sequence > ledgers.back()->info().seq)
                 {
-                    // Find the ledger with this sequence
-                    size_t ledgerIndex =
-                        change.sequence - ledgers.front()->info().seq;
-                    if (ledgerIndex < ledgers.size())
+                    std::cout << "invalid change sequence: " << change.sequence
+                              << "\n";
+                    continue;  // Skip invalid sequence
+                }
+
+                // Only write anything if there's an actual change
+                if (change.isDeleted || change.hasDataChange)
+                {
+                    outfile.write(
+                        reinterpret_cast<const char*>(&change.sequence), 4);
+
+                    uint32_t flagsAndSize = change.dataSize & SIZE_MASK;
+                    if (hasNext)
+                        flagsAndSize |= HAS_NEXT_FLAG;
+                    outfile.write(
+                        reinterpret_cast<const char*>(&flagsAndSize), 4);
+
+                    if (change.hasDataChange)
                     {
-                        auto sle =
-                            ledgers[ledgerIndex]->read(keylet::unchecked(key));
-                        if (sle)
+                        // Find the ledger with this sequence
+                        size_t ledgerIndex =
+                            change.sequence - ledgers.front()->info().seq;
+                        if (ledgerIndex < ledgers.size())
                         {
-                            Serializer s;
-                            sle->add(s);
-                            auto const& data = s.peekData();
-                            outfile.write(
-                                reinterpret_cast<const char*>(data.data()),
-                                data.size());
+                            auto sle = ledgers[ledgerIndex]->read(
+                                keylet::unchecked(key));
+                            if (sle)
+                            {
+                                Serializer s;
+                                sle->add(s);
+                                auto const& data = s.peekData();
+                                outfile.write(
+                                    reinterpret_cast<const char*>(data.data()),
+                                    data.size());
+                            }
                         }
                     }
                 }
