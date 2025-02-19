@@ -996,6 +996,7 @@ if (tests)
     src/test/rpc/AccountTx_test.cpp
     src/test/rpc/AmendmentBlocked_test.cpp
     src/test/rpc/Book_test.cpp
+    src/test/rpc/Catalogue_test.cpp
     src/test/rpc/DepositAuthorized_test.cpp
     src/test/rpc/DeliveredAmount_test.cpp
     src/test/rpc/Feature_test.cpp

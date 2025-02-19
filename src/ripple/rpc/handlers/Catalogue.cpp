@@ -681,7 +681,7 @@ doCatalogueLoad(RPC::JsonContext& context)
 
     // Process ledgers sequentially
     infile.seekg(header.ledger_tx_offset);
-    std::shared_ptr<Ledger> previousLedger;
+    std::shared_ptr<const Ledger> previousLedger;
     uint32_t ledgerCount = 0;
     size_t totalTxCount = 0;
 
@@ -734,19 +734,35 @@ doCatalogueLoad(RPC::JsonContext& context)
         std::cout << "Processing ledger " << info.seq
                   << " (hash: " << to_string(info.hash) << ")" << std::endl;
 
-        // Create current ledger based on previous
         std::shared_ptr<Ledger> currentLedger;
-        if (!previousLedger)
+        do
         {
+            // see if we can fetch the previous ledger
+            if (!previousLedger && header.min_ledger > 1)
+            {
+                auto lh = context.app.getLedgerMaster().getHashBySeq(
+                    header.min_ledger - 1);
+                if (lh != beast::zero)
+                    previousLedger =
+                        context.app.getLedgerMaster().getLedgerByHash(lh);
+            }
+
+            // if we either already made previous ledger or it exists in history
+            // use it
+            if (previousLedger)
+            {
+                currentLedger =
+                    std::make_shared<Ledger>(*previousLedger, info.closeTime);
+
+                break;
+            }
+
+            // otherwise we're building a new one
             std::cout << "Creating initial ledger..." << std::endl;
             currentLedger = std::make_shared<Ledger>(
                 info, context.app.config(), context.app.getNodeFamily());
-        }
-        else
-        {
-            currentLedger =
-                std::make_shared<Ledger>(*previousLedger, info.closeTime);
-        }
+
+        } while (0);
 
         size_t txCount = 0;
         // Read and apply transactions
@@ -818,6 +834,10 @@ doCatalogueLoad(RPC::JsonContext& context)
 
             if (it != positions.end())
             {
+                // if it exists remove it before possibly recreating it
+                if (currentLedger->stateMap().hasItem(key))
+                    currentLedger->stateMap().delItem(key);
+
                 if (it->size > 0)
                 {
                     // Read and apply state data
@@ -825,14 +845,10 @@ doCatalogueLoad(RPC::JsonContext& context)
                     std::vector<unsigned char> data(it->size);
                     infile.read(reinterpret_cast<char*>(data.data()), it->size);
 
+                    // create item
                     auto item = make_shamapitem(key, makeSlice(data));
                     currentLedger->stateMap().addItem(
                         SHAMapNodeType::tnACCOUNT_STATE, std::move(item));
-                }
-                else
-                {
-                    // Handle deletion
-                    currentLedger->stateMap().delItem(key);
                 }
                 stateChangeCount++;
             }
