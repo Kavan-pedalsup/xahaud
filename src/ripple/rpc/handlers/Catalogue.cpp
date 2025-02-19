@@ -679,6 +679,16 @@ doCatalogueLoad(RPC::JsonContext& context)
               << stateVersionCount << " total versions" << std::endl;
     std::cout << "Processing ledgers..." << std::endl;
 
+    for (auto const& [keyRef, positions] : stateVersions)
+    {
+        std::cout << "Processing key: " << to_string(keyRef.get()) << std::endl;
+        for (auto const& pos : positions)
+        {
+            std::cout << "  Sequence: " << pos.sequence << " Size: " << pos.size
+                      << " Position: " << pos.filePos << std::endl;
+        }
+    }
+
     // Process ledgers sequentially
     infile.seekg(header.ledger_tx_offset);
     std::shared_ptr<const Ledger> previousLedger;
@@ -749,16 +759,26 @@ doCatalogueLoad(RPC::JsonContext& context)
 
             // if we either already made previous ledger or it exists in history
             // use it
+
+            /*
             if (previousLedger)
             {
-                currentLedger =
-                    std::make_shared<Ledger>(*previousLedger, info.closeTime);
+                // Create a clean ledger from previous
+                currentLedger = std::make_shared<Ledger>(
+                    info,
+                    context.app.config(),
+                    previousLedger->stateMap().family());
+
+                //currentLedger =
+                //    std::make_shared<Ledger>(*previousLedger, info.closeTime);
 
                 break;
             }
+            */
 
             // otherwise we're building a new one
             std::cout << "Creating initial ledger..." << std::endl;
+
             currentLedger = std::make_shared<Ledger>(
                 info, context.app.config(), context.app.getNodeFamily());
 
@@ -845,10 +865,30 @@ doCatalogueLoad(RPC::JsonContext& context)
                     std::vector<unsigned char> data(it->size);
                     infile.read(reinterpret_cast<char*>(data.data()), it->size);
 
-                    // create item
+                    std::cout << "Read state data at pos " << it->filePos
+                              << " size " << it->size
+                              << " hex: " << strHex(makeSlice(data))
+                              << std::endl;
+
+                    // Verify data read was successful
+                    if (!infile.good())
+                    {
+                        throw std::runtime_error("Failed to read state data");
+                    }
+
+                    // Create and validate item
                     auto item = make_shamapitem(key, makeSlice(data));
-                    currentLedger->stateMap().addItem(
-                        SHAMapNodeType::tnACCOUNT_STATE, std::move(item));
+                    if (!item)
+                    {
+                        throw std::runtime_error("Failed to create SHAMapItem");
+                    }
+
+                    // Add item and verify addition
+                    if (!currentLedger->stateMap().addItem(
+                            SHAMapNodeType::tnACCOUNT_STATE, std::move(item)))
+                    {
+                        throw std::runtime_error("Failed to add state item");
+                    }
                 }
                 stateChangeCount++;
             }
@@ -870,7 +910,18 @@ doCatalogueLoad(RPC::JsonContext& context)
         // Set the ledger as immutable after all mutations are complete
         currentLedger->setImmutable(true);
 
-        context.app.getLedgerMaster().storeLedger(currentLedger);
+        context.app.getLedgerMaster().setFullLedger(
+            currentLedger,
+            true,
+            context.app.getLedgerMaster().getClosedLedger()->info().seq <
+                currentLedger->info().seq);
+
+        if (context.app.getLedgerMaster().getClosedLedger()->info().seq <=
+            currentLedger->info().seq)
+        {
+            std::cout << "switchLCL to " << currentLedger->info().seq << "\n";
+            context.app.getLedgerMaster().switchLCL(currentLedger);
+        }
 
         previousLedger = currentLedger;
         ledgerCount++;
@@ -886,6 +937,9 @@ doCatalogueLoad(RPC::JsonContext& context)
             }
         }
     }  // end of while (!infile.eof())
+
+    context.app.getLedgerMaster().setLedgerRangePresent(
+        header.min_ledger, header.max_ledger);
 
     std::cout << "Catalogue load complete!" << std::endl;
     std::cout << "Processed " << ledgerCount << " ledgers containing "

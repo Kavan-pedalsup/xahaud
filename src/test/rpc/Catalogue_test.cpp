@@ -266,11 +266,14 @@ class Catalogue_test : public beast::unit_test::suite
         BEAST_EXPECT(charlieAcct != nullptr);
         BEAST_EXPECT(eurTrust != nullptr);
         BEAST_EXPECT(
-            eurTrust->getFieldAmount(sfLowLimit).mantissa() == 2000000000);
+            eurTrust->getFieldAmount(sfLowLimit).mantissa() ==
+            2000000000000000ULL);
 
         // Get initial complete_ledgers range
         auto const originalCompleteLedgers =
             env.app().getLedgerMaster().getCompleteLedgers();
+
+        std::cout << "orgCompleteLedgers: " << originalCompleteLedgers << "\n";
 
         // Create temporary directory for test files
         boost::filesystem::path tempDir =
@@ -314,13 +317,23 @@ class Catalogue_test : public beast::unit_test::suite
             // Verify complete_ledgers reflects loaded ledgers
             auto const newCompleteLedgers =
                 loadEnv.app().getLedgerMaster().getCompleteLedgers();
-            BEAST_EXPECT(
-                newCompleteLedgers.find(
-                    std::to_string(minLedger) + "-" +
-                    std::to_string(maxLedger)) != std::string::npos);
+
+            std::cout << "newCompleteLedgers: " << newCompleteLedgers << "\n";
+
+            BEAST_EXPECT(newCompleteLedgers == originalCompleteLedgers);
 
             // Verify the loaded state matches the original
             auto const loadedLedger = loadEnv.closed();
+
+            // After loading each ledger
+            std::cout << "Original ledger hash: "
+                      << to_string(sourceLedger->info().hash)
+                      << "\nLoaded ledger hash: "
+                      << to_string(loadedLedger->info().hash)
+                      << "Original ledger seq: "
+                      << to_string(sourceLedger->info().seq)
+                      << "\nLoaded ledger seq: "
+                      << to_string(loadedLedger->info().seq) << std::endl;
 
             auto const loadedBobAcct = loadedLedger->read(bobKeylet);
             auto const loadedCharlieAcct = loadedLedger->read(charlieKeylet);
