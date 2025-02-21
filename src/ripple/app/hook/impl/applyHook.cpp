@@ -1561,9 +1561,10 @@ hook::apply(
              .hookParamOverrides = hookParamOverrides,
              .hookParams = hookParams,
              .hookSkips = {},
-             .exitType =
-                 hook_api::ExitType::ROLLBACK,  // default is to rollback unless
-                                                // hook calls accept()
+             .exitType = applyCtx.view().rules().enabled(fixXahauV3)
+                 ? hook_api::ExitType::UNSET
+                 : hook_api::ExitType::ROLLBACK,  // default is to rollback
+                                                  // unless hook calls accept()
              .exitReason = std::string(""),
              .exitCode = -1,
              .hasCallback = hasCallback,
@@ -7271,7 +7272,7 @@ DEFINE_WASM_FUNCTION(
 
     if (float1 == 0)
     {
-        j.trace() << "HookTrace[" << HC_ACC() << "]:"
+        j.trace() << "HookTrace[" << HC_ACC() << "]: "
                   << (read_len == 0
                           ? ""
                           : std::string_view(

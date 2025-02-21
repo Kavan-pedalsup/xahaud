@@ -22,6 +22,7 @@
 #include <ripple/app/main/Application.h>
 #include <ripple/app/misc/NegativeUNLVote.h>
 #include <ripple/json/to_string.h>
+#include <ripple/shamap/SHAMapItem.h>
 
 namespace ripple {
 
@@ -147,7 +148,7 @@ NegativeUNLVote::addReportingTx(
         repUnlTx.add(s);
         if (!initalSet->addGiveItem(
                 SHAMapNodeType::tnTRANSACTION_NM,
-                std::make_shared<SHAMapItem>(txID, s.slice())))
+                make_shamapitem(txID, s.slice())))
         {
             JLOG(j_.warn()) << "R-UNL: ledger seq=" << seq
                             << ", add ttUNL_REPORT tx failed";
@@ -202,7 +203,7 @@ NegativeUNLVote::addImportVLTx(
         repUnlTx.add(s);
         if (!initalSet->addGiveItem(
                 SHAMapNodeType::tnTRANSACTION_NM,
-                std::make_shared<SHAMapItem>(txID, s.slice())))
+                make_shamapitem(txID, s.slice())))
         {
             JLOG(j_.warn()) << "R-UNL: ledger seq=" << seq
                             << ", add ttUNL_REPORT tx failed (import_vl_key)";
@@ -231,12 +232,11 @@ NegativeUNLVote::addTx(
         obj.setFieldVL(sfUNLModifyValidator, vp.slice());
     });
 
-    uint256 txID = negUnlTx.getTransactionID();
     Serializer s;
     negUnlTx.add(s);
     if (!initialSet->addGiveItem(
             SHAMapNodeType::tnTRANSACTION_NM,
-            std::make_shared<SHAMapItem>(txID, s.slice())))
+            make_shamapitem(negUnlTx.getTransactionID(), s.slice())))
     {
         JLOG(j_.warn()) << "N-UNL: ledger seq=" << seq
                         << ", add ttUNL_MODIFY tx failed";
@@ -244,8 +244,8 @@ NegativeUNLVote::addTx(
     else
     {
         JLOG(j_.debug()) << "N-UNL: ledger seq=" << seq
-                         << ", add a ttUNL_MODIFY Tx with txID: " << txID
-                         << ", the validator to "
+                         << ", add a ttUNL_MODIFY Tx with txID: "
+                         << negUnlTx.getTransactionID() << ", the validator to "
                          << (modify == ToDisable ? "disable: " : "re-enable: ")
                          << vp;
     }

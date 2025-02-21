@@ -393,6 +393,7 @@ target_sources (rippled PRIVATE
   src/ripple/app/misc/NegativeUNLVote.cpp
   src/ripple/app/misc/NetworkOPs.cpp
   src/ripple/app/misc/SHAMapStoreImp.cpp
+  src/ripple/app/misc/StateAccounting.cpp
   src/ripple/app/misc/detail/impl/WorkSSL.cpp
   src/ripple/app/misc/impl/AccountTxPaging.cpp
   src/ripple/app/misc/impl/AmendmentTable.cpp
@@ -672,6 +673,9 @@ target_sources (rippled PRIVATE
   src/ripple/rpc/impl/ShardVerificationScheduler.cpp
   src/ripple/rpc/impl/Status.cpp
   src/ripple/rpc/impl/TransactionSign.cpp
+  src/ripple/rpc/impl/NFTokenID.cpp
+  src/ripple/rpc/impl/NFTokenOfferID.cpp
+  src/ripple/rpc/impl/NFTSyntheticSerializer.cpp
   #[===============================[
      main sources:
        subdir: perflog

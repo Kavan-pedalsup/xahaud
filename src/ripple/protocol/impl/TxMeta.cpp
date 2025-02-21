@@ -138,8 +138,7 @@ TxMeta::getAffectedAccounts() const
 
         if (index != -1)
         {
-            const STObject* inner =
-                dynamic_cast<const STObject*>(&it.peekAtIndex(index));
+            auto inner = dynamic_cast<STObject const*>(&it.peekAtIndex(index));
             assert(inner);
             if (inner)
             {
@@ -157,8 +156,7 @@ TxMeta::getAffectedAccounts() const
                         (field.getFName() == sfTakerPays) ||
                         (field.getFName() == sfTakerGets))
                     {
-                        const STAmount* lim =
-                            dynamic_cast<const STAmount*>(&field);
+                        auto lim = dynamic_cast<STAmount const*>(&field);
                         assert(lim);
 
                         if (lim != nullptr)
@@ -242,7 +240,9 @@ TxMeta::addRaw(Serializer& s, TER result, std::uint32_t index)
 {
     mResult = TERtoInt(result);
     mIndex = index;
-    assert((mResult == 0) || ((mResult > 100) && (mResult <= 255)));
+    assert(
+        (mResult == 0 || mResult == 1) ||
+        ((mResult > 100) && (mResult <= 255)));
 
     mNodes.sort([](STObject const& o1, STObject const& o2) {
         return o1.getFieldH256(sfLedgerIndex) < o2.getFieldH256(sfLedgerIndex);

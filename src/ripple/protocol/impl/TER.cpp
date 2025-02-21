@@ -116,6 +116,7 @@ transResults()
         MAKE_ERROR(tefNO_TICKET,                   "Ticket is not in ledger."),
         MAKE_ERROR(tefNFTOKEN_IS_NOT_TRANSFERABLE, "The specified NFToken is not transferable."),
         MAKE_ERROR(tefNONDIR_EMIT,                 "An emitted txn was injected into the ledger without a corresponding directory entry."),
+        MAKE_ERROR(tefIMPORT_BLACKHOLED,           "Cannot import keying because target account is blackholed."),
 
         MAKE_ERROR(telLOCAL_ERROR,            "Local failure."),
         MAKE_ERROR(telBAD_DOMAIN,             "Domain too long."),
@@ -136,7 +137,6 @@ transResults()
         MAKE_ERROR(telNON_LOCAL_EMITTED_TXN, "Emitted transaction cannot be applied because it was not generated locally."),
         MAKE_ERROR(telIMPORT_VL_KEY_NOT_RECOGNISED, "Import vl key was not recognized."),
         MAKE_ERROR(telCAN_NOT_QUEUE_IMPORT,   "Import transaction was not able to be directly applied and cannot be queued."),
-
         MAKE_ERROR(temMALFORMED,                 "Malformed transaction."),
         MAKE_ERROR(temBAD_AMOUNT,                "Can only send positive amounts."),
         MAKE_ERROR(temBAD_CURRENCY,              "Malformed: Bad currency."),
