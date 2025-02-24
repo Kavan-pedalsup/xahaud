@@ -326,18 +326,45 @@ class Catalogue_test : public beast::unit_test::suite
             auto const loadedLedger = loadEnv.closed();
 
             // After loading each ledger
-            std::cout << "Original ledger hash: "
-                      << to_string(sourceLedger->info().hash)
-                      << "\nLoaded ledger hash: "
-                      << to_string(loadedLedger->info().hash)
-                      << "Original ledger seq: "
-                      << to_string(sourceLedger->info().seq)
-                      << "\nLoaded ledger seq: "
-                      << to_string(loadedLedger->info().seq) << std::endl;
+            //
+// After loading each ledger
+std::cout << "\n=== Original Ledger Information ===\n"
+          << "Sequence: " << to_string(sourceLedger->info().seq) << "\n"
+          << "Hash: " << to_string(sourceLedger->info().hash) << "\n"
+          << "Parent Close Time: " << to_string(sourceLedger->info().parentCloseTime.time_since_epoch().count()) << "\n"
+          << "Transaction Hash: " << to_string(sourceLedger->info().txHash) << "\n"
+          << "Account Hash: " << to_string(sourceLedger->info().accountHash) << "\n"
+          << "Parent Hash: " << to_string(sourceLedger->info().parentHash) << "\n"
+          << "Drops: " << to_string(sourceLedger->info().drops) << "\n"
+          << "Validated: " << (sourceLedger->info().validated ? "true" : "false") << "\n"
+          << "Accepted: " << (sourceLedger->info().accepted ? "true" : "false") << "\n"
+          << "Close Flags: " << sourceLedger->info().closeFlags << "\n"
+          << "Close Time Resolution: " << to_string(sourceLedger->info().closeTimeResolution.count()) << "\n"
+          << "Close Time: " << to_string(sourceLedger->info().closeTime.time_since_epoch().count()) << "\n"
+          << "\n=== Loaded Ledger Information ===\n"
+          << "Sequence: " << to_string(loadedLedger->info().seq) << "\n"
+          << "Hash: " << to_string(loadedLedger->info().hash) << "\n"
+          << "Parent Close Time: " << to_string(loadedLedger->info().parentCloseTime.time_since_epoch().count()) << "\n"
+          << "Transaction Hash: " << to_string(loadedLedger->info().txHash) << "\n"
+          << "Account Hash: " << to_string(loadedLedger->info().accountHash) << "\n"
+          << "Parent Hash: " << to_string(loadedLedger->info().parentHash) << "\n"
+          << "Drops: " << to_string(loadedLedger->info().drops) << "\n"
+          << "Validated: " << (loadedLedger->info().validated ? "true" : "false") << "\n"
+          << "Accepted: " << (loadedLedger->info().accepted ? "true" : "false") << "\n"
+          << "Close Flags: " << loadedLedger->info().closeFlags << "\n"
+          << "Close Time Resolution: " << to_string(loadedLedger->info().closeTimeResolution.count()) << "\n"
+          << "Close Time: " << to_string(loadedLedger->info().closeTime.time_since_epoch().count()) << "\n"
+          << std::endl;
 
             auto const loadedBobAcct = loadedLedger->read(bobKeylet);
             auto const loadedCharlieAcct = loadedLedger->read(charlieKeylet);
             auto const loadedEurTrust = loadedLedger->read(eurTrustKeylet);
+
+            auto const& ll = *loadedLedger;
+
+            std::cout << "bob exists: " << (ll.exists(bobKeylet) ? "t" : "f") << "\n";
+            std::cout << "chl exists: " << (ll.exists(charlieKeylet) ? "t" : "f") << "\n";
+            std::cout << "eur exists: " << (ll.exists(eurTrustKeylet) ? "t" : "f") << "\n";
 
             BEAST_EXPECT(!!loadedBobAcct);
             BEAST_EXPECT(!!loadedCharlieAcct);

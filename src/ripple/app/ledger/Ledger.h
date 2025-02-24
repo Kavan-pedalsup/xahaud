@@ -275,6 +275,9 @@ public:
     void
     setImmutable(bool rehash = true);
 
+    void
+    setCloseFlags(int closeFlags);
+
     bool
     isImmutable() const
     {
@@ -305,6 +308,8 @@ public:
     {
         info_.drops = totDrops;
     }
+
+    
 
     SHAMap const&
     stateMap() const

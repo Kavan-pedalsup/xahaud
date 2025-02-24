@@ -724,10 +724,18 @@ doCatalogueLoad(RPC::JsonContext& context)
         infile.read(
             reinterpret_cast<char*>(&info.parentCloseTime),
             sizeof(info.parentCloseTime));
-        infile.read(info.hash.cdata(), 32);
-        infile.read(info.txHash.cdata(), 32);
-        infile.read(info.accountHash.cdata(), 32);
+        
+        char orig_hash[32], orig_ah[32], orig_th[32];
+        
+        
+        infile.read(&orig_hash[0], 32); info.hash = beast::zero;
+        infile.read(&orig_th[0], 32); info.txHash = beast::zero;
+        infile.read(&orig_ah[0], 32); info.accountHash = beast::zero;
+//        infile.read(info.hash.cdata(), 32);
+//        infile.read(info.txHash.cdata(), 32);
+//        infile.read(info.accountHash.cdata(), 32);
         infile.read(info.parentHash.cdata(), 32);
+
         infile.read(reinterpret_cast<char*>(&info.drops), sizeof(info.drops));
         infile.read(
             reinterpret_cast<char*>(&info.validated), sizeof(info.validated));
@@ -867,7 +875,7 @@ doCatalogueLoad(RPC::JsonContext& context)
 
                     std::cout << "Read state data at pos " << it->filePos
                               << " size " << it->size
-                              << " hex: " << strHex(makeSlice(data))
+                              //<< " hex: " << strHex(makeSlice(data))
                               << std::endl;
 
                     // Verify data read was successful
@@ -897,15 +905,38 @@ doCatalogueLoad(RPC::JsonContext& context)
         std::cout << "Applied " << stateChangeCount << " state changes"
                   << std::endl;
 
-        currentLedger->stateMap().flushDirty(hotACCOUNT_NODE);
         currentLedger->updateSkipList();
+        currentLedger->stateMap().flushDirty(hotACCOUNT_NODE);
+        currentLedger->txMap().flushDirty(hotTRANSACTION_NODE);
+
+        currentLedger->unshare(); //?
+        
+        auto const ah = currentLedger->stateMap().getHash().as_uint256();
+        auto const th = currentLedger->txMap().getHash().as_uint256();
+
+        std::cout << "ah: " << to_string(ah) << " orig: " << to_string(uint256::fromVoid(orig_ah)) << "\n";
+        std::cout << "th: " << to_string(th) << " orig: " << to_string(uint256::fromVoid(orig_th)) << "\n";
+
+        memcpy(info.accountHash.cdata(), ah.data(), 32);
+        memcpy(info.txHash.cdata(), th.data(), 32);
+
+        currentLedger->setLedgerInfo(info);
+
+//        infile.read(info.txHash.cdata(), 32);
+//        infile.read(info.accountHash.cdata(), 32);
 
         // Finalize and store the ledger
         currentLedger->setValidated();
+
+        auto cf = currentLedger->info().closeFlags;
         currentLedger->setAccepted(
             currentLedger->info().closeTime,
             currentLedger->info().closeTimeResolution,
             currentLedger->info().closeFlags & sLCF_NoConsensusTime);
+
+        // hacky
+        currentLedger->setCloseFlags(cf);
+
 
         // Set the ledger as immutable after all mutations are complete
         currentLedger->setImmutable(true);

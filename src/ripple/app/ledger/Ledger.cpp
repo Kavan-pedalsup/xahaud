@@ -386,6 +386,12 @@ Ledger::setImmutable(bool rehash)
 }
 
 void
+Ledger::setCloseFlags(int closeFlags)
+{
+    info_.closeFlags = closeFlags;
+}
+
+void
 Ledger::setAccepted(
     NetClock::time_point closeTime,
     NetClock::duration closeResolution,
