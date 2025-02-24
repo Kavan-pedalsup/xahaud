@@ -8108,7 +8108,11 @@ DEFINE_JS_FUNCTION(JSValue, float_sto_set, JSValue raw_sto)
     if (!sto.has_value())
         returnJS(INVALID_ARGUMENT);
 
-    returnJS(__float_sto_set(hookCtx, applyCtx, j, sto->data(), sto->size()));
+    int64_t const out = __float_sto_set(hookCtx, applyCtx, j, sto->data(), sto->size());
+    if (out < 0)
+        returnJS(out);
+
+    returnJSXFL(out);
 
     JS_HOOK_TEARDOWN();
 }
