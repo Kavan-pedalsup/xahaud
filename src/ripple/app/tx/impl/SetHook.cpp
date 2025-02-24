@@ -436,7 +436,8 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::API_INVALID << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook "
-                       "sfHook->sfHookApiVersion invalid. (JSHooks not enabled).";
+                       "sfHook->sfHookApiVersion invalid. (JSHooks not "
+                       "enabled).";
                 return false;
             }
             if (version > 1)
@@ -466,11 +467,11 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
 
             Blob hook = hookSetObj.getFieldVL(sfCreateCode);
 
-
             if (version == 1)
             {
-                // RHTODO: guard or other check for js, depending on design choices
-               
+                // RHTODO: guard or other check for js, depending on design
+                // choices
+
                 if (hookSetObj.isFieldPresent(sfFee) &&
                     isXRP(hookSetObj.getFieldAmount(sfFee)))
                 {
@@ -481,10 +482,10 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                         JLOG(ctx.j.trace())
                             << "HookSet(" << hook::log::JS_FEE_TOO_HIGH << ")["
                             << HS_ACC()
-                            << "]: Malformed transaction: When creating a JS Hook "
+                            << "]: Malformed transaction: When creating a JS "
+                               "Hook "
                             << "you must include a Fee <= 1000000.";
                         return false;
-
                     }
                 }
                 else
@@ -493,7 +494,8 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                         << "HookSet(" << hook::log::JS_FEE_MISSING << ")["
                         << HS_ACC()
                         << "]: Malformed transaction: When creating a JS Hook "
-                        << "you must include a Fee field indicating the instruction limit.";
+                        << "you must include a Fee field indicating the "
+                           "instruction limit.";
                     return false;
                 }
 
@@ -512,9 +514,9 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 }
 
                 // RHTODO: fix
-                return std::pair<uint64_t,uint64_t>{1,1};
+                return std::pair<uint64_t, uint64_t>{1, 1};
             }
-            
+
             if (version == 0)
             {
                 // RH NOTE: validateGuards has a generic non-rippled specific
@@ -599,7 +601,8 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
 
             JLOG(ctx.j.trace())
                 << "HookSet(" << hook::log::HASH_OR_CODE << ")[" << HS_ACC()
-                << "]: Malformed transaction: SetHook specified invalid HookApiVersion.";
+                << "]: Malformed transaction: SetHook specified invalid "
+                   "HookApiVersion.";
             return false;
         }
 
@@ -784,8 +787,7 @@ SetHook::preflight(PreflightContext const& ctx)
             if (name != sfCreateCode && name != sfHookHash &&
                 name != sfHookNamespace && name != sfHookParameters &&
                 name != sfHookOn && name != sfHookGrants &&
-                name != sfHookApiVersion && name != sfFlags &&
-                name != sfFee)
+                name != sfHookApiVersion && name != sfFlags && name != sfFee)
             {
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::HOOK_INVALID_FIELD << ")["
@@ -1561,14 +1563,17 @@ SetHook::setHook()
                     return tecREQUIRES_FLAG;
                 }
 
-                uint16_t hookApiVersion = hookSetObj->get().getFieldU16(sfHookApiVersion);
+                uint16_t hookApiVersion =
+                    hookSetObj->get().getFieldU16(sfHookApiVersion);
 
-                if (hookApiVersion == 1 && !hookSetObj->get().isFieldPresent(sfFee))
+                if (hookApiVersion == 1 &&
+                    !hookSetObj->get().isFieldPresent(sfFee))
                 {
                     JLOG(ctx.j.warn())
                         << "HookSet(" << hook::log::JS_FEE_MISSING << ")["
                         << HS_ACC()
-                        << "]: Malformed transaction: SetHook operation for JS Hook missing fee.";
+                        << "]: Malformed transaction: SetHook operation for JS "
+                           "Hook missing fee.";
                     return tecINTERNAL;
                 }
 
@@ -1644,7 +1649,8 @@ SetHook::setHook()
                             << "HookSet(" << hook::log::WASM_INVALID << ")["
                             << HS_ACC()
                             << "]: Malformed transaction: SetHook operation "
-                               "would create invalid hook wasm: " << e.what();
+                               "would create invalid hook wasm: "
+                            << e.what();
                         return tecINTERNAL;
                     }
 
@@ -1661,9 +1667,13 @@ SetHook::setHook()
                     // override instruction count with fee for js
                     if (hookApiVersion == 1)
                     {
-                        uint64_t fee = hookSetObj->get().getFieldAmount(sfFee).xrp().drops();
+                        uint64_t fee = hookSetObj->get()
+                                           .getFieldAmount(sfFee)
+                                           .xrp()
+                                           .drops();
                         maxInstrCountHook = fee;
-                        maxInstrCountCbak = fee; // RH TODO: add a second fee for cbak?
+                        maxInstrCountCbak =
+                            fee;  // RH TODO: add a second fee for cbak?
                     }
 
                     auto newHookDef = std::make_shared<SLE>(keylet);

@@ -82,7 +82,11 @@ hso(std::vector<uint8_t> const& wasmBytes, void (*f)(Json::Value& jv))
 }
 
 Json::Value
-hsov1(std::vector<uint8_t> const& wasmBytes, uint16_t const& apiVersion, STAmount const& fee, void (*f)(Json::Value& jv))
+hsov1(
+    std::vector<uint8_t> const& wasmBytes,
+    uint16_t const& apiVersion,
+    STAmount const& fee,
+    void (*f)(Json::Value& jv))
 {
     if (wasmBytes.size() == 0)
         throw std::runtime_error("empty hook wasm passed to hsov1()");

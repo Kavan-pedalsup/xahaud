@@ -10,18 +10,19 @@
 #include <ripple/protocol/SField.h>
 #include <ripple/protocol/TER.h>
 #include <ripple/protocol/digest.h>
+#include "quickjs-atom.h"
+#include "quickjs-libc.h"
+#include "quickjs.h"
 #include <any>
 #include <memory>
 #include <optional>
 #include <queue>
 #include <vector>
 #include <wasmedge/wasmedge.h>
-#include "quickjs.h"
-#include "quickjs-libc.h"
-#include "quickjs-atom.h"
 
 extern "C" {
-    int js_code_init_textdecoder(JSContext*, JSModuleDef* m);
+int
+js_code_init_textdecoder(JSContext*, JSModuleDef* m);
 }
 
 namespace hook {
@@ -76,11 +77,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_len,
     int64_t error_code);
 
-DECLARE_JS_FUNCTION(
-    int64_t,
-    accept,
-    JSValue error_msg,
-    JSValue error_code);
+DECLARE_JS_FUNCTION(int64_t, accept, JSValue error_msg, JSValue error_code);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -89,11 +86,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_len,
     int64_t error_code);
 
-DECLARE_JS_FUNCTION(
-    int64_t,
-    rollback,
-    JSValue error_msg,
-    JSValue error_code);
+DECLARE_JS_FUNCTION(int64_t, rollback, JSValue error_msg, JSValue error_code);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -103,10 +96,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    util_raddr,
-    JSValue acc_id);
+DECLARE_JS_FUNCTION(JSValue, util_raddr, JSValue acc_id);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -116,10 +106,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    util_accid,
-    JSValue acc_id);
+DECLARE_JS_FUNCTION(JSValue, util_accid, JSValue acc_id);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -143,32 +130,21 @@ DECLARE_WASM_FUNCTION(
     sto_validate,
     uint32_t tread_ptr,
     uint32_t tread_len);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    sto_validate,
-    JSValue sto);
+DECLARE_JS_FUNCTION(JSValue, sto_validate, JSValue sto);
 DECLARE_WASM_FUNCTION(
     int64_t,
     sto_subfield,
     uint32_t read_ptr,
     uint32_t read_len,
     uint32_t field_id);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    sto_subfield,
-    JSValue sto,
-    JSValue field_id);
+DECLARE_JS_FUNCTION(JSValue, sto_subfield, JSValue sto, JSValue field_id);
 DECLARE_WASM_FUNCTION(
     int64_t,
     sto_subarray,
     uint32_t read_ptr,
     uint32_t read_len,
     uint32_t array_id);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    sto_subarray,
-    JSValue sto,
-    JSValue array_id);
+DECLARE_JS_FUNCTION(JSValue, sto_subarray, JSValue sto, JSValue array_id);
 DECLARE_WASM_FUNCTION(
     int64_t,
     sto_emplace,
@@ -193,11 +169,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len,
     uint32_t field_id);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    sto_erase,
-    JSValue sto,
-    JSValue field_id);
+DECLARE_JS_FUNCTION(JSValue, sto_erase, JSValue sto, JSValue field_id);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -207,10 +179,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    util_sha512h,
-    JSValue data);
+DECLARE_JS_FUNCTION(JSValue, util_sha512h, JSValue data);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -245,10 +214,7 @@ DECLARE_WASM_FUNCTION(
     etxn_fee_base,
     uint32_t read_ptr,
     uint32_t read_len);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    etxn_fee_base,
-    JSValue txblob);
+DECLARE_JS_FUNCTION(JSValue, etxn_fee_base, JSValue txblob);
 
 DECLARE_WASM_FUNCTION(int64_t, etxn_reserve, uint32_t count);
 DECLARE_JS_FUNCTION(JSValue, etxn_reserve, JSValue count);
@@ -262,9 +228,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t write_ptr,
     uint32_t write_len);
 
-DECLARE_JS_FUNCNARG(
-    JSValue,
-    etxn_nonce);
+DECLARE_JS_FUNCNARG(JSValue, etxn_nonce);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -274,48 +238,23 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    emit,
-    JSValue txn);
+DECLARE_JS_FUNCTION(JSValue, emit, JSValue txn);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    prepare,
-    JSValue tmpl);
+DECLARE_JS_FUNCTION(JSValue, prepare, JSValue tmpl);
 
-DECLARE_JS_FUNCNARG(
-    JSValue,
-    otxn_json);
+DECLARE_JS_FUNCNARG(JSValue, otxn_json);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    slot_json,
-    JSValue slotno);
+DECLARE_JS_FUNCTION(JSValue, slot_json, JSValue slotno);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    sto_to_json,
-    JSValue sto_in);
+DECLARE_JS_FUNCTION(JSValue, sto_to_json, JSValue sto_in);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    sto_from_json,
-    JSValue json_in);
+DECLARE_JS_FUNCTION(JSValue, sto_from_json, JSValue json_in);
 
 DECLARE_WASM_FUNCTION(int64_t, float_set, int32_t exponent, int64_t mantissa);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_set,
-    JSValue e,
-    JSValue m);
+DECLARE_JS_FUNCTION(JSValue, float_set, JSValue e, JSValue m);
 
 DECLARE_WASM_FUNCTION(int64_t, float_multiply, int64_t float1, int64_t float2);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_multiply,
-    JSValue f1,
-    JSValue f2);
+DECLARE_JS_FUNCTION(JSValue, float_multiply, JSValue f1, JSValue f2);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -333,10 +272,7 @@ DECLARE_JS_FUNCTION(
     JSValue denominator);
 
 DECLARE_WASM_FUNCTION(int64_t, float_negate, int64_t float1);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_negate,
-    JSValue f1);
+DECLARE_JS_FUNCTION(JSValue, float_negate, JSValue f1);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -352,11 +288,7 @@ DECLARE_JS_FUNCTION(
     JSValue mode);
 
 DECLARE_WASM_FUNCTION(int64_t, float_sum, int64_t float1, int64_t float2);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_sum,
-    JSValue f1,
-    JSValue f2);
+DECLARE_JS_FUNCTION(JSValue, float_sum, JSValue f1, JSValue f2);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -382,36 +314,18 @@ DECLARE_WASM_FUNCTION(
     float_sto_set,
     uint32_t read_ptr,
     uint32_t read_len);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_sto_set,
-    JSValue buf);
+DECLARE_JS_FUNCTION(JSValue, float_sto_set, JSValue buf);
 
 DECLARE_WASM_FUNCTION(int64_t, float_invert, int64_t float1);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_invert,
-    JSValue f1);
+DECLARE_JS_FUNCTION(JSValue, float_invert, JSValue f1);
 DECLARE_WASM_FUNCTION(int64_t, float_divide, int64_t float1, int64_t float2);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_divide,
-    JSValue f1,
-    JSValue f2);
+DECLARE_JS_FUNCTION(JSValue, float_divide, JSValue f1, JSValue f2);
 DECLARE_WASM_FUNCNARG(int64_t, float_one);
-DECLARE_JS_FUNCNARG(
-    JSValue,
-    float_one);
+DECLARE_JS_FUNCNARG(JSValue, float_one);
 DECLARE_WASM_FUNCTION(int64_t, float_mantissa, int64_t float1);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_mantissa,
-    JSValue f1);
+DECLARE_JS_FUNCTION(JSValue, float_mantissa, JSValue f1);
 DECLARE_WASM_FUNCTION(int64_t, float_sign, int64_t float1);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_sign,
-    JSValue f1);
+DECLARE_JS_FUNCTION(JSValue, float_sign, JSValue f1);
 DECLARE_WASM_FUNCTION(
     int64_t,
     float_int,
@@ -425,24 +339,15 @@ DECLARE_JS_FUNCTION(
     JSValue decimal_places,
     JSValue abs);
 DECLARE_WASM_FUNCTION(int64_t, float_log, int64_t float1);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_log,
-    JSValue float1);
+DECLARE_JS_FUNCTION(JSValue, float_log, JSValue float1);
 DECLARE_WASM_FUNCTION(int64_t, float_root, int64_t float1, uint32_t n);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    float_root,
-    JSValue f1,
-    JSValue n);
+DECLARE_JS_FUNCTION(JSValue, float_root, JSValue f1, JSValue n);
 DECLARE_WASM_FUNCTION(
     int64_t,
     hook_account,
     uint32_t write_ptr,
     uint32_t write_len);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    hook_account);
+DECLARE_JS_FUNCTION(JSValue, hook_account);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -450,10 +355,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t write_ptr,
     uint32_t write_len,
     int32_t hook_no);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    hook_hash,
-    JSValue hook_no);
+DECLARE_JS_FUNCTION(JSValue, hook_hash, JSValue hook_no);
 
 DECLARE_WASM_FUNCNARG(int64_t, fee_base);
 DECLARE_JS_FUNCNARG(JSValue, fee_base);
@@ -466,18 +368,14 @@ DECLARE_WASM_FUNCTION(
     ledger_last_hash,
     uint32_t write_ptr,
     uint32_t write_len);
-DECLARE_JS_FUNCNARG(
-    JSValue,
-    ledger_last_hash);
+DECLARE_JS_FUNCNARG(JSValue, ledger_last_hash);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
     ledger_nonce,
     uint32_t write_ptr,
     uint32_t write_len);
-DECLARE_JS_FUNCNARG(
-    JSValue,
-    ledger_nonce);
+DECLARE_JS_FUNCNARG(JSValue, ledger_nonce);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -489,11 +387,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t hread_ptr,
     uint32_t hread_len);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    ledger_keylet,
-    JSValue low,
-    JSValue high);
+DECLARE_JS_FUNCTION(JSValue, ledger_keylet, JSValue low, JSValue high);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -520,15 +414,10 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    hook_param,
-    JSValue key);
+DECLARE_JS_FUNCTION(JSValue, hook_param, JSValue key);
 
 DECLARE_WASM_FUNCNARG(int64_t, hook_again);
-DECLARE_JS_FUNCNARG(
-    JSValue,
-    hook_again);
+DECLARE_JS_FUNCNARG(JSValue, hook_again);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -537,11 +426,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_len,
     uint32_t flags);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    hook_skip,
-    JSValue hhash,
-    JSValue flags);
+DECLARE_JS_FUNCTION(JSValue, hook_skip, JSValue hhash, JSValue flags);
 
 DECLARE_WASM_FUNCNARG(int64_t, hook_pos);
 
@@ -553,22 +438,13 @@ DECLARE_WASM_FUNCTION(
     uint32_t write_ptr,
     uint32_t write_len,
     uint32_t slot);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    slot,
-    JSValue slot_no);
+DECLARE_JS_FUNCTION(JSValue, slot, JSValue slot_no);
 
 DECLARE_WASM_FUNCTION(int64_t, slot_clear, uint32_t slot);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    slot_clear,
-    JSValue slot_no);
+DECLARE_JS_FUNCTION(JSValue, slot_clear, JSValue slot_no);
 
 DECLARE_WASM_FUNCTION(int64_t, slot_count, uint32_t slot);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    slot_count,
-    JSValeu slot_no);
+DECLARE_JS_FUNCTION(JSValue, slot_count, JSValeu slot_no);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -576,17 +452,10 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len,
     uint32_t slot);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    slot_set,
-    JSValue kl,
-    JSValue slot_no);
+DECLARE_JS_FUNCTION(JSValue, slot_set, JSValue kl, JSValue slot_no);
 
 DECLARE_WASM_FUNCTION(int64_t, slot_size, uint32_t slot);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    slot_size,
-    JSValue slot_no);
+DECLARE_JS_FUNCTION(JSValue, slot_size, JSValue slot_no);
 DECLARE_WASM_FUNCTION(
     int64_t,
     slot_subarray,
@@ -614,16 +483,9 @@ DECLARE_JS_FUNCTION(
     JSValue new_slot_no);
 
 DECLARE_WASM_FUNCTION(int64_t, slot_type, uint32_t slot_no, uint32_t flags);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    slot_type,
-    JSValue slot_no,
-    JSValue flags);
+DECLARE_JS_FUNCTION(JSValue, slot_type, JSValue slot_no, JSValue flags);
 DECLARE_WASM_FUNCTION(int64_t, slot_float, uint32_t slot_no);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    slot_float,
-    JSValue slot_no);
+DECLARE_JS_FUNCTION(JSValue, slot_float, JSValue slot_no);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -632,11 +494,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_len,
     uint32_t kread_ptr,
     uint32_t kread_len);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    state_set,
-    JSValue val,
-    JSValue key);
+DECLARE_JS_FUNCTION(JSValue, state_set, JSValue val, JSValue key);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -665,10 +523,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t write_len,
     uint32_t kread_ptr,
     uint32_t kread_len);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    state,
-    JSValue key);
+DECLARE_JS_FUNCTION(JSValue, state, JSValue key);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -697,12 +552,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t dread_len,
     uint32_t as_hex);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    trace,
-    JSValue msg,
-    JSValue data,
-    JSValue as_hex);
+DECLARE_JS_FUNCTION(JSValue, trace, JSValue msg, JSValue data, JSValue as_hex);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -727,10 +577,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t write_len,
     uint32_t field_id);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    otxn_field,
-    JSValue field_id);
+DECLARE_JS_FUNCTION(JSValue, otxn_field, JSValue field_id);
 
 DECLARE_WASM_FUNCNARG(int64_t, otxn_generation);
 DECLARE_JS_FUNCNARG(JSValue, otxn_generation);
@@ -741,10 +588,7 @@ DECLARE_WASM_FUNCTION(
     uint32_t write_len,
     uint32_t flags);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    otxn_id,
-    flags);
+DECLARE_JS_FUNCTION(JSValue, otxn_id, flags);
 
 DECLARE_WASM_FUNCNARG(int64_t, otxn_type);
 
@@ -752,10 +596,7 @@ DECLARE_JS_FUNCNARG(int64_t, otxn_type);
 
 DECLARE_WASM_FUNCTION(int64_t, otxn_slot, uint32_t slot_no);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    otxn_slot,
-    JSValue slot_no);
+DECLARE_JS_FUNCTION(JSValue, otxn_slot, JSValue slot_no);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -765,16 +606,10 @@ DECLARE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len);
 
-DECLARE_JS_FUNCTION(
-    JSValue,
-    otxn_param,
-    JSValue param_key);
+DECLARE_JS_FUNCTION(JSValue, otxn_param, JSValue param_key);
 
 DECLARE_WASM_FUNCTION(int64_t, meta_slot, uint32_t slot_no);
-DECLARE_JS_FUNCTION(
-    JSValue,
-    meta_slot,
-    JSValue slot_no);
+DECLARE_JS_FUNCTION(JSValue, meta_slot, JSValue slot_no);
 
 DECLARE_WASM_FUNCTION(
     int64_t,
@@ -880,8 +715,8 @@ struct HookResult
 };
 
 class HookExecutorBase;
-//class HookExecutorWasm;
-//class HookExecutorJs;
+// class HookExecutorWasm;
+// class HookExecutorJs;
 
 struct SlotEntry
 {
@@ -975,18 +810,23 @@ gatherHookParameters(
             importObj, hook_api::WasmFunctionName##F, hf); \
     }
 
-#define ADD_JS_FUNCTION(F, ctx)\
-{\
-    JSValue global_obj = JS_GetGlobalObject(ctx);\
-    JS_SetPropertyStr(ctx, global_obj, #F,\
-            JS_NewCFunction(ctx, hook_api::JSFunction##F, #F, hook_api::JSFunctionParamCount##F));\
-    JS_FreeValue(ctx, global_obj);\
-}
+#define ADD_JS_FUNCTION(F, ctx)                       \
+    {                                                 \
+        JSValue global_obj = JS_GetGlobalObject(ctx); \
+        JS_SetPropertyStr(                            \
+            ctx,                                      \
+            global_obj,                               \
+            #F,                                       \
+            JS_NewCFunction(                          \
+                ctx,                                  \
+                hook_api::JSFunction##F,              \
+                #F,                                   \
+                hook_api::JSFunctionParamCount##F));  \
+        JS_FreeValue(ctx, global_obj);                \
+    }
 
 #define HR_ACC() hookResult.account << "-" << hookResult.otxnAccount
 #define HC_ACC() hookCtx.result.account << "-" << hookCtx.result.otxnAccount
-
-
 
 class HookExecutorBase
 {
@@ -996,9 +836,12 @@ protected:
 public:
     HookContext& hookCtx;
 
-    HookExecutorBase(HookContext& ctx) : hookCtx(ctx) {}
+    HookExecutorBase(HookContext& ctx) : hookCtx(ctx)
+    {
+    }
 
-    virtual void execute(
+    virtual void
+    execute(
         const void* code,
         size_t len,
         bool callback,
@@ -1006,9 +849,8 @@ public:
         uint32_t instructionLimit,
         beast::Journal const& j) = 0;
 
-    static std::optional<std::string> validate(
-        const void* code,
-        size_t len)
+    static std::optional<std::string>
+    validate(const void* code, size_t len)
     {
         // Base class doesn't implement validation
         return "validate() illegally called on HookExecutorBase class";
@@ -1016,7 +858,6 @@ public:
 
     virtual ~HookExecutorBase() = default;
 };
-
 
 /**
  * HookExecutorWasm is effectively a two-part function:
@@ -1161,7 +1002,8 @@ public:
             return;
         }
 
-        WasmEdge_Value params[1] = {WasmEdge_ValueGenI32((int64_t)hookArgument)};
+        WasmEdge_Value params[1] = {
+            WasmEdge_ValueGenI32((int64_t)hookArgument)};
         WasmEdge_Value returns[1];
 
         res = WasmEdge_VMRunWasmFromBuffer(
@@ -1189,7 +1031,8 @@ public:
     }
 
     HookExecutorWasm(HookContext& ctx)
-        : HookExecutorBase(ctx), importObj(WasmEdge_ModuleInstanceCreate(exportName))
+        : HookExecutorBase(ctx)
+        , importObj(WasmEdge_ModuleInstanceCreate(exportName))
     {
         ctx.module = this;
 
@@ -1294,11 +1137,9 @@ public:
     };
 };
 
-
 class HookExecutorJS : public HookExecutorBase
 {
 public:
-
     class QuickJSVM
     {
     public:
@@ -1333,17 +1174,16 @@ public:
             ADD_JS_FUNCTION(util_sha512h, ctx);
             ADD_JS_FUNCTION(util_keylet, ctx);
 
-           
             ADD_JS_FUNCTION(sto_validate, ctx);
             ADD_JS_FUNCTION(sto_subfield, ctx);
             ADD_JS_FUNCTION(sto_subarray, ctx);
             ADD_JS_FUNCTION(sto_emplace, ctx);
             ADD_JS_FUNCTION(sto_erase, ctx);
-            
+
             ADD_JS_FUNCTION(emit, ctx);
             ADD_JS_FUNCTION(prepare, ctx);
             ADD_JS_FUNCTION(otxn_json, ctx);
-           
+
             ADD_JS_FUNCTION(slot_json, ctx);
             ADD_JS_FUNCTION(sto_to_json, ctx);
             ADD_JS_FUNCTION(sto_from_json, ctx);
@@ -1354,7 +1194,7 @@ public:
             ADD_JS_FUNCTION(etxn_reserve, ctx);
             ADD_JS_FUNCTION(etxn_generation, ctx);
             ADD_JS_FUNCTION(etxn_nonce, ctx);
-            
+
             ADD_JS_FUNCTION(float_set, ctx);
             ADD_JS_FUNCTION(float_multiply, ctx);
             ADD_JS_FUNCTION(float_mulratio, ctx);
@@ -1381,7 +1221,6 @@ public:
             ADD_JS_FUNCTION(otxn_slot, ctx);
             ADD_JS_FUNCTION(otxn_param, ctx);
 
-            
             ADD_JS_FUNCTION(hook_account, ctx);
             ADD_JS_FUNCTION(hook_hash, ctx);
             ADD_JS_FUNCTION(hook_again, ctx);
@@ -1391,7 +1230,7 @@ public:
             ADD_JS_FUNCTION(ledger_last_time, ctx);
             ADD_JS_FUNCTION(ledger_nonce, ctx);
             ADD_JS_FUNCTION(ledger_keylet, ctx);
-            
+
             ADD_JS_FUNCTION(hook_param, ctx);
             ADD_JS_FUNCTION(hook_param_set, ctx);
             ADD_JS_FUNCTION(hook_skip, ctx);
@@ -1445,21 +1284,21 @@ public:
     static std::optional<std::string>
     validate(const void* buf, size_t buf_len)
     {
-
         if (buf_len < 5)
             return "Could not create QUICKJS instance, bytecode too short.";
 
         std::optional<std::string> retval;
 
-        // RHNOTE: hard instrction (internal program counter loop) limit of 1MM, like wasm.
+        // RHNOTE: hard instrction (internal program counter loop) limit of 1MM,
+        // like wasm.
         QuickJSVM vm{NULL, 1000000};
         JSContext* ctx = vm.ctx;
 
         if (!vm.sane())
             return "Could not create QUICKJS instance";
 
-        JSValue obj =
-            JS_ReadObject(ctx, (uint8_t const*)buf, buf_len, JS_READ_OBJ_BYTECODE);
+        JSValue obj = JS_ReadObject(
+            ctx, (uint8_t const*)buf, buf_len, JS_READ_OBJ_BYTECODE);
         if (JS_IsException(obj))
         {
             if (const char* str = JS_ToCString(ctx, obj); str)
@@ -1489,19 +1328,20 @@ public:
                 retval.emplace("bytecode eval failure");
             }
             JS_FreeValue(ctx, val);
-            //JS_FreeValue(ctx, obj);
+            // JS_FreeValue(ctx, obj);
 
             return retval;
         }
 
         JS_FreeValue(ctx, val);
 
-        const char* testCalls = "if (typeof(Hook) != \"function\" || "
-            "(typeof(Callback) != \"function\" && typeof(Callback) != \"undefined\")) "
+        const char* testCalls =
+            "if (typeof(Hook) != \"function\" || "
+            "(typeof(Callback) != \"function\" && typeof(Callback) != "
+            "\"undefined\")) "
             "throw Error(\"Hook/Callback function required\")";
 
-        val =
-            JS_Eval(vm.ctx, testCalls, sizeof(testCalls)-1, "<qjsvm>", 0);
+        val = JS_Eval(vm.ctx, testCalls, sizeof(testCalls) - 1, "<qjsvm>", 0);
 
         if (JS_IsException(val))
         {
@@ -1513,7 +1353,7 @@ public:
         }
 
         JS_FreeValue(ctx, val);
-        //JS_FreeValue(ctx, obj);
+        // JS_FreeValue(ctx, obj);
 
         return retval;
     }
@@ -1551,21 +1391,21 @@ public:
             hookCtx.result.exitType = hook_api::ExitType::JSVM_ERROR;
             return;
         }
-        
-        JSValue obj =
-            JS_ReadObject(ctx, (uint8_t const*)buf, buf_len, JS_READ_OBJ_BYTECODE);
-        
+
+        JSValue obj = JS_ReadObject(
+            ctx, (uint8_t const*)buf, buf_len, JS_READ_OBJ_BYTECODE);
+
         if (JS_IsException(obj))
         {
             JS_FreeValue(ctx, obj);
-            JLOG(j.warn()) << "HookError[" << HC_ACC()
-                           << "]: Could not create QUICKJS instance (invalid bytecode).";
+            JLOG(j.warn())
+                << "HookError[" << HC_ACC()
+                << "]: Could not create QUICKJS instance (invalid bytecode).";
             hookCtx.result.exitType = hook_api::ExitType::JSVM_ERROR;
             return;
         }
 
-        JSValue val =
-            JS_EvalFunction(ctx, obj);
+        JSValue val = JS_EvalFunction(ctx, obj);
 
         if (JS_IsException(val))
         {
@@ -1573,7 +1413,8 @@ public:
             JS_FreeValue(ctx, obj);
 
             JLOG(j.warn()) << "HookError[" << HC_ACC()
-                           << "]: Could not create QUICKJS instance (bytecode eval failure).";
+                           << "]: Could not create QUICKJS instance (bytecode "
+                              "eval failure).";
             hookCtx.result.exitType = hook_api::ExitType::JSVM_ERROR;
             return;
         }
@@ -1582,89 +1423,94 @@ public:
 
         char expr[256];
 
-        int expr_len = 
-            snprintf(expr, 256, "%s(%d)",
-                callback ? "Callback" : "Hook",
-                hookArgument);
+        int expr_len = snprintf(
+            expr, 256, "%s(%d)", callback ? "Callback" : "Hook", hookArgument);
 
         if (expr_len < 7 || expr_len == 256)
         {
-            JLOG(j.warn()) << "HookError[" << HC_ACC()
-                           << "]: Could not create QUICKJS instance (expr string).";
+            JLOG(j.warn())
+                << "HookError[" << HC_ACC()
+                << "]: Could not create QUICKJS instance (expr string).";
 
             hookCtx.result.exitType = hook_api::ExitType::JSVM_ERROR;
             return;
         }
 
-        val =
-            JS_Eval(vm.ctx, expr, expr_len, "<qjsvm>", 0);
+        val = JS_Eval(vm.ctx, expr, expr_len, "<qjsvm>", 0);
 
         int normal_exit = 0;
 
         JSValue exception_val = JS_GetException(ctx);
         if (!JS_IsUndefined(exception_val) && JS_IsError(ctx, exception_val))
         {
-       
             int printed_something = 0;
 
-            // Most exceptions should have a message field, try to fetch and print that 
+            // Most exceptions should have a message field, try to fetch and
+            // print that
             JSValue msg = JS_GetPropertyStr(ctx, exception_val, "message");
             if (!JS_IsUndefined(msg))
             {
-                if (const char *str = JS_ToCString(ctx, msg); str)
+                if (const char* str = JS_ToCString(ctx, msg); str)
                 {
                     std::string m(str);
                     JS_FreeCString(ctx, str);
-                   
+
                     if ((m == "HookExit Accept" || m == "HookExit Rollback") &&
-                        (hookCtx.result.exitType == hook_api::ExitType::ACCEPT ||
-                        hookCtx.result.exitType == hook_api::ExitType::ROLLBACK))
+                        (hookCtx.result.exitType ==
+                             hook_api::ExitType::ACCEPT ||
+                         hookCtx.result.exitType ==
+                             hook_api::ExitType::ROLLBACK))
                     {
                         normal_exit = 1;
                     }
                     else
-                    {   
-                        JLOG(j.warn()) << "HookError[" << HC_ACC() << "]: JSException " << m;
+                    {
+                        JLOG(j.warn()) << "HookError[" << HC_ACC()
+                                       << "]: JSException " << m;
                         printed_something++;
                     }
                 }
             }
             JS_FreeValue(ctx, msg);
 
-            // Accept/rollback are handled via an uncatchable exception internally in quickjs
-            // so only print a backtrace if it isn't a normal exit.               
+            // Accept/rollback are handled via an uncatchable exception
+            // internally in quickjs so only print a backtrace if it isn't a
+            // normal exit.
             if (!normal_exit)
             {
-
                 if (!printed_something)
                 {
-                    JLOG(j.warn()) << "HookError[" << HC_ACC() << "]: [unknown exception]";
+                    JLOG(j.warn())
+                        << "HookError[" << HC_ACC() << "]: [unknown exception]";
                 }
 
                 JSValue bt = JS_GetPropertyStr(ctx, exception_val, "stack");
                 if (!normal_exit && !JS_IsUndefined(bt))
                 {
-                    if (const char *str = JS_ToCString(ctx, bt); str)
+                    if (const char* str = JS_ToCString(ctx, bt); str)
                     {
-                        JLOG(j.warn()) << "HookError[" << HC_ACC() << "]: " << str;
+                        JLOG(j.warn())
+                            << "HookError[" << HC_ACC() << "]: " << str;
                         JS_FreeCString(ctx, str);
                     }
                 }
 
                 JS_FreeValue(ctx, bt);
             }
-        }            
+        }
         JS_FreeValue(ctx, exception_val);
-        
+
         if (normal_exit)
         {
             if (hookCtx.result.exitType == hook_api::ExitType::ACCEPT)
             {
-                JLOG(j.warn()) << "HookInfo[" << HC_ACC() << "]: JSVM Exited with ACCEPT";
+                JLOG(j.warn())
+                    << "HookInfo[" << HC_ACC() << "]: JSVM Exited with ACCEPT";
             }
             else
             {
-                JLOG(j.warn()) << "HookInfo[" << HC_ACC() << "]: JSVM Exited with ROLLBACK";
+                JLOG(j.warn()) << "HookInfo[" << HC_ACC()
+                               << "]: JSVM Exited with ROLLBACK";
             }
             JLOG(j.warn()) << "HookInfo[" << HC_ACC()
                            << "]: Instruction Count: "
@@ -1679,15 +1525,12 @@ public:
         JS_FreeValue(ctx, val);
     }
 
-    HookExecutorJS(HookContext& ctx)
-        : HookExecutorBase(ctx)
+    HookExecutorJS(HookContext& ctx) : HookExecutorBase(ctx)
     {
         ctx.module = this;
     }
 
-    virtual ~HookExecutorJS()
-    {
-    };
+    virtual ~HookExecutorJS(){};
 };
 
 }  // namespace hook

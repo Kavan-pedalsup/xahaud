@@ -213,7 +213,10 @@ public:
         // create a hook that we can then install
         {
             env(ripple::test::jtx::hook(
-                    bob, {{hsov1(accept_wasm, 1, HSDROPS), hsov1(rollback_wasm, 1, HSDROPS)}}, 0),
+                    bob,
+                    {{hsov1(accept_wasm, 1, HSDROPS),
+                      hsov1(rollback_wasm, 1, HSDROPS)}},
+                    0),
                 M("First set = tesSUCCESS"),
                 HSFEE,
                 ter(tesSUCCESS));
@@ -542,8 +545,8 @@ public:
             "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE";
         {
             // create hook
-            Json::Value jv =
-                ripple::test::jtx::hook(alice, {{hsov1(makestate_wasm, 1, HSDROPS)}}, 0);
+            Json::Value jv = ripple::test::jtx::hook(
+                alice, {{hsov1(makestate_wasm, 1, HSDROPS)}}, 0);
 
             jv[jss::Hooks][0U][jss::Hook][jss::HookNamespace] = ns_str;
             env(jv, M("Create makestate hook"), HSFEE, ter(tesSUCCESS));
@@ -612,12 +615,14 @@ public:
 
         // test normal create and missing override flag
         {
-            env(ripple::test::jtx::hook(bob, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0),
+            env(ripple::test::jtx::hook(
+                    bob, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0),
                 M("First set = tesSUCCESS"),
                 HSFEE,
                 ter(tesSUCCESS));
 
-            env(ripple::test::jtx::hook(bob, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0),
+            env(ripple::test::jtx::hook(
+                    bob, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0),
                 M("Second set = tecREQUIRES_FLAG"),
                 HSFEE,
                 ter(tecREQUIRES_FLAG));
@@ -634,9 +639,8 @@ public:
         // // payload too large
         // {
         //     env(ripple::test::jtx::hook(alice, {{hsov1(long_wasm, 1)}}, 0),
-        //         M("If CreateCode is present, then it must be less than 64kib"),
-        //         HSFEE,
-        //         ter(temMALFORMED));
+        //         M("If CreateCode is present, then it must be less than
+        //         64kib"), HSFEE, ter(temMALFORMED));
         //     env.close();
         // }
 
@@ -713,8 +717,8 @@ public:
 
         // hook hash present
         {
-            Json::Value jv =
-                ripple::test::jtx::hook(alice, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0);
+            Json::Value jv = ripple::test::jtx::hook(
+                alice, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0);
             Json::Value iv = jv[jss::Hooks][0U];
             iv[jss::Hook][jss::HookHash] = to_string(uint256{beast::zero});
             jv[jss::Hooks][0U] = iv;
@@ -727,8 +731,8 @@ public:
 
         // correctly formed
         {
-            Json::Value jv =
-                ripple::test::jtx::hook(alice, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0);
+            Json::Value jv = ripple::test::jtx::hook(
+                alice, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0);
             env(jv, M("Normal accept"), HSFEE, ter(tesSUCCESS));
             env.close();
 
@@ -758,8 +762,8 @@ public:
 
         // add a second hook
         {
-            Json::Value jv =
-                ripple::test::jtx::hook(alice, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0);
+            Json::Value jv = ripple::test::jtx::hook(
+                alice, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0);
             Json::Value iv = jv[jss::Hooks][0U];
             jv[jss::Hooks][0U] = Json::Value{};
             jv[jss::Hooks][0U][jss::Hook] = Json::Value{};
@@ -797,8 +801,8 @@ public:
 
         // test override
         {
-            Json::Value jv =
-                ripple::test::jtx::hook(alice, {{hsov1(rollback_wasm, 1, HSDROPS)}}, 0);
+            Json::Value jv = ripple::test::jtx::hook(
+                alice, {{hsov1(rollback_wasm, 1, HSDROPS)}}, 0);
             jv[jss::Hooks][0U][jss::Hook][jss::Flags] = hsfOVERRIDE;
             env(jv, M("Rollback override"), HSFEE, ter(tesSUCCESS));
             env.close();
@@ -1428,7 +1432,8 @@ public:
         std::uint32_t const aliceSeq{env.seq(alice)};
         env.require(owners(alice, 10));
 
-        env(ripple::test::jtx::hook(alice, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0),
             HSFEE,
             ticket::use(aliceTicketSeq++),
             ter(tesSUCCESS));
@@ -1448,7 +1453,8 @@ public:
     //     auto const alice = Account{"alice"};
     //     env.fund(XRP(10000), alice);
 
-    //     env(ripple::test::jtx::hook(alice, {{hsov1(illegalfunc_wasm, 1)}}, 0),
+    //     env(ripple::test::jtx::hook(alice, {{hsov1(illegalfunc_wasm, 1)}},
+    //     0),
     //         M("Must only contain hook and cbak"),
     //         HSFEE,
     //         ter(temMALFORMED));
@@ -1466,7 +1472,8 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        env(ripple::test::jtx::hook(alice, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(accept_wasm, 1, HSDROPS)}}, 0),
             M("Install Accept Hook"),
             HSFEE);
         env.close();
@@ -1487,7 +1494,8 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        env(ripple::test::jtx::hook(alice, {{hsov1(rollback_wasm, 1, HSDROPS)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(rollback_wasm, 1, HSDROPS)}}, 0),
             M("Install Rollback Hook"),
             HSFEE);
         env.close();
@@ -1583,7 +1591,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_compare"),
                 HSFEE);
             env.close();
@@ -1875,7 +1884,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_divide"),
                 HSFEE);
             env.close();
@@ -1976,7 +1986,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_int"),
                 HSFEE);
             env.close();
@@ -2038,7 +2049,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_invert"),
                 HSFEE);
             env.close();
@@ -2083,7 +2095,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_log"),
                 HSFEE);
             env.close();
@@ -2251,7 +2264,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_mantissa"),
                 HSFEE);
             env.close();
@@ -2386,7 +2400,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_mulratio"),
                 HSFEE);
             env.close();
@@ -2781,7 +2796,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_multiply"),
                 HSFEE);
             env.close();
@@ -2834,7 +2850,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set otxn_field"),
             HSFEE);
         env.close();
@@ -2884,7 +2901,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_negate"),
                 HSFEE);
             env.close();
@@ -2914,7 +2932,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_one"),
                 HSFEE);
             env.close();
@@ -2957,7 +2976,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_root"),
                 HSFEE);
             env.close();
@@ -3022,7 +3042,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_set"),
                 HSFEE);
             env.close();
@@ -3186,7 +3207,8 @@ public:
                 }
             )[test.hook]"];
 
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set float_sign"),
                 HSFEE);
             env.close();
@@ -3233,7 +3255,8 @@ public:
             )[test.hook]"];
 
             // install the hook on alice
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set hook_account"),
                 HSFEE);
             env.close();
@@ -3254,8 +3277,9 @@ public:
                 BEAST_REQUIRE(hookExecutions.size() == 1);
 
                 // get the data in the return string of the extention
-                auto const tmpRet = hookExecutions[0].getFieldVL(sfHookReturnString);
-                
+                auto const tmpRet =
+                    hookExecutions[0].getFieldVL(sfHookReturnString);
+
                 // DA: TODO Fix `accept` and `rollback` and remove these lines
                 std::string tmpStr(tmpRet.begin(), tmpRet.end());
                 auto const tmpBlob = strUnHex(tmpStr);
@@ -3268,7 +3292,8 @@ public:
             }
 
             // install the same hook bob
-            env(ripple::test::jtx::hook(bob, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    bob, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set hook_account 2"),
                 HSFEE);
             env.close();
@@ -3295,7 +3320,8 @@ public:
                     auto const tmpRet =
                         hookExecutions[0].getFieldVL(sfHookReturnString);
 
-                    // DA: TODO Fix `accept` and `rollback` and remove these lines
+                    // DA: TODO Fix `accept` and `rollback` and remove these
+                    // lines
                     std::string tmpStr(tmpRet.begin(), tmpRet.end());
                     auto const tmpBlob = strUnHex(tmpStr);
                     Blob const retStr = Blob(tmpBlob->begin(), tmpBlob->end());
@@ -3311,7 +3337,8 @@ public:
                     auto const tmpRet =
                         hookExecutions[1].getFieldVL(sfHookReturnString);
 
-                    // DA: TODO Fix `accept` and `rollback` and remove these lines
+                    // DA: TODO Fix `accept` and `rollback` and remove these
+                    // lines
                     std::string tmpStr(tmpRet.begin(), tmpRet.end());
                     auto const tmpBlob = strUnHex(tmpStr);
                     Blob const retStr = Blob(tmpBlob->begin(), tmpBlob->end());
@@ -3340,7 +3367,6 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-
         TestHook hook = jswasm[R"[test.hook](
             const PREREQUISITE_NOT_MET = -9
             const ALREADY_SET = -8
@@ -3360,7 +3386,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set hook_again"),
             HSFEE);
         env.close();
@@ -3434,7 +3461,8 @@ public:
             )[test.hook]"];
 
             // install the hook on alice
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set hook_hash"),
                 HSFEE);
             env.close();
@@ -3495,7 +3523,8 @@ public:
             )[test.hook]"];
 
             // install a slightly different hook on bob
-            env(ripple::test::jtx::hook(bob, {{hsov1(hook2, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    bob, {{hsov1(hook2, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set hook_hash 2"),
                 HSFEE);
             env.close();
@@ -3879,7 +3908,12 @@ public:
 
         // install the hook on alice in all four spots
         env(ripple::test::jtx::hook(
-                alice, {{hsov1(hook, 1, HSDROPS), hsov1(hook, 1, HSDROPS), hsov1(hook, 1, HSDROPS), hsov1(hook, 1, HSDROPS)}}, 0),
+                alice,
+                {{hsov1(hook, 1, HSDROPS),
+                  hsov1(hook, 1, HSDROPS),
+                  hsov1(hook, 1, HSDROPS),
+                  hsov1(hook, 1, HSDROPS)}},
+                0),
             M("set hook_pos"),
             HSFEE,
             ter(tesSUCCESS));
@@ -4044,7 +4078,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set ledger_last_hash"),
             HSFEE);
         env.close();
@@ -4103,7 +4138,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set ledger_last_time"),
             HSFEE);
         env.close();
@@ -4183,7 +4219,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set ledger_nonce"),
             HSFEE);
         env.close();
@@ -4264,7 +4301,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set ledger_seq"),
             HSFEE);
         env.close();
@@ -4335,7 +4373,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set otxn_id"),
             HSFEE);
         env.close();
@@ -4388,7 +4427,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set otxn_slot"),
             HSFEE);
         env.close();
@@ -4427,7 +4467,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set otxn_type"),
             HSFEE);
         env.close();
@@ -4537,7 +4578,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set otxn_param"),
             HSFEE);
         env.close();
@@ -4600,7 +4642,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set otxn_json"),
             HSFEE);
         env.close();
@@ -4665,7 +4708,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set slot"),
             HSFEE);
         env.close();
@@ -4706,7 +4750,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set slot_clear"),
             HSFEE);
         env.close();
@@ -4750,7 +4795,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set slot_count"),
             HSFEE);
         env.close();
@@ -4796,7 +4842,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set slot_float"),
             HSFEE);
         env.close();
@@ -4880,7 +4927,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set slot_set"),
             HSFEE);
         env.close();
@@ -4929,7 +4977,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set slot_size"),
             HSFEE);
         env.close();
@@ -5011,7 +5060,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set slot_subarray"),
             HSFEE);
         env.close();
@@ -5102,7 +5152,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set slot_subfield"),
             HSFEE);
         env.close();
@@ -5176,7 +5227,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set slot_type"),
             HSFEE);
         env.close();
@@ -5251,7 +5303,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set slot_json"),
             HSFEE);
         env.close();
@@ -5307,7 +5360,8 @@ public:
             )[test.hook]"];
 
             // install the hook on alice
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set state"),
                 HSFEE);
             env.close();
@@ -5350,7 +5404,8 @@ public:
             )[test.hook]"];
 
             // install the hook on alice
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set state 2"),
                 HSFEE);
             env.close();
@@ -5396,7 +5451,8 @@ public:
             )[test.hook]"];
 
             // install the hook on alice
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set state_foreign"),
                 HSFEE);
             env.close();
@@ -5447,7 +5503,8 @@ public:
             )[test.hook]"];
 
             // install the hook on bob
-            env(ripple::test::jtx::hook(bob, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    bob, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set state_foreign 2"),
                 HSFEE);
             env.close();
@@ -5920,7 +5977,6 @@ public:
         //     beast::severities::kTrace
         // };
 
-
         auto const bob = Account{"bob"};
         auto const alice = Account{"alice"};
         auto const cho = Account{"cho"};
@@ -6015,7 +6071,8 @@ public:
             )[test.hook]"];
 
             // install the hook on alice
-            env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set state_set 1"),
                 HSFEE);
             env.close();
@@ -6143,7 +6200,10 @@ public:
             // install the hook on alice
             env(ripple::test::jtx::hook(
                     alice,
-                    {{{hsov1(hook, 1, HSDROPS, overrideFlag)}, {}, {}, {hsov1(hook2, 1, HSDROPS, 0)}}},
+                    {{{hsov1(hook, 1, HSDROPS, overrideFlag)},
+                      {},
+                      {},
+                      {hsov1(hook2, 1, HSDROPS, 0)}}},
                     0),
                 M("set state_set 2"),
                 HSFEE);
@@ -6182,7 +6242,8 @@ public:
             )[test.hook]"];
 
             // install the hook on bob
-            env(ripple::test::jtx::hook(bob, {{hsov1(hook3, 1, HSDROPS, overrideFlag)}}, 0),
+            env(ripple::test::jtx::hook(
+                    bob, {{hsov1(hook3, 1, HSDROPS, overrideFlag)}}, 0),
                 M("set state_set 3"),
                 HSFEE);
             env.close();
@@ -6257,7 +6318,10 @@ public:
             // install the hook on alice, deleting the other hook
             env(ripple::test::jtx::hook(
                     alice,
-                    {{{hsov1(hook, 1, HSDROPS, overrideFlag)}, {}, {}, {hso_delete()}}},
+                    {{{hsov1(hook, 1, HSDROPS, overrideFlag)},
+                      {},
+                      {},
+                      {hso_delete()}}},
                     0),
                 M("set state_set 4"),
                 HSFEE);
@@ -6304,7 +6368,9 @@ public:
             // put on a different hook
 
             env(ripple::test::jtx::hook(
-                    alice, {{hsov1(rollback_wasm, 1, HSDROPS, overrideFlag)}}, 0),
+                    alice,
+                    {{hsov1(rollback_wasm, 1, HSDROPS, overrideFlag)}},
+                    0),
                 M("set state_set rollback2"),
                 HSFEE);
             env.close();
@@ -6463,7 +6529,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set trace"),
             HSFEE);
         env.close();
@@ -7016,7 +7083,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set util_accid"),
             HSFEE);
         env.close();
@@ -7396,7 +7464,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set util_keylet"),
             HSFEE);
         env.close();
@@ -8318,7 +8387,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set util_raddr"),
             HSFEE);
         env.close();
@@ -8933,7 +9003,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set util_sha512h"),
             HSFEE);
         env.close();
@@ -9010,7 +9081,8 @@ public:
         )[test.hook]"];
 
         // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
             M("set util_verify"),
             HSFEE);
         env.close();
@@ -9053,7 +9125,7 @@ public:
         // test_etxn_fee_base(features);  //
         // test_etxn_nonce(features);     // C ONLY
         // test_etxn_reserve(features);   //
-        
+
         // test_fee_base(features);       //
         test_otxn_field(features);  //
         // test_ledger_keylet(features);  //
@@ -9091,13 +9163,16 @@ public:
         // test_meta_slot(features);  //
         // test_xpop_slot(features);  //
 
-        test_otxn_id(features);     //
-        test_otxn_slot(features);   //
-        // test_otxn_type(features);   // tequ: Assertion failed: (list_empty(&rt->gc_obj_list))
+        test_otxn_id(features);    //
+        test_otxn_slot(features);  //
+        // test_otxn_type(features);   // tequ: Assertion failed:
+        // (list_empty(&rt->gc_obj_list))
         test_otxn_param(features);  //
-        // test_otxn_json(features);  // JS ONLY // tequ: Assertion failed: (list_empty(&rt->gc_obj_list))
+        // test_otxn_json(features);  // JS ONLY // tequ: Assertion failed:
+        // (list_empty(&rt->gc_obj_list))
 
-        // test_slot(features);           // tequ: Assertion failed: (list_empty(&rt->gc_obj_list))
+        // test_slot(features);           // tequ: Assertion failed:
+        // (list_empty(&rt->gc_obj_list))
         test_slot_clear(features);     //
         test_slot_count(features);     //
         test_slot_float(features);     //
@@ -9108,11 +9183,11 @@ public:
         test_slot_type(features);      //
         test_slot_json(features);      // JS ONLY
 
-        test_state(features);                  //
-        test_state_foreign(features);          //
-        test_state_foreign_set(features);      //
+        test_state(features);              //
+        test_state_foreign(features);      //
+        test_state_foreign_set(features);  //
         // test_state_foreign_set_max(features);  // Not Version Specific
-        test_state_set(features);              //
+        test_state_set(features);  //
 
         // test_sto_emplace(features);   //
         // test_sto_erase(features);     //
@@ -9122,7 +9197,7 @@ public:
         // test_sto_to_json(features);  // JS ONLY
         // test_sto_from_json(features);  // JS ONLY
 
-        test_trace(features);        //
+        test_trace(features);  //
         // test_trace_float(features);  // C ONLY
         // test_trace_num(features);    // C ONLY
 

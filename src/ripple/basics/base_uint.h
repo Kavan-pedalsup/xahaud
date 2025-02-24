@@ -568,7 +568,7 @@ operator<=>(base_uint<Bits, Tag> const& lhs, base_uint<Bits, Tag> const& rhs)
         return std::strong_ordering::equivalent;
 
     return (*ret.first > *ret.second) ? std::strong_ordering::greater
-                                        : std::strong_ordering::less;
+                                      : std::strong_ordering::less;
 }
 #else
 template <std::size_t Bits, class Tag>

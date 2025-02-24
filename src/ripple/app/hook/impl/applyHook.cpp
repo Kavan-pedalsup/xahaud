@@ -9,6 +9,10 @@
 #include <ripple/app/tx/impl/details/NFTokenUtils.h>
 #include <ripple/basics/Log.h>
 #include <ripple/basics/Slice.h>
+#include <ripple/json/json_reader.h>
+#include <ripple/json/json_value.h>
+#include <ripple/json/json_writer.h>
+#include <ripple/json/to_string.h>
 #include <ripple/protocol/ErrorCodes.h>
 #include <ripple/protocol/TxFlags.h>
 #include <ripple/protocol/st.h>
@@ -16,52 +20,57 @@
 #include <boost/multiprecision/cpp_dec_float.hpp>
 #include <any>
 #include <cfenv>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <quickjs/quickjs.h>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 #include <wasmedge/wasmedge.h>
-#include <quickjs/quickjs.h>
-#include <type_traits>
-#include <cstdint>
-#include <limits>
-#include <tuple>
-#include <ripple/json/json_value.h>
-#include <ripple/json/json_writer.h>
-#include <ripple/json/json_reader.h>
-#include <ripple/json/to_string.h>
 
 using namespace ripple;
 // check if any std::optionals are missing (any !has_value())
 template <typename... Optionals>
-inline bool any_missing(const Optionals&... optionals) {
+inline bool
+any_missing(const Optionals&... optionals)
+{
     return ((!optionals.has_value() || ...));
 }
 
 // check if all optional ints are within uint32_t range
 template <typename... OptionalInts>
-inline bool fits_u32(const OptionalInts&... optionals) {
+inline bool
+fits_u32(const OptionalInts&... optionals)
+{
     constexpr uint32_t uint32_max = std::numeric_limits<uint32_t>::max();
-    return ((optionals.has_value() && 
-             *optionals >= 0 &&
-             *optionals <= uint32_max) && ...);
+    return (
+        (optionals.has_value() && *optionals >= 0 &&
+         *optionals <= uint32_max) &&
+        ...);
 }
 
 // check if all optional ints are within int32_t range
 template <typename... OptionalInts>
-inline bool fits_i32(const OptionalInts&... optionals) {
+inline bool
+fits_i32(const OptionalInts&... optionals)
+{
     constexpr int32_t int32_max = std::numeric_limits<int32_t>::max();
     constexpr int32_t int32_min = std::numeric_limits<int32_t>::min();
-    return ((optionals.has_value() && 
-             *optionals >= int32_min &&
-             *optionals <= int32_max) && ...);
+    return (
+        (optionals.has_value() && *optionals >= int32_min &&
+         *optionals <= int32_max) &&
+        ...);
 }
-
 
 // execute FromJSInt on more than one variable at the same time
 template <typename... Args>
-auto FromJSInts(JSContext* ctx, Args... args) {
+auto
+FromJSInts(JSContext* ctx, Args... args)
+{
     return std::make_tuple(FromJSInt(ctx, args)...);
 }
 
@@ -809,15 +818,14 @@ using namespace hook_float;
 // 0, "" = empty string
 // > 0, nullopt = longer than maxlen
 // > 0, populated = normal string
-inline
-std::pair<size_t, std::optional<std::string>>
+inline std::pair<size_t, std::optional<std::string>>
 FromJSString(JSContext* ctx, JSValueConst& v, int max_len)
 {
     std::optional<std::string> out;
-    size_t len { 0 };
+    size_t len{0};
     if (!JS_IsString(v))
         return {len, out};
-    
+
     const char* cstr = JS_ToCStringLen(ctx, &len, v);
     if (len > max_len)
         return {len, out};
@@ -827,8 +835,7 @@ FromJSString(JSContext* ctx, JSValueConst& v, int max_len)
     return {len, out};
 }
 
-inline
-std::optional<int64_t>
+inline std::optional<int64_t>
 FromJSInt(JSContext* ctx, JSValueConst& v)
 {
     if (JS_IsNumber(v))
@@ -837,7 +844,7 @@ FromJSInt(JSContext* ctx, JSValueConst& v)
         JS_ToInt64(ctx, &out, v);
         return out;
     }
-    
+
     if (JS_IsBigInt(ctx, v))
     {
         int64_t out = 0;
@@ -846,20 +853,17 @@ FromJSInt(JSContext* ctx, JSValueConst& v)
     }
 
     // if the value is a string, then try to parse it,
-    // mindful and tolerant of unary minus, whitespace, commas, underscores, alternative case,
-    // decimal point and bignum notation
+    // mindful and tolerant of unary minus, whitespace, commas, underscores,
+    // alternative case, decimal point and bignum notation
     if (JS_IsString(v))
     {
         auto [len, s] = FromJSString(ctx, v, 20);
 
         if (!s.has_value() || len <= 0)
             return {};
-    
-        char buffer[21] = {
-            0,0,0,0,0,
-            0,0,0,0,0,
-            0,0,0,0,0,
-            0,0,0,0,0,0};
+
+        char buffer[21] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                           0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
         char* out = buffer;
 
@@ -868,7 +872,8 @@ FromJSInt(JSContext* ctx, JSValueConst& v)
         const char* end = ptr + len;
 
         // Strip leading whitespace
-        while (ptr < end && (*ptr == ' ' || *ptr == '\t' || *ptr == '\n' || *ptr == '\r'))
+        while (ptr < end &&
+               (*ptr == ' ' || *ptr == '\t' || *ptr == '\n' || *ptr == '\r'))
             ++ptr;
 
         if (ptr == end)
@@ -880,7 +885,9 @@ FromJSInt(JSContext* ctx, JSValueConst& v)
             *out++ = *ptr++;
 
         // Check for hex prefix
-        bool isHex = (ptr + 1 < end && ptr[0] == '0' && (ptr[1] == 'x' || ptr[1] == 'X'));
+        bool isHex =
+            (ptr + 1 < end && ptr[0] == '0' &&
+             (ptr[1] == 'x' || ptr[1] == 'X'));
         if (isHex)
         {
             *out++ = *ptr++;
@@ -890,11 +897,13 @@ FromJSInt(JSContext* ctx, JSValueConst& v)
         bool hasDecimalPoint = false;
 
         // Character validation loop
-        while (ptr < end) {
+        while (ptr < end)
+        {
             char c = *ptr;
             if (c >= '0' && c <= '9')
                 *out++ = *ptr++;
-            else if (isHex && ((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')))
+            else if (
+                isHex && ((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')))
                 *out++ = *ptr++;
             else if (c == '_' || c == ',')
             {
@@ -902,7 +911,7 @@ FromJSInt(JSContext* ctx, JSValueConst& v)
                     return {};
                 ++ptr;
             }
-            else if (c == 'n' && ptr + 1 == end) // Bignum suffix
+            else if (c == 'n' && ptr + 1 == end)  // Bignum suffix
                 ++ptr;
             else if (c == '.')
             {
@@ -920,10 +929,13 @@ FromJSInt(JSContext* ctx, JSValueConst& v)
         }
 
         // truncate decimal if any
-        for (;hasDecimalPoint && ptr < end && *ptr >= '0' && *ptr <= '9'; ++ptr);
+        for (; hasDecimalPoint && ptr < end && *ptr >= '0' && *ptr <= '9';
+             ++ptr)
+            ;
 
         // Strip trailing whitespace if any
-        while (ptr < end && (*ptr == ' ' || *ptr == '\t' || *ptr == '\n' || *ptr == '\r'))
+        while (ptr < end &&
+               (*ptr == ' ' || *ptr == '\t' || *ptr == '\n' || *ptr == '\r'))
             ++ptr;
 
         // if the value wasn't fully parsed it's not a valid number
@@ -940,15 +952,13 @@ FromJSInt(JSContext* ctx, JSValueConst& v)
     }
 
     return {};
-
 }
 
 #define returnJS(X) return JS_NewInt64(ctx, X)
 #define returnJSXFL(X) return JS_NewBigInt64(ctx, X)
 
 template <typename T>
-inline
-std::optional<JSValue>
+inline std::optional<JSValue>
 ToJSIntArray(JSContext* ctx, T const& vec)
 {
     if (vec.size() > 65535)
@@ -959,15 +969,14 @@ ToJSIntArray(JSContext* ctx, T const& vec)
         return {};
 
     int i = 0;
-    for (auto& x: vec)
-        JS_DefinePropertyValueUint32(ctx, out, i++, JS_NewInt32(ctx, x), JS_PROP_C_W_E);
+    for (auto& x : vec)
+        JS_DefinePropertyValueUint32(
+            ctx, out, i++, JS_NewInt32(ctx, x), JS_PROP_C_W_E);
 
     return out;
 }
 
-
-inline
-JSValue
+inline JSValue
 ToJSHash(JSContext* ctx, uint256 const hash_in)
 {
     std::vector<uint8_t> hash{hash_in.data(), hash_in.data() + 32};
@@ -977,9 +986,7 @@ ToJSHash(JSContext* ctx, uint256 const hash_in)
     return *out;
 };
 
-
-inline
-std::optional<std::vector<uint8_t>>
+inline std::optional<std::vector<uint8_t>>
 FromJSIntArrayOrHexString(JSContext* ctx, JSValueConst& v, int max_len)
 {
     std::vector<uint8_t> out;
@@ -1006,7 +1013,7 @@ FromJSIntArrayOrHexString(JSContext* ctx, JSValueConst& v, int max_len)
             JSValue x = JS_GetPropertyInt64(ctx, v, i);
             if (!JS_IsNumber(x))
                 return {};
-            
+
             int64_t byte = 0;
             JS_ToInt64(ctx, &byte, x);
             if (byte > 256 || byte < 0)
@@ -1022,14 +1029,12 @@ FromJSIntArrayOrHexString(JSContext* ctx, JSValueConst& v, int max_len)
     {
         auto [len, str] = FromJSString(ctx, v, max_len << 1U);
 
-
         // std::cout << "Debug FromJSIAOHS: len=" << len << ", str=";
-        
+
         // if (str)
         //     std::cout << "`" << *str << "`\n";
         // else
         //     std::cout << "<no string>\n";
-
 
         if (!str)
             return {};
@@ -1043,8 +1048,7 @@ FromJSIntArrayOrHexString(JSContext* ctx, JSValueConst& v, int max_len)
         if (len != str->size())
             return {};
 
-        auto const parseHexNibble = [](uint8_t a) -> std::optional<uint8_t>
-        {
+        auto const parseHexNibble = [](uint8_t a) -> std::optional<uint8_t> {
             if (a >= '0' && a <= '9')
                 return a - '0';
 
@@ -1069,7 +1073,7 @@ FromJSIntArrayOrHexString(JSContext* ctx, JSValueConst& v, int max_len)
             out[i++] = *first;
         }
 
-        for (;i < len && *cstr != '\0'; ++i)
+        for (; i < len && *cstr != '\0'; ++i)
         {
             auto a = parseHexNibble(*cstr++);
             auto b = parseHexNibble(*cstr++);
@@ -1085,7 +1089,6 @@ FromJSIntArrayOrHexString(JSContext* ctx, JSValueConst& v, int max_len)
 
     return {};
 }
-
 
 inline int32_t
 no_free_slots(hook::HookContext& hookCtx)
@@ -1203,11 +1206,9 @@ serialize_keylet(
     return 34;
 }
 
-inline
-std::vector<uint8_t>
+inline std::vector<uint8_t>
 serialize_keylet_vec(ripple::Keylet const& kl)
 {
-
     std::vector<uint8_t> out;
     out.reserve(34);
 
@@ -1586,44 +1587,48 @@ hook::apply(
 
     switch (hookApiVersion)
     {
-        case hook_api::CodeType::WASM:
-        {
+        case hook_api::CodeType::WASM: {
             HookExecutorWasm executor{hookCtx};
 
             executor.execute(
                 bytecode.data(),
-                (size_t)bytecode.size(), isCallback, hookArgument, 0 /* instructioin limit not used in wasm */, j);
+                (size_t)bytecode.size(),
+                isCallback,
+                hookArgument,
+                0 /* instructioin limit not used in wasm */,
+                j);
 
             break;
         }
 
-        case hook_api::CodeType::JS:
-        {
-
+        case hook_api::CodeType::JS: {
             // RHUPTO: populate hookArgument, bytecode, perform execution
             HookExecutorJS executor{hookCtx};
 
             executor.execute(
-                bytecode.data(), (size_t)bytecode.size(), isCallback, hookArgument, instructionLimit, j);
+                bytecode.data(),
+                (size_t)bytecode.size(),
+                isCallback,
+                hookArgument,
+                instructionLimit,
+                j);
 
             break;
         }
 
-        default:
-        {
+        default: {
             hookCtx.result.exitType = hook_api::ExitType::LEDGER_ERROR;
             return hookCtx.result;
         }
-
     }
-    
+
     JLOG(j.trace()) << "HookInfo[" << HC_ACC() << "]: "
-                << "ApiVersion: " << hookApiVersion << " "
-                << (hookCtx.result.exitType == hook_api::ExitType::ROLLBACK
-                        ? "ROLLBACK"
-                        : "ACCEPT")
-                << " RS: '" << hookCtx.result.exitReason.c_str()
-                << "' RC: " << hookCtx.result.exitCode;
+                    << "ApiVersion: " << hookApiVersion << " "
+                    << (hookCtx.result.exitType == hook_api::ExitType::ROLLBACK
+                            ? "ROLLBACK"
+                            : "ACCEPT")
+                    << " RS: '" << hookCtx.result.exitReason.c_str()
+                    << "' RC: " << hookCtx.result.exitCode;
     return hookCtx.result;
 }
 
@@ -1636,8 +1641,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_len,
     int64_t number)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx on
-                   // current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx
+                        // on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
@@ -1669,21 +1674,15 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    int64_t,
-    trace,
-    JSValue msg,
-    JSValue data,
-    JSValue as_hex)
+DEFINE_JS_FUNCTION(int64_t, trace, JSValue msg, JSValue data, JSValue as_hex)
 {
-
     JS_HOOK_SETUP();
 
     std::string out;
     if (JS_IsString(msg))
     {
-        // RH TODO: check if there's a way to ensure the string isn't arbitrarily long before
-        // calling ToCStringLen
+        // RH TODO: check if there's a way to ensure the string isn't
+        // arbitrarily long before calling ToCStringLen
         size_t len;
         const char* cstr = JS_ToCStringLen(ctx, &len, msg);
         if (len > 256)
@@ -1692,12 +1691,11 @@ DEFINE_JS_FUNCTION(
         JS_FreeCString(ctx, cstr);
     }
 
-
     out += ": ";
 
     if (JS_IsBool(as_hex) && !!JS_ToBool(ctx, as_hex))
     {
-        auto in = FromJSIntArrayOrHexString(ctx, data, 64*1024);
+        auto in = FromJSIntArrayOrHexString(ctx, data, 64 * 1024);
         if (in.has_value())
         {
             if (in->size() > 1024)
@@ -1749,13 +1747,11 @@ DEFINE_JS_FUNCTION(
         JS_FreeCString(ctx, cstr);
     }
 
-    
     if (out.size() > 0)
-        j.trace() << "HookTrace[" << HC_ACC() << "]: "
-                  << out;
+        j.trace() << "HookTrace[" << HC_ACC() << "]: " << out;
 
     return JS_NewInt64(ctx, 0);
-//    return JS_NewString(ctx, out.c_str());
+    //    return JS_NewString(ctx, out.c_str());
 
     JS_HOOK_TEARDOWN();
 }
@@ -1769,8 +1765,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t dread_len,
     uint32_t as_hex)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx on
-                   // current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx
+                        // on current stack
     if (NOT_IN_BOUNDS(mread_ptr, mread_len, memory_length) ||
         NOT_IN_BOUNDS(dread_ptr, dread_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -2045,32 +2041,28 @@ DEFINE_WASM_FUNCTION(
         0);
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    state_set,
-    JSValue data,
-    JSValue key)
+DEFINE_JS_FUNCTION(JSValue, state_set, JSValue data, JSValue key)
 {
     JS_HOOK_SETUP();
 
-    JSValueConst argv2[] = {
-        argv[0],
-        argv[1],
-        JS_UNDEFINED,
-        JS_UNDEFINED
-    };
-    
+    JSValueConst argv2[] = {argv[0], argv[1], JS_UNDEFINED, JS_UNDEFINED};
+
     return FORWARD_JS_FUNCTION_CALL(state_foreign_set, 4, argv2);
 
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __state_foreign_set(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        Blob const& data, uint256 const& key, uint256 const& ns, AccountID const& acc)
+inline int64_t
+__state_foreign_set(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    Blob const& data,
+    uint256 const& key,
+    uint256 const& ns,
+    AccountID const& acc)
 {
-    int64_t aread_len = acc.size();    
+    int64_t aread_len = acc.size();
     int64_t read_len = data.size();
 
     // local modifications are always allowed
@@ -2134,8 +2126,9 @@ int64_t __state_foreign_set(
         else
         {
             // fetch the hook definition
-            auto const def = applyCtx.view().read(ripple::keylet::hookDefinition(
-                hookObj.getFieldH256(sfHookHash)));
+            auto const def =
+                applyCtx.view().read(ripple::keylet::hookDefinition(
+                    hookObj.getFieldH256(sfHookHash)));
             if (!def)  // should never happen except in a rare race condition
                 continue;
             if (def->getFieldH256(sfHookNamespace) != ns)
@@ -2174,8 +2167,6 @@ int64_t __state_foreign_set(
         return ret;
 
     return read_len;
-
-
 }
 // update or create a hook state object
 // read_ptr = data to set, kread_ptr = key
@@ -2198,8 +2189,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t aread_ptr,
     uint32_t aread_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (read_ptr == 0 && read_len == 0)
     {
@@ -2261,7 +2252,6 @@ DEFINE_WASM_FUNCTION(
 
     return __state_foreign_set(hookCtx, applyCtx, j, data, *key, ns, acc);
 
-
     WASM_HOOK_TEARDOWN();
 }
 
@@ -2275,11 +2265,12 @@ DEFINE_JS_FUNCTION(
 {
     JS_HOOK_SETUP();
 
-    auto val = FromJSIntArrayOrHexString(ctx, raw_val, hook::maxHookStateDataSize());
+    auto val =
+        FromJSIntArrayOrHexString(ctx, raw_val, hook::maxHookStateDataSize());
     auto key_in = FromJSIntArrayOrHexString(ctx, raw_key, 32);
-    auto ns_in  = FromJSIntArrayOrHexString(ctx, raw_ns, 32);
+    auto ns_in = FromJSIntArrayOrHexString(ctx, raw_ns, 32);
     auto acc_in = FromJSIntArrayOrHexString(ctx, raw_acc, 20);
-    
+
     // if (!val.has_value() && !JS_IsUndefined(raw_val))
     //     returnJS(INVALID_ARGUMENT);
 
@@ -2300,13 +2291,11 @@ DEFINE_JS_FUNCTION(
     if (acc_in.has_value() && acc_in->size() != 20)
         returnJS(INVALID_ARGUMENT);
 
-    uint256 ns = ns_in.has_value()
-        ? uint256::fromVoid(ns_in->data())
-        : hookCtx.result.hookNamespace;
+    uint256 ns = ns_in.has_value() ? uint256::fromVoid(ns_in->data())
+                                   : hookCtx.result.hookNamespace;
 
-    AccountID acc = acc_in.has_value()
-        ? AccountID::fromVoid(acc_in->data())
-        : hookCtx.result.account;
+    AccountID acc = acc_in.has_value() ? AccountID::fromVoid(acc_in->data())
+                                       : hookCtx.result.account;
 
     auto key = make_state_key(
         std::string_view{(const char*)(key_in->data()), key_in->size()});
@@ -2317,16 +2306,15 @@ DEFINE_JS_FUNCTION(
 
     if (!key)
         returnJS(INTERNAL_ERROR);
-    
+
     ripple::Blob data;
     if (val.has_value())
         data = ripple::Blob(val->data(), val->data() + val->size());
-    
+
     returnJS(__state_foreign_set(hookCtx, applyCtx, j, data, *key, ns, acc));
 
     JS_HOOK_TEARDOWN();
 }
-    
 
 ripple::TER
 hook::finalizeHookState(
@@ -2622,8 +2610,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t aread_ptr,
     uint32_t aread_len)  // account
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     bool is_foreign = false;
     if (aread_ptr == 0)
@@ -2665,8 +2653,8 @@ DEFINE_WASM_FUNCTION(
 
     uint256 ns = nread_len == 0
         ? hookCtx.result.hookNamespace
-        
-: ripple::base_uint<256>::fromVoid(memory + nread_ptr);
+
+        : ripple::base_uint<256>::fromVoid(memory + nread_ptr);
 
     ripple::AccountID acc = is_foreign ? AccountID::fromVoid(memory + aread_ptr)
                                        : hookCtx.result.account;
@@ -2724,22 +2712,20 @@ DEFINE_JS_FUNCTION(
     if (!key_in.has_value() || key_in->empty())
         returnJS(INVALID_ARGUMENT);
 
-    // RH TODO: enhance this check to only allow undefined or false or array or hexstring
-    
+    // RH TODO: enhance this check to only allow undefined or false or array or
+    // hexstring
+
     if (ns_in.has_value() && ns_in->size() != 32)
         returnJS(INVALID_ARGUMENT);
 
     if (accid_in.has_value() && accid_in->size() != 20)
         returnJS(INVALID_ARGUMENT);
 
-    uint256 ns = ns_in.has_value()
-        ? uint256::fromVoid(ns_in->data())
-        : hookCtx.result.hookNamespace;
+    uint256 ns = ns_in.has_value() ? uint256::fromVoid(ns_in->data())
+                                   : hookCtx.result.hookNamespace;
 
-    AccountID acc = accid_in.has_value()
-        ? AccountID::fromVoid(accid_in->data())
-        : hookCtx.result.account;
-        
+    AccountID acc = accid_in.has_value() ? AccountID::fromVoid(accid_in->data())
+                                         : hookCtx.result.account;
 
     auto key = make_state_key(
         std::string_view{(const char*)(key_in->data()), key_in->size()});
@@ -2753,7 +2739,7 @@ DEFINE_JS_FUNCTION(
     {
         auto const& cacheEntry = cacheEntryLookup->get();
 
-        auto out = ToJSIntArray(ctx,  cacheEntry.second);
+        auto out = ToJSIntArray(ctx, cacheEntry.second);
 
         if (!out)
             returnJS(INTERNAL_ERROR);
@@ -2771,7 +2757,7 @@ DEFINE_JS_FUNCTION(
     // it exists add it to cache and return it
     if (set_state_cache(hookCtx, acc, ns, *key, b, false) < 0)
         returnJS(INTERNAL_ERROR);  // should never happen
-        
+
     auto out = ToJSIntArray(ctx, b);
 
     if (!out)
@@ -2783,19 +2769,12 @@ DEFINE_JS_FUNCTION(
 }
 
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */
-DEFINE_JS_FUNCTION(
-    JSValue,
-    state,
-    JSValue key)
+DEFINE_JS_FUNCTION(JSValue, state, JSValue key)
 {
     JS_HOOK_SETUP();
 
-    JSValueConst argv2[] = {
-        argv[0],
-        JS_UNDEFINED,
-        JS_UNDEFINED
-    };
-    
+    JSValueConst argv2[] = {argv[0], JS_UNDEFINED, JS_UNDEFINED};
+
     return FORWARD_JS_FUNCTION_CALL(state_foreign, 3, argv2);
 
     JS_HOOK_TEARDOWN();
@@ -2815,16 +2794,12 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    int64_t,
-    accept,
-    JSValue error_msg,
-    JSValue error_code)
+DEFINE_JS_FUNCTION(int64_t, accept, JSValue error_msg, JSValue error_code)
 {
     JS_HOOK_SETUP();
     HOOK_EXIT_JS(error_msg, error_code, hook_api::ExitType::ACCEPT);
     JS_HOOK_TEARDOWN();
-} 
+}
 
 // Cause the originating transaction to be rejected, discard state changes and
 // discard emitted tx, exit hook
@@ -2840,16 +2815,12 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    int64_t,
-    rollback,
-    JSValue error_msg,
-    JSValue error_code)
+DEFINE_JS_FUNCTION(int64_t, rollback, JSValue error_msg, JSValue error_code)
 {
     JS_HOOK_SETUP();
     HOOK_EXIT_JS(error_msg, error_code, hook_api::ExitType::ROLLBACK);
     JS_HOOK_TEARDOWN();
-} 
+}
 
 // Write the TxnID of the originating transaction into the write_ptr
 DEFINE_WASM_FUNCTION(
@@ -2859,8 +2830,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t write_len,
     uint32_t flags)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     auto const& txID =
         (hookCtx.emitFailure && !flags
@@ -2885,17 +2856,14 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    otxn_id,
-    JSValue flags_in)
+DEFINE_JS_FUNCTION(JSValue, otxn_id, JSValue flags_in)
 {
     JS_HOOK_SETUP();
 
     int64_t flags = 0;
-    
+
     if (JS_IsNumber(flags_in))
-      JS_ToInt64(ctx, &flags, flags_in);
+        JS_ToInt64(ctx, &flags, flags_in);
 
     auto const& txID =
         (hookCtx.emitFailure && !flags
@@ -2915,8 +2883,8 @@ DEFINE_JS_FUNCTION(
 // Return the tt (Transaction Type) numeric code of the originating transaction
 DEFINE_WASM_FUNCNARG(int64_t, otxn_type)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (hookCtx.emitFailure)
         return safe_cast<TxType>(
@@ -2927,12 +2895,10 @@ DEFINE_WASM_FUNCNARG(int64_t, otxn_type)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCNARG(
-    JSValue,
-    otxn_type)
+DEFINE_JS_FUNCNARG(JSValue, otxn_type)
 {
     JS_HOOK_SETUP();
-    
+
     if (hookCtx.emitFailure)
         returnJS(safe_cast<TxType>(
             hookCtx.emitFailure->getFieldU16(sfTransactionType)));
@@ -2942,10 +2908,12 @@ DEFINE_JS_FUNCNARG(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __otxn_slot(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint32_t slot_into)
+inline int64_t
+__otxn_slot(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint32_t slot_into)
 {
     if (slot_into > hook_api::max_slots)
         return INVALID_ARGUMENT;
@@ -2976,21 +2944,18 @@ int64_t __otxn_slot(
 
 DEFINE_WASM_FUNCTION(int64_t, otxn_slot, uint32_t slot_into)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     return __otxn_slot(hookCtx, applyCtx, j, slot_into);
 
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    otxn_slot,
-    JSValue slot_into)
+DEFINE_JS_FUNCTION(JSValue, otxn_slot, JSValue slot_into)
 {
     JS_HOOK_SETUP();
-    
+
     auto si = FromJSInt(ctx, slot_into);
     if (!si.has_value() || *si > 0xFFFFFFFFULL)
         returnJS(INVALID_ARGUMENT);
@@ -3001,9 +2966,11 @@ DEFINE_JS_FUNCTION(
 }
 
 // Compute the burden of an emitted transaction based on a number of factors
-inline
-int64_t __otxn_burden(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j)
+inline int64_t
+__otxn_burden(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j)
 {
     if (hookCtx.burden)
         return hookCtx.burden;
@@ -3032,9 +2999,11 @@ int64_t __otxn_burden(
     return (int64_t)(burden);
 }
 
-inline
-int64_t __etxn_burden(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j)
+inline int64_t
+__etxn_burden(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j)
 {
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
@@ -3055,8 +3024,8 @@ int64_t __etxn_burden(
 // hook invocation
 DEFINE_WASM_FUNCNARG(int64_t, otxn_burden)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     return __otxn_burden(hookCtx, applyCtx, j);
 
@@ -3075,9 +3044,11 @@ DEFINE_JS_FUNCNARG(JSValue, otxn_burden)
 // Return the generation of the originating transaction... this will be 1 unless
 // the originating transaction was itself an emitted transaction from a previous
 // hook invocation
-inline
-int64_t __otxn_generation(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j)
+inline int64_t
+__otxn_generation(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j)
 {
     // cache the result as it will not change for this hook execution
     if (hookCtx.generation)
@@ -3105,10 +3076,9 @@ int64_t __otxn_generation(
 
 DEFINE_WASM_FUNCNARG(int64_t, otxn_generation)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
-    
     return __otxn_generation(hookCtx, applyCtx, j);
 
     WASM_HOOK_TEARDOWN();
@@ -3117,16 +3087,18 @@ DEFINE_WASM_FUNCNARG(int64_t, otxn_generation)
 DEFINE_JS_FUNCNARG(JSValue, otxn_generation)
 {
     JS_HOOK_SETUP();
-    
+
     returnJS(__otxn_generation(hookCtx, applyCtx, j));
 
     JS_HOOK_TEARDOWN();
 }
 
 // Return the generation of a hypothetically emitted transaction from this hook
-inline
-int64_t __etxn_generation(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j)
+inline int64_t
+__etxn_generation(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j)
 {
     return __otxn_generation(hookCtx, applyCtx, j) + 1;
 }
@@ -3136,13 +3108,11 @@ DEFINE_WASM_FUNCNARG(int64_t, etxn_generation)
     WASM_HOOK_SETUP();
 
     return __etxn_generation(hookCtx, applyCtx, j);
-    
+
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCNARG(
-    JSValue,
-    etxn_generation)
+DEFINE_JS_FUNCNARG(JSValue, etxn_generation)
 {
     JS_HOOK_SETUP();
 
@@ -3191,9 +3161,7 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCNARG(
-    JSValue,
-    ledger_last_hash)
+DEFINE_JS_FUNCNARG(JSValue, ledger_last_hash)
 {
     JS_HOOK_SETUP();
 
@@ -3201,7 +3169,6 @@ DEFINE_JS_FUNCNARG(
 
     JS_HOOK_TEARDOWN();
 }
-    
 
 DEFINE_WASM_FUNCNARG(int64_t, ledger_last_time)
 {
@@ -3219,8 +3186,8 @@ DEFINE_JS_FUNCNARG(JSValue, ledger_last_time)
     JS_HOOK_SETUP();
 
     returnJS(std::chrono::duration_cast<std::chrono::seconds>(
-               view.info().parentCloseTime.time_since_epoch())
-        .count());
+                 view.info().parentCloseTime.time_since_epoch())
+                 .count());
 
     JS_HOOK_TEARDOWN();
 }
@@ -3233,8 +3200,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t write_len,
     uint32_t field_id)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (write_ptr == 0)
     {
@@ -3271,13 +3238,10 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    otxn_field,
-    JSValue raw_field_id)
+DEFINE_JS_FUNCTION(JSValue, otxn_field, JSValue raw_field_id)
 {
     JS_HOOK_SETUP();
-    
+
     auto field_id = FromJSInt(ctx, raw_field_id);
     if (!field_id.has_value() || *field_id > 0xFFFFFFFFULL)
         returnJS(INVALID_ARGUMENT);
@@ -3299,13 +3263,13 @@ DEFINE_JS_FUNCTION(
 
     uint8_t const* ptr = reinterpret_cast<uint8_t const*>(s.getDataPtr());
     size_t len = s.getDataLength();
-   
+
     if (field.getSType() == STI_ACCOUNT && len > 1)
     {
         ptr++;
         len--;
     }
- 
+
     auto out = ToJSIntArray(ctx, Slice{ptr, (size_t)len});
 
     if (!out.has_value())
@@ -3323,8 +3287,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t write_len,
     uint32_t slot_no)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (write_ptr == 0)
     {
@@ -3360,20 +3324,17 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    slot,
-    JSValue raw_slot_no)
+DEFINE_JS_FUNCTION(JSValue, slot, JSValue raw_slot_no)
 {
     JS_HOOK_SETUP();
-    
+
     if (argc == 2 && !JS_IsBool(argv[1]))
         returnJS(INVALID_ARGUMENT);
 
     auto slot_no = FromJSInt(ctx, raw_slot_no);
     if (!slot_no.has_value())
         returnJS(INVALID_ARGUMENT);
-    
+
     if (hookCtx.slot.find(*slot_no) == hookCtx.slot.end())
         returnJS(DOESNT_EXIST);
 
@@ -3395,7 +3356,7 @@ DEFINE_JS_FUNCTION(
 
     if (len <= 0 || len > olen)
         returnJS(INTERNAL_ERROR);
-    
+
     auto out = ToJSIntArray(ctx, Slice{ptr, (size_t)len});
 
     if (!out.has_value())
@@ -3411,8 +3372,8 @@ DEFINE_JS_FUNCTION(
 
 DEFINE_WASM_FUNCTION(int64_t, slot_clear, uint32_t slot_no)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
@@ -3425,20 +3386,17 @@ DEFINE_WASM_FUNCTION(int64_t, slot_clear, uint32_t slot_no)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    slot_clear,
-    JSValue raw_slot_no)
+DEFINE_JS_FUNCTION(JSValue, slot_clear, JSValue raw_slot_no)
 {
     JS_HOOK_SETUP();
-    
+
     auto slot_no = FromJSInt(ctx, raw_slot_no);
     if (!slot_no.has_value())
         returnJS(INVALID_ARGUMENT);
-    
+
     if (hookCtx.slot.find(*slot_no) == hookCtx.slot.end())
         returnJS(DOESNT_EXIST);
-    
+
     hookCtx.slot.erase(*slot_no);
     hookCtx.slot_free.push(*slot_no);
 
@@ -3449,8 +3407,8 @@ DEFINE_JS_FUNCTION(
 
 DEFINE_WASM_FUNCTION(int64_t, slot_count, uint32_t slot_no)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
@@ -3466,17 +3424,14 @@ DEFINE_WASM_FUNCTION(int64_t, slot_count, uint32_t slot_no)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    slot_count,
-    JSValue raw_slot_no)
+DEFINE_JS_FUNCTION(JSValue, slot_count, JSValue raw_slot_no)
 {
     JS_HOOK_SETUP();
 
     auto slot_no = FromJSInt(ctx, raw_slot_no);
     if (!slot_no.has_value())
         returnJS(INVALID_ARGUMENT);
-    
+
     if (hookCtx.slot.find(*slot_no) == hookCtx.slot.end())
         returnJS(DOESNT_EXIST);
 
@@ -3491,10 +3446,13 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __slot_set(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        std::vector<uint8_t> const& slot_key, uint32_t slot_into)
+inline int64_t
+__slot_set(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    std::vector<uint8_t> const& slot_key,
+    uint32_t slot_into)
 {
     size_t read_len = slot_key.size();
 
@@ -3551,7 +3509,6 @@ int64_t __slot_set(
     hookCtx.slot[slot_into].entry = &(*hookCtx.slot[slot_into].storage);
 
     return slot_into;
-
 }
 
 DEFINE_WASM_FUNCTION(
@@ -3561,8 +3518,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_len,  // readptr is a keylet
     uint32_t slot_into /* providing 0 allocates a slot to you */)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -3582,11 +3539,7 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    slot_set,
-    JSValue raw_key,
-    JSValue raw_slot_into)
+DEFINE_JS_FUNCTION(JSValue, slot_set, JSValue raw_key, JSValue raw_slot_into)
 {
     JS_HOOK_SETUP();
 
@@ -3596,7 +3549,8 @@ DEFINE_JS_FUNCTION(
     if (!key.has_value() || !slot_into.has_value())
         returnJS(INVALID_ARGUMENT);
 
-    if ((key->size() != 32 && key->size() != 34) || *slot_into < 0 || *slot_into > hook_api::max_slots)
+    if ((key->size() != 32 && key->size() != 34) || *slot_into < 0 ||
+        *slot_into > hook_api::max_slots)
         returnJS(INVALID_ARGUMENT);
 
     // check if we can emplace the object to a slot
@@ -3608,11 +3562,10 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-
 DEFINE_WASM_FUNCTION(int64_t, slot_size, uint32_t slot_no)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
@@ -3628,10 +3581,7 @@ DEFINE_WASM_FUNCTION(int64_t, slot_size, uint32_t slot_no)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    slot_size,
-    JSValue raw_slot_no)
+DEFINE_JS_FUNCTION(JSValue, slot_size, JSValue raw_slot_no)
 {
     JS_HOOK_SETUP();
 
@@ -3653,12 +3603,15 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __slot_subarray(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint32_t parent_slot, uint32_t array_id, uint32_t new_slot)
+inline int64_t
+__slot_subarray(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint32_t parent_slot,
+    uint32_t array_id,
+    uint32_t new_slot)
 {
-
     if (hookCtx.slot.find(parent_slot) == hookCtx.slot.end())
         return DOESNT_EXIST;
 
@@ -3710,7 +3663,6 @@ int64_t __slot_subarray(
         }
         return NOT_AN_ARRAY;
     }
-
 }
 
 DEFINE_WASM_FUNCTION(
@@ -3720,10 +3672,11 @@ DEFINE_WASM_FUNCTION(
     uint32_t array_id,
     uint32_t new_slot)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
-    return __slot_subarray(hookCtx, applyCtx, j, parent_slot, array_id, new_slot);
+    return __slot_subarray(
+        hookCtx, applyCtx, j, parent_slot, array_id, new_slot);
 
     WASM_HOOK_TEARDOWN();
 }
@@ -3736,23 +3689,29 @@ DEFINE_JS_FUNCTION(
     JSValue raw_new_slot)
 {
     JS_HOOK_SETUP();
-    
+
     auto parent_slot = FromJSInt(ctx, raw_parent_slot);
     auto array_id = FromJSInt(ctx, raw_array_id);
     auto new_slot = FromJSInt(ctx, raw_new_slot);
 
-    if (!parent_slot.has_value() || !array_id.has_value() || !new_slot.has_value())
+    if (!parent_slot.has_value() || !array_id.has_value() ||
+        !new_slot.has_value())
         returnJS(INVALID_ARGUMENT);
-        
-    returnJS(__slot_subarray(hookCtx, applyCtx, j, *parent_slot, *array_id, *new_slot));
+
+    returnJS(__slot_subarray(
+        hookCtx, applyCtx, j, *parent_slot, *array_id, *new_slot));
 
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __slot_subfield(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint32_t parent_slot, uint32_t field_id, uint32_t new_slot)
+inline int64_t
+__slot_subfield(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint32_t parent_slot,
+    uint32_t field_id,
+    uint32_t new_slot)
 {
     if (hookCtx.slot.find(parent_slot) == hookCtx.slot.end())
         return DOESNT_EXIST;
@@ -3809,7 +3768,6 @@ int64_t __slot_subfield(
         }
         return NOT_AN_OBJECT;
     }
-
 }
 
 DEFINE_WASM_FUNCTION(
@@ -3819,10 +3777,11 @@ DEFINE_WASM_FUNCTION(
     uint32_t field_id,
     uint32_t new_slot)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
-    return __slot_subfield(hookCtx, applyCtx, j, parent_slot, field_id, new_slot);
+    return __slot_subfield(
+        hookCtx, applyCtx, j, parent_slot, field_id, new_slot);
 
     WASM_HOOK_TEARDOWN();
 }
@@ -3840,20 +3799,24 @@ DEFINE_JS_FUNCTION(
     auto field_id = FromJSInt(ctx, raw_field_id);
     auto new_slot = FromJSInt(ctx, raw_new_slot);
 
-    if (!parent_slot.has_value() || !field_id.has_value() || !new_slot.has_value())
+    if (!parent_slot.has_value() || !field_id.has_value() ||
+        !new_slot.has_value())
         returnJS(INVALID_ARGUMENT);
 
-    returnJS(__slot_subfield(hookCtx, applyCtx, j, *parent_slot, *field_id, *new_slot));
+    returnJS(__slot_subfield(
+        hookCtx, applyCtx, j, *parent_slot, *field_id, *new_slot));
 
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __slot_type(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint32_t slot_no, uint32_t flags)
+inline int64_t
+__slot_type(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint32_t slot_no,
+    uint32_t flags)
 {
-
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
 
@@ -3883,24 +3846,19 @@ int64_t __slot_type(
     {
         return INTERNAL_ERROR;
     }
-
 }
 
 DEFINE_WASM_FUNCTION(int64_t, slot_type, uint32_t slot_no, uint32_t flags)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     return __slot_type(hookCtx, applyCtx, j, slot_no, flags);
 
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    slot_type,
-    JSValue raw_slot_no,
-    JSValue raw_flags)
+DEFINE_JS_FUNCTION(JSValue, slot_type, JSValue raw_slot_no, JSValue raw_flags)
 {
     JS_HOOK_SETUP();
 
@@ -3915,10 +3873,12 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __slot_float(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint32_t slot_no)
+inline int64_t
+__slot_float(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint32_t slot_no)
 {
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
@@ -3960,18 +3920,15 @@ int64_t __slot_float(
 
 DEFINE_WASM_FUNCTION(int64_t, slot_float, uint32_t slot_no)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     return __slot_float(hookCtx, applyCtx, j, slot_no);
 
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    slot_float,
-    JSValue raw_slot_no)
+DEFINE_JS_FUNCTION(JSValue, slot_float, JSValue raw_slot_no)
 {
     JS_HOOK_SETUP();
 
@@ -3983,12 +3940,11 @@ DEFINE_JS_FUNCTION(
     auto const out = __slot_float(hookCtx, applyCtx, j, *slot_no);
     if (out < 0)
         returnJS(out);
-    
+
     returnJSXFL(out);
 
     JS_HOOK_TEARDOWN();
 }
-    
 
 /*
 #define VAR_JSASSIGN(T, V) T& V = argv[_stack++]
@@ -3998,11 +3954,8 @@ JSValue hook_api::JSFunction##F(JSContext *ctx, JSValueConst this_val,\
                         int argc, JSValueConst *argv)\
 */
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    util_keylet,
-    JSValue kt_raw) 
-    /* use JSValueConst* argv & int argc */
+DEFINE_JS_FUNCTION(JSValue, util_keylet, JSValue kt_raw)
+/* use JSValueConst* argv & int argc */
 {
     JS_HOOK_SETUP();
 
@@ -4013,17 +3966,16 @@ DEFINE_JS_FUNCTION(
     if (!kt.has_value() || *kt == 0 || *kt > last)
         returnJS(INVALID_ARGUMENT);
 
-    // computed keylet is populated into this for return  
+    // computed keylet is populated into this for return
     std::optional<JSValue> kl_out;
 
     try
     {
-        switch(*kt)
+        switch (*kt)
         {
-            case keylet_code::QUALITY:
-            {
-                // looking for a 34 byte keylet and high 32 bits and low 32 bits of quality
-                // RHTODO: accept optionally a bigint here?
+            case keylet_code::QUALITY: {
+                // looking for a 34 byte keylet and high 32 bits and low 32 bits
+                // of quality RHTODO: accept optionally a bigint here?
                 if (argc != 4)
                     returnJS(INVALID_ARGUMENT);
 
@@ -4031,7 +3983,8 @@ DEFINE_JS_FUNCTION(
                 auto l = FromJSInt(ctx, argv[3]);
                 auto kl = FromJSIntArrayOrHexString(ctx, argv[1], 34);
 
-                if (!h.has_value() || !l.has_value() || !kl.has_value() || kl->size() != 34)
+                if (!h.has_value() || !l.has_value() || !kl.has_value() ||
+                    kl->size() != 34)
                     returnJS(INVALID_ARGUMENT);
 
                 // ensure it's a dir keylet or we will fail an assertion
@@ -4046,18 +3999,17 @@ DEFINE_JS_FUNCTION(
 
                 uint64_t arg = (((uint64_t)(*h)) << 32U) + ((uint64_t)(*l));
 
-                kl_out = ToJSIntArray(ctx,
+                kl_out = ToJSIntArray(
+                    ctx,
                     serialize_keylet_vec(ripple::keylet::quality(*k, arg)));
 
                 break;
-                       
             }
 
             case keylet_code::HOOK_DEFINITION:
             case keylet_code::CHILD:
             case keylet_code::EMITTED_TXN:
-            case keylet_code::UNCHECKED:
-            {
+            case keylet_code::UNCHECKED: {
                 if (argc != 2)
                     returnJS(INVALID_ARGUMENT);
 
@@ -4069,18 +4021,19 @@ DEFINE_JS_FUNCTION(
                 base_uint<256> id =
                     ripple::base_uint<256>::fromVoid(hash->data());
 
-                kl_out = ToJSIntArray(ctx,
+                kl_out = ToJSIntArray(
+                    ctx,
                     serialize_keylet_vec(
-                    *kt == keylet_code::CHILD
-                    ? ripple::keylet::child(id)
-                    : *kt == keylet_code::EMITTED_TXN
-                        ? ripple::keylet::emittedTxn(id)
-                        : *kt == keylet_code::HOOK_DEFINITION
-                            ? ripple::keylet::hookDefinition(id)
-                            : ripple::keylet::unchecked(id)));
+                        *kt == keylet_code::CHILD
+                            ? ripple::keylet::child(id)
+                            : *kt == keylet_code::EMITTED_TXN
+                                ? ripple::keylet::emittedTxn(id)
+                                : *kt == keylet_code::HOOK_DEFINITION
+                                    ? ripple::keylet::hookDefinition(id)
+                                    : ripple::keylet::unchecked(id)));
 
-               break; 
-            }            
+                break;
+            }
 
             case keylet_code::OWNER_DIR:
             case keylet_code::SIGNERS:
@@ -4096,19 +4049,19 @@ DEFINE_JS_FUNCTION(
 
                 auto const id = AccountID::fromVoid(accid->data());
 
-                kl_out = ToJSIntArray(ctx,
+                kl_out = ToJSIntArray(
+                    ctx,
                     serialize_keylet_vec(
-                        *kt == keylet_code::HOOK
-                            ? ripple::keylet::hook(id)
-                            : *kt == keylet_code::SIGNERS
+                        *kt == keylet_code::HOOK ? ripple::keylet::hook(id)
+                                                 : *kt == keylet_code::SIGNERS
                                 ? ripple::keylet::signers(id)
                                 : *kt == keylet_code::OWNER_DIR
                                     ? ripple::keylet::ownerDir(id)
                                     : ripple::keylet::account(id)));
-                
+
                 break;
             }
-            
+
             case keylet_code::OFFER:
             case keylet_code::CHECK:
             case keylet_code::ESCROW:
@@ -4125,31 +4078,32 @@ DEFINE_JS_FUNCTION(
                 if (!accid.has_value() || accid->size() != 20)
                     returnJS(INVALID_ARGUMENT);
 
-                // sanity check, the second param can be either a uint32 or a uint256
-                if (!(u.has_value() && *u < 0xFFFFFFFFULL) && 
-                        !(u2.has_value() && u2->size() == 32))
+                // sanity check, the second param can be either a uint32 or a
+                // uint256
+                if (!(u.has_value() && *u < 0xFFFFFFFFULL) &&
+                    !(u2.has_value() && u2->size() == 32))
                     returnJS(INVALID_ARGUMENT);
-                
+
                 auto const id = AccountID::fromVoid(accid->data());
-               
+
                 std::variant<uint32_t, uint256> seq;
                 if (u.has_value())
                     seq = (uint32_t)(*u);
                 else
                     seq = uint256::fromVoid(u2->data());
 
-                kl_out = ToJSIntArray(ctx,
+                kl_out = ToJSIntArray(
+                    ctx,
                     serialize_keylet_vec(
                         *kt == keylet_code::CHECK
-                        ? ripple::keylet::check(id, seq)
-                        : *kt == keylet_code::ESCROW
-                            ? ripple::keylet::escrow(id, seq)
-                            : *kt == keylet_code::NFT_OFFER
-                                ? ripple::keylet::nftoffer(id, seq)
-                                : ripple::keylet::offer(id, seq)));
-               break; 
-            }            
-
+                            ? ripple::keylet::check(id, seq)
+                            : *kt == keylet_code::ESCROW
+                                ? ripple::keylet::escrow(id, seq)
+                                : *kt == keylet_code::NFT_OFFER
+                                    ? ripple::keylet::nftoffer(id, seq)
+                                    : ripple::keylet::offer(id, seq)));
+                break;
+            }
 
             case keylet_code::PAGE: {
                 if (argc != 4)
@@ -4159,7 +4113,8 @@ DEFINE_JS_FUNCTION(
                 auto l = FromJSInt(ctx, argv[3]);
                 auto u = FromJSIntArrayOrHexString(ctx, argv[1], 32);
 
-                if (!h.has_value() || !l.has_value() || !u.has_value() || u->size() != 32)
+                if (!h.has_value() || !l.has_value() || !u.has_value() ||
+                    u->size() != 32)
                     returnJS(INVALID_ARGUMENT);
 
                 uint64_t index = (((uint64_t)(*h)) << 32U) + ((uint64_t)(*l));
@@ -4169,34 +4124,31 @@ DEFINE_JS_FUNCTION(
                 kl_out = ToJSIntArray(ctx, serialize_keylet_vec(kl));
                 break;
             }
-                                    
+
             case keylet_code::HOOK_STATE: {
                 if (argc != 4)
                     returnJS(INVALID_ARGUMENT);
-
 
                 auto accid = FromJSIntArrayOrHexString(ctx, argv[1], 20);
                 auto key = FromJSIntArrayOrHexString(ctx, argv[2], 32);
                 auto ns = FromJSIntArrayOrHexString(ctx, argv[3], 32);
 
                 if (!accid.has_value() || accid->size() != 20 ||
-                    !key.has_value() || key->size() != 32 ||
-                    !ns.has_value() || ns->size() != 32)
+                    !key.has_value() || key->size() != 32 || !ns.has_value() ||
+                    ns->size() != 32)
                     returnJS(INVALID_ARGUMENT);
 
-
-                kl_out = ToJSIntArray(ctx,
-                    serialize_keylet_vec( 
-                        ripple::keylet::hookState(
-                            AccountID::fromVoid(accid->data()),
-                            ripple::base_uint<256>::fromVoid(key->data()),
-                            ripple::base_uint<256>::fromVoid(ns->data()))));
+                kl_out = ToJSIntArray(
+                    ctx,
+                    serialize_keylet_vec(ripple::keylet::hookState(
+                        AccountID::fromVoid(accid->data()),
+                        ripple::base_uint<256>::fromVoid(key->data()),
+                        ripple::base_uint<256>::fromVoid(ns->data()))));
 
                 break;
             }
-            
-            case keylet_code::HOOK_STATE_DIR:
-            {
+
+            case keylet_code::HOOK_STATE_DIR: {
                 if (argc != 3)
                     returnJS(INVALID_ARGUMENT);
 
@@ -4207,19 +4159,17 @@ DEFINE_JS_FUNCTION(
                     !ns.has_value() || ns->size() != 32)
                     returnJS(INVALID_ARGUMENT);
 
-
-                kl_out = ToJSIntArray(ctx,
-                    serialize_keylet_vec( 
-                        ripple::keylet::hookStateDir(
-                            AccountID::fromVoid(accid->data()),
-                            ripple::base_uint<256>::fromVoid(ns->data()))));
+                kl_out = ToJSIntArray(
+                    ctx,
+                    serialize_keylet_vec(ripple::keylet::hookStateDir(
+                        AccountID::fromVoid(accid->data()),
+                        ripple::base_uint<256>::fromVoid(ns->data()))));
 
                 break;
             }
 
             // skip is overloaded, has a single, optional 4 byte argument
-            case keylet_code::SKIP:
-            {
+            case keylet_code::SKIP: {
                 if (argc > 2)
                     returnJS(INVALID_ARGUMENT);
 
@@ -4228,11 +4178,12 @@ DEFINE_JS_FUNCTION(
                 if (argc == 2)
                     param = FromJSInt(ctx, argv[1]);
 
-                kl_out = ToJSIntArray(ctx,
+                kl_out = ToJSIntArray(
+                    ctx,
                     serialize_keylet_vec(
                         param.has_value()
-                        ? ripple::keylet::skip((uint32_t)*param)
-                        : ripple::keylet::skip()));
+                            ? ripple::keylet::skip((uint32_t)*param)
+                            : ripple::keylet::skip()));
 
                 break;
             }
@@ -4240,12 +4191,12 @@ DEFINE_JS_FUNCTION(
             case keylet_code::AMENDMENTS:
             case keylet_code::FEES:
             case keylet_code::NEGATIVE_UNL:
-            case keylet_code::EMITTED_DIR:
-            {
+            case keylet_code::EMITTED_DIR: {
                 if (argc != 1)
                     returnJS(INVALID_ARGUMENT);
 
-                kl_out = ToJSIntArray(ctx,
+                kl_out = ToJSIntArray(
+                    ctx,
                     serialize_keylet_vec(
                         *kt == keylet_code::AMENDMENTS
                             ? ripple::keylet::amendments()
@@ -4258,41 +4209,38 @@ DEFINE_JS_FUNCTION(
                 break;
             }
 
-
-            case keylet_code::LINE:
-            {
+            case keylet_code::LINE: {
                 if (argc != 4)
                     returnJS(INVALID_ARGUMENT);
-                
+
                 auto accid1 = FromJSIntArrayOrHexString(ctx, argv[1], 20);
                 auto accid2 = FromJSIntArrayOrHexString(ctx, argv[2], 20);
-                auto cur    = FromJSIntArrayOrHexString(ctx, argv[3], 20);
+                auto cur = FromJSIntArrayOrHexString(ctx, argv[3], 20);
 
                 if (!accid1.has_value() || accid1->size() != 20 ||
                     !accid2.has_value() || accid2->size() != 20 ||
                     !cur.has_value() || (cur->size() != 20 && cur->size() != 3))
                     returnJS(INVALID_ARGUMENT);
-                
+
                 std::optional<Currency> cur2 =
                     parseCurrency(cur->data(), cur->size());
 
                 if (!cur2.has_value())
                     returnJS(INVALID_ARGUMENT);
 
-                kl_out = ToJSIntArray(ctx,
-                    serialize_keylet_vec(
-                        ripple::keylet::line(
-                            AccountID::fromVoid(accid1->data()),
-                            AccountID::fromVoid(accid2->data()),
-                            *cur2)));
+                kl_out = ToJSIntArray(
+                    ctx,
+                    serialize_keylet_vec(ripple::keylet::line(
+                        AccountID::fromVoid(accid1->data()),
+                        AccountID::fromVoid(accid2->data()),
+                        *cur2)));
                 break;
             }
 
-            case keylet_code::DEPOSIT_PREAUTH:
-            {
+            case keylet_code::DEPOSIT_PREAUTH: {
                 if (argc != 3)
                     returnJS(INVALID_ARGUMENT);
-                
+
                 auto accid1 = FromJSIntArrayOrHexString(ctx, argv[1], 20);
                 auto accid2 = FromJSIntArrayOrHexString(ctx, argv[2], 20);
 
@@ -4303,21 +4251,21 @@ DEFINE_JS_FUNCTION(
                 ripple::AccountID aid = AccountID::fromVoid(accid1->data());
                 ripple::AccountID bid = AccountID::fromVoid(accid2->data());
 
-                kl_out = ToJSIntArray(ctx,
+                kl_out = ToJSIntArray(
+                    ctx,
                     serialize_keylet_vec(
                         ripple::keylet::depositPreauth(aid, bid)));
 
                 break;
             }
-            
-            case keylet_code::PAYCHAN:
-            {
+
+            case keylet_code::PAYCHAN: {
                 if (argc != 4)
                     returnJS(INVALID_ARGUMENT);
-                
+
                 auto accid1 = FromJSIntArrayOrHexString(ctx, argv[1], 20);
                 auto accid2 = FromJSIntArrayOrHexString(ctx, argv[2], 20);
-                
+
                 auto u = FromJSInt(ctx, argv[3]);
                 auto u2 = FromJSIntArrayOrHexString(ctx, argv[3], 32);
 
@@ -4325,33 +4273,34 @@ DEFINE_JS_FUNCTION(
                     !accid2.has_value() || accid2->size() != 20)
                     returnJS(INVALID_ARGUMENT);
 
-                // sanity check, the second param can be either a uint32 or a uint256
-                if (!(u.has_value() && *u < 0xFFFFFFFFULL) && 
-                        !(u2.has_value() && u2->size() == 32))
+                // sanity check, the second param can be either a uint32 or a
+                // uint256
+                if (!(u.has_value() && *u < 0xFFFFFFFFULL) &&
+                    !(u2.has_value() && u2->size() == 32))
                     returnJS(INVALID_ARGUMENT);
-                
+
                 auto const id1 = AccountID::fromVoid(accid1->data());
                 auto const id2 = AccountID::fromVoid(accid2->data());
-               
+
                 std::variant<uint32_t, uint256> seq;
                 if (u.has_value())
                     seq = (uint32_t)(*u);
                 else
                     seq = uint256::fromVoid(u2->data());
 
-                kl_out = ToJSIntArray(ctx,
+                kl_out = ToJSIntArray(
+                    ctx,
                     serialize_keylet_vec(
                         ripple::keylet::payChan(id1, id2, seq)));
-                
+
                 break;
             }
 
-            default:
-            {
+            default: {
                 returnJS(INTERNAL_ERROR);
             }
         }
-    
+
         if (!kl_out.has_value())
             returnJS(INTERNAL_ERROR);
 
@@ -4359,14 +4308,13 @@ DEFINE_JS_FUNCTION(
     }
     catch (std::exception& e)
     {
-        JLOG(j.warn()) << "HookError[" << HC_ACC() << "]: Keylet (JS) exception "
-                       << e.what();
+        JLOG(j.warn()) << "HookError[" << HC_ACC()
+                       << "]: Keylet (JS) exception " << e.what();
         returnJS(INTERNAL_ERROR);
     }
 
     JS_HOOK_TEARDOWN();
 }
-
 
 DEFINE_WASM_FUNCTION(
     int64_t,
@@ -4771,23 +4719,27 @@ DEFINE_WASM_FUNCTION(
 }
 
 // RH TODO: reorder functions to avoid prototyping if possible
-inline
-int64_t
+inline int64_t
 __etxn_fee_base(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint8_t* read_ptr, size_t read_len);
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint8_t* read_ptr,
+    size_t read_len);
 
 /* Emit a transaction from this hook. Transaction must be in STObject form,
  * fully formed and valid. XRPLD does not modify transactions it only checks
  * them for validity. */
-inline
-std::variant<int64_t,   // populated if error code
-std::shared_ptr<Transaction>> // otherwise tx itself if tx is valid
+inline std::variant<
+    int64_t,                       // populated if error code
+    std::shared_ptr<Transaction>>  // otherwise tx itself if tx is valid
 __emit(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint8_t* read_ptr, uint32_t read_len)
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint8_t* read_ptr,
+    uint32_t read_len)
 {
-
     auto& app = applyCtx.app;
     auto& view = applyCtx.view();
 
@@ -4802,8 +4754,7 @@ __emit(
     std::shared_ptr<STTx const> stpTrans;
     try
     {
-        stpTrans = std::make_shared<STTx const>(
-            SerialIter{read_ptr, read_len});
+        stpTrans = std::make_shared<STTx const>(SerialIter{read_ptr, read_len});
     }
     catch (std::exception& e)
     {
@@ -5101,8 +5052,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -5117,7 +5068,7 @@ DEFINE_WASM_FUNCTION(
 
     if (std::holds_alternative<int64_t>(ret))
         return std::get<int64_t>(ret);
-    
+
     auto const& tpTrans = std::get<std::shared_ptr<Transaction>>(ret);
 
     auto const& txID = tpTrans->getID();
@@ -5147,41 +5098,39 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    emit,
-    JSValue raw_tx)
+DEFINE_JS_FUNCTION(JSValue, emit, JSValue raw_tx)
 {
     JS_HOOK_SETUP();
 
-    std::optional<std::vector<uint8_t>> tx = FromJSIntArrayOrHexString(ctx, raw_tx, 0x10000);
+    std::optional<std::vector<uint8_t>> tx =
+        FromJSIntArrayOrHexString(ctx, raw_tx, 0x10000);
 
     if (!tx.has_value() || tx->empty())
     {
-    
-        // the user may specify the tx as a js object        
+        // the user may specify the tx as a js object
         if (!JS_IsObject(raw_tx))
             returnJS(INVALID_ARGUMENT);
 
         // stringify it
-        JSValue sdata = JS_JSONStringify(ctx, raw_tx, JS_UNDEFINED, JS_UNDEFINED);
+        JSValue sdata =
+            JS_JSONStringify(ctx, raw_tx, JS_UNDEFINED, JS_UNDEFINED);
         if (JS_IsException(sdata))
             returnJS(INVALID_ARGUMENT);
 
         size_t len;
         const char* cstr = JS_ToCStringLen(ctx, &len, sdata);
-        if (len > 1024*1024)
+        if (len > 1024 * 1024)
             returnJS(TOO_BIG);
         std::string const tmpl(cstr, len);
         JS_FreeCString(ctx, cstr);
-        
+
         // parse it on rippled side
         Json::Value json;
         Json::Reader reader;
         if (!reader.parse(tmpl, json) || !json || !json.isObject())
             returnJS(INVALID_ARGUMENT);
 
-        // turn the json into a stobject    
+        // turn the json into a stobject
         STParsedJSONObject parsed(std::string(jss::tx_json), json);
         if (!parsed.object.has_value())
             returnJS(INVALID_ARGUMENT);
@@ -5197,7 +5146,7 @@ DEFINE_JS_FUNCTION(
 
     if (std::holds_alternative<int64_t>(ret))
         returnJS(std::get<int64_t>(ret));
-    
+
     auto const& tpTrans = std::get<std::shared_ptr<Transaction>>(ret);
     auto const& txID = tpTrans->getID();
     auto out = ToJSIntArray(ctx, txID);
@@ -5212,15 +5161,15 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __etxn_details(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint8_t* out_ptr, size_t max_len);
+inline int64_t
+__etxn_details(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint8_t* out_ptr,
+    size_t max_len);
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    prepare,
-    JSValue raw_tmpl)
+DEFINE_JS_FUNCTION(JSValue, prepare, JSValue raw_tmpl)
 {
     JS_HOOK_SETUP();
 
@@ -5235,11 +5184,11 @@ DEFINE_JS_FUNCTION(
         returnJS(INVALID_ARGUMENT);
     size_t len;
     const char* cstr = JS_ToCStringLen(ctx, &len, sdata);
-    if (len > 1024*1024)
+    if (len > 1024 * 1024)
         returnJS(TOO_BIG);
     std::string tmpl(cstr, len);
     JS_FreeCString(ctx, cstr);
-    
+
     // parse it on rippled side
     Json::Value json;
     Json::Reader reader;
@@ -5255,8 +5204,8 @@ DEFINE_JS_FUNCTION(
     // force sequence to 0
     json[jss::Sequence] = Json::Value(0u);
 
-    std::string raddr =
-        encodeBase58Token(TokenType::AccountID, hookCtx.result.account.data(), 20);
+    std::string raddr = encodeBase58Token(
+        TokenType::AccountID, hookCtx.result.account.data(), 20);
 
     json[jss::Account] = raddr;
 
@@ -5266,7 +5215,7 @@ DEFINE_JS_FUNCTION(
 
     if (!json.isMember(jss::LastLedgerSequence))
         json[jss::LastLedgerSequence] = Json::Value((uint32_t)(seq + 5));
-    
+
     uint8_t details[512];
     if (!json.isMember(jss::EmitDetails))
     {
@@ -5286,8 +5235,7 @@ DEFINE_JS_FUNCTION(
         }
         catch (std::exception const& ex)
         {
-            JLOG(j.warn())
-                << "Exception in " << __func__ << ": " << ex.what();
+            JLOG(j.warn()) << "Exception in " << __func__ << ": " << ex.what();
             returnJS(INTERNAL_ERROR);
         }
     }
@@ -5296,7 +5244,7 @@ DEFINE_JS_FUNCTION(
         const std::string flat = Json::FastWriter().write(json);
         std::cout << "intermediate: `" << flat << "`\n";
     }
-    
+
     STParsedJSONObject parsed(std::string(jss::tx_json), json);
     if (!parsed.object.has_value())
         returnJS(INVALID_ARGUMENT);
@@ -5309,7 +5257,8 @@ DEFINE_JS_FUNCTION(
     Blob tx_blob = s.getData();
 
     // run it through the fee estimate, this doubles as a txn sanity check
-    int64_t fee = __etxn_fee_base(hookCtx, applyCtx, j, tx_blob.data(), tx_blob.size());
+    int64_t fee =
+        __etxn_fee_base(hookCtx, applyCtx, j, tx_blob.data(), tx_blob.size());
     if (fee < 0)
         returnJS(INVALID_ARGUMENT);
 
@@ -5330,9 +5279,7 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCNARG(
-    JSValue,
-    otxn_json)
+DEFINE_JS_FUNCNARG(JSValue, otxn_json)
 {
     JS_HOOK_SETUP();
 
@@ -5340,8 +5287,9 @@ DEFINE_JS_FUNCNARG(
         hookCtx.emitFailure ? *(hookCtx.emitFailure)
                             : const_cast<ripple::STTx&>(applyCtx.tx)
                                   .downcast<ripple::STObject>());
-    
-    const std::string flat = Json::FastWriter().write(st->getJson(JsonOptions::none));
+
+    const std::string flat =
+        Json::FastWriter().write(st->getJson(JsonOptions::none));
 
     JSValue out;
     out = JS_ParseJSON(ctx, flat.data(), flat.size(), "<json>");
@@ -5354,17 +5302,14 @@ DEFINE_JS_FUNCNARG(
     JS_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    slot_json,
-    JSValue raw_slot_no)
+DEFINE_JS_FUNCTION(JSValue, slot_json, JSValue raw_slot_no)
 {
     JS_HOOK_SETUP();
-    
+
     auto slot_no = FromJSInt(ctx, raw_slot_no);
     if (!slot_no.has_value())
         returnJS(INVALID_ARGUMENT);
-    
+
     if (hookCtx.slot.find(*slot_no) == hookCtx.slot.end())
         returnJS(DOESNT_EXIST);
 
@@ -5385,14 +5330,10 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-
-DEFINE_JS_FUNCTION(
-    JSValue,
-    sto_to_json,
-    JSValue raw_sto_in)
+DEFINE_JS_FUNCTION(JSValue, sto_to_json, JSValue raw_sto_in)
 {
     JS_HOOK_SETUP();
-    auto sto_in = FromJSIntArrayOrHexString(ctx, raw_sto_in, 16*1024);
+    auto sto_in = FromJSIntArrayOrHexString(ctx, raw_sto_in, 16 * 1024);
     if (!sto_in.has_value() || sto_in->empty())
         returnJS(INVALID_ARGUMENT);
 
@@ -5401,11 +5342,12 @@ DEFINE_JS_FUNCTION(
     {
         SerialIter sit(makeSlice(*sto_in));
         obj = std::make_unique<STObject>(std::ref(sit), sfGeneric);
-    
+
         if (!obj)
             returnJS(INVALID_ARGUMENT);
 
-        const std::string flat = Json::FastWriter().write(obj->getJson(JsonOptions::none));
+        const std::string flat =
+            Json::FastWriter().write(obj->getJson(JsonOptions::none));
 
         JSValue out;
         out = JS_ParseJSON(ctx, flat.data(), flat.size(), "<json>");
@@ -5423,26 +5365,24 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    sto_from_json,
-    JSValue raw_json_in)
+DEFINE_JS_FUNCTION(JSValue, sto_from_json, JSValue raw_json_in)
 {
     JS_HOOK_SETUP();
 
-    auto [len, in] = FromJSString(ctx, raw_json_in, 64*1024);
+    auto [len, in] = FromJSString(ctx, raw_json_in, 64 * 1024);
     if (!in.has_value())
     {
         if (!JS_IsObject(raw_json_in))
             returnJS(INVALID_ARGUMENT);
 
         // stringify it
-        JSValue sdata = JS_JSONStringify(ctx, raw_json_in, JS_UNDEFINED, JS_UNDEFINED);
+        JSValue sdata =
+            JS_JSONStringify(ctx, raw_json_in, JS_UNDEFINED, JS_UNDEFINED);
         if (JS_IsException(sdata))
             returnJS(INVALID_ARGUMENT);
 
         const char* cstr = JS_ToCStringLen(ctx, &len, sdata);
-        if (len > 64*1024)
+        if (len > 64 * 1024)
             returnJS(TOO_BIG);
 
         in = std::string(cstr, len);
@@ -5451,19 +5391,18 @@ DEFINE_JS_FUNCTION(
 
     if (!in.has_value() || len <= 0 || in->empty())
         returnJS(INVALID_ARGUMENT);
-    
-    std::cout << "sto_from_json, strlen = " << len << "\n";
 
+    std::cout << "sto_from_json, strlen = " << len << "\n";
 
     Json::Value json;
     Json::Reader reader;
     if (!reader.parse(*in, json) || !json || !json.isObject())
         returnJS(INVALID_ARGUMENT);
-    
+
     std::cout << "sto_from_json, valid json\n";
     std::cout << to_string(json) << "\n";
 
-    // turn the json into a stobject    
+    // turn the json into a stobject
     STParsedJSONObject parsed(std::string(jss::tx_json), json);
     if (!parsed.object.has_value())
         returnJS(INVALID_ARGUMENT);
@@ -5474,11 +5413,11 @@ DEFINE_JS_FUNCTION(
     STObject& obj = *(parsed.object);
     Serializer s;
     obj.add(s);
-    
+
     Blob b = s.getData();
-    
+
     auto out = ToJSIntArray(ctx, b);
-    
+
     if (!out.has_value())
         returnJS(INTERNAL_ERROR);
 
@@ -5489,7 +5428,6 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-
 // When implemented will return the hash of the current hook
 DEFINE_WASM_FUNCTION(
     int64_t,
@@ -5498,8 +5436,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t write_len,
     int32_t hook_no)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (write_len < 32)
         return TOO_SMALL;
@@ -5539,10 +5477,7 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    hook_hash,
-    JSValue raw_hook_no)
+DEFINE_JS_FUNCTION(JSValue, hook_hash, JSValue raw_hook_no)
 {
     JS_HOOK_SETUP();
 
@@ -5551,7 +5486,6 @@ DEFINE_JS_FUNCTION(
         returnJS(INVALID_ARGUMENT);
 
     int32_t hook_no = *hook_no_opt;
-
 
     if (hook_no == -1)
         return ToJSHash(ctx, hookCtx.result.hookHash);
@@ -5573,7 +5507,6 @@ DEFINE_JS_FUNCTION(
 
     JS_HOOK_TEARDOWN();
 }
-    
 
 // Write the account id that the running hook is installed on into write_ptr
 DEFINE_WASM_FUNCTION(
@@ -5582,8 +5515,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t write_ptr,
     uint32_t ptr_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(write_ptr, ptr_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -5602,9 +5535,7 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCNARG(
-    JSValue,
-    hook_account);
+DEFINE_JS_FUNCNARG(JSValue, hook_account);
 {
     JS_HOOK_SETUP();
 
@@ -5614,16 +5545,17 @@ DEFINE_JS_FUNCNARG(
         returnJS(INTERNAL_ERROR);
 
     return *out;
-    
+
     JS_HOOK_TEARDOWN();
 }
 
 // Deterministic nonces (can be called multiple times)
-inline
-std::optional<uint256>
+inline std::optional<uint256>
 __etxn_nonce(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j)
-{   
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j)
+{
     if (hookCtx.emit_nonce_counter > hook_api::max_nonce)
         return {};
 
@@ -5654,8 +5586,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t write_ptr,
     uint32_t write_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx, view on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx, view on current stack
 
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -5674,9 +5606,7 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCNARG(
-    JSValue,
-    etxn_nonce)
+DEFINE_JS_FUNCNARG(JSValue, etxn_nonce)
 {
     JS_HOOK_SETUP();
 
@@ -5688,7 +5618,7 @@ DEFINE_JS_FUNCNARG(
     std::vector<uint8_t> vec{hash->data(), hash->data() + 32};
 
     auto out = ToJSIntArray(ctx, vec);
-    
+
     if (!out.has_value())
         returnJS(INTERNAL_ERROR);
 
@@ -5703,8 +5633,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t write_ptr,
     uint32_t write_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx, view on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx, view on current stack
 
     if (write_len < 32)
         return TOO_SMALL;
@@ -5730,9 +5660,7 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCNARG(
-    JSValue,
-    ledger_nonce)
+DEFINE_JS_FUNCNARG(JSValue, ledger_nonce)
 {
     JS_HOOK_SETUP();
 
@@ -5747,7 +5675,7 @@ DEFINE_JS_FUNCNARG(
         applyCtx.tx.getTransactionID(),
         hookCtx.ledger_nonce_counter++,
         hookCtx.result.account);
-    
+
     return ToJSHash(ctx, hash);
 
     JS_HOOK_TEARDOWN();
@@ -5802,26 +5730,20 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    ledger_keylet,
-    JSValue raw_lo,
-    JSValue raw_hi)
+DEFINE_JS_FUNCTION(JSValue, ledger_keylet, JSValue raw_lo, JSValue raw_hi)
 {
     JS_HOOK_SETUP();
 
     auto lo = FromJSIntArrayOrHexString(ctx, raw_lo, 34);
     auto hi = FromJSIntArrayOrHexString(ctx, raw_hi, 34);
 
-    if (!lo.has_value() || lo->size() != 34 ||
-        !hi.has_value() || hi->size() != 34)
+    if (!lo.has_value() || lo->size() != 34 || !hi.has_value() ||
+        hi->size() != 34)
         returnJS(INVALID_ARGUMENT);
-    
-    std::optional<ripple::Keylet> klLo =
-        unserialize_keylet(lo->data(), 34);
-    std::optional<ripple::Keylet> klHi =
-        unserialize_keylet(hi->data(), 34);
-    if (!klLo ||!klHi)
+
+    std::optional<ripple::Keylet> klLo = unserialize_keylet(lo->data(), 34);
+    std::optional<ripple::Keylet> klHi = unserialize_keylet(hi->data(), 34);
+    if (!klLo || !klHi)
         returnJS(INVALID_ARGUMENT);
 
     if (klLo->type != klHi->type)
@@ -5836,10 +5758,10 @@ DEFINE_JS_FUNCTION(
     Keylet kl_found{klLo->type, *found};
 
     auto out = ToJSIntArray(ctx, serialize_keylet_vec(kl_found));
-    
+
     if (!out.has_value())
         returnJS(INTERNAL_ERROR);
-    
+
     return *out;
 
     JS_HOOK_TEARDOWN();
@@ -5848,8 +5770,8 @@ DEFINE_JS_FUNCTION(
 // Reserve one or more transactions for emission from the running hook
 DEFINE_WASM_FUNCTION(int64_t, etxn_reserve, uint32_t count)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (hookCtx.expected_etxn_count > -1)
         return ALREADY_SET;
@@ -5867,10 +5789,7 @@ DEFINE_WASM_FUNCTION(int64_t, etxn_reserve, uint32_t count)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    etxn_reserve,
-    JSValue raw_count)
+DEFINE_JS_FUNCTION(JSValue, etxn_reserve, JSValue raw_count)
 {
     JS_HOOK_SETUP();
 
@@ -5894,8 +5813,8 @@ DEFINE_JS_FUNCTION(
 
 DEFINE_WASM_FUNCNARG(int64_t, etxn_burden)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     return __etxn_burden(hookCtx, applyCtx, j);
 
@@ -5905,12 +5824,11 @@ DEFINE_WASM_FUNCNARG(int64_t, etxn_burden)
 DEFINE_JS_FUNCNARG(JSValue, etxn_burden)
 {
     JS_HOOK_SETUP();
-    
+
     returnJS(__etxn_burden(hookCtx, applyCtx, j));
 
     JS_HOOK_TEARDOWN();
 }
-
 
 DEFINE_WASM_FUNCTION(
     int64_t,
@@ -5920,8 +5838,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx, view on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx, view on current stack
 
     if (write_len < 32)
         return TOO_SMALL;
@@ -5938,10 +5856,7 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    util_sha512h,
-    JSValue data)
+DEFINE_JS_FUNCTION(JSValue, util_sha512h, JSValue data)
 {
     JS_HOOK_SETUP();
 
@@ -5967,7 +5882,6 @@ DEFINE_JS_FUNCTION(
 
     JS_HOOK_TEARDOWN();
 }
-
 
 // these are only used by get_stobject_length below
 enum parse_error : int32_t {
@@ -6170,11 +6084,14 @@ get_stobject_length(
     return pe_unknown_type_late;
 }
 
-
-inline
-int64_t __sto_subfield(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint8_t* start, size_t read_len, uint32_t field_id)
+inline int64_t
+__sto_subfield(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint8_t* start,
+    size_t read_len,
+    uint32_t field_id)
 {
     if (read_len < 2)
         return TOO_SMALL;
@@ -6239,8 +6156,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_len,
     uint32_t field_id)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -6252,11 +6169,7 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    sto_subfield,
-    JSValue raw_sto,
-    JSValue raw_field_id)
+DEFINE_JS_FUNCTION(JSValue, sto_subfield, JSValue raw_sto, JSValue raw_field_id)
 {
     JS_HOOK_SETUP();
 
@@ -6265,21 +6178,30 @@ DEFINE_JS_FUNCTION(
 
     if (!sto_in.has_value() || !field_id.has_value())
         returnJS(INVALID_ARGUMENT);
-    
+
     if (*field_id > 0xFFFFFFFFULL || *field_id < 0)
         returnJS(INVALID_ARGUMENT);
 
-    returnJS(__sto_subfield(hookCtx, applyCtx, j, sto_in->data(), sto_in->size(), (uint32_t)(*field_id)));
+    returnJS(__sto_subfield(
+        hookCtx,
+        applyCtx,
+        j,
+        sto_in->data(),
+        sto_in->size(),
+        (uint32_t)(*field_id)));
 
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __sto_subarray(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint8_t* start, size_t read_len, uint32_t index_id)
+inline int64_t
+__sto_subarray(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint8_t* start,
+    size_t read_len,
+    uint32_t index_id)
 {
-
     if (read_len < 2)
         return TOO_SMALL;
 
@@ -6329,7 +6251,6 @@ int64_t __sto_subarray(
         return PARSE_ERROR;
 
     return DOESNT_EXIST;
-    
 }
 
 // Same as subfield but indexes into a serialized array
@@ -6340,8 +6261,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_len,
     uint32_t index_id)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -6353,24 +6274,26 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    sto_subarray,
-    JSValue raw_sto,
-    JSValue raw_index_id)
+DEFINE_JS_FUNCTION(JSValue, sto_subarray, JSValue raw_sto, JSValue raw_index_id)
 {
     JS_HOOK_SETUP();
-    
+
     auto sto_in = FromJSIntArrayOrHexString(ctx, raw_sto, 1024);
     auto index_id = FromJSInt(ctx, raw_index_id);
 
     if (!sto_in.has_value() || !index_id.has_value())
         returnJS(INVALID_ARGUMENT);
-    
+
     if (*index_id > 0xFFFFFFFFULL || *index_id < 0)
         returnJS(INVALID_ARGUMENT);
 
-    returnJS(__sto_subarray(hookCtx, applyCtx, j, sto_in->data(), sto_in->size(), (uint32_t)(*index_id)));
+    returnJS(__sto_subarray(
+        hookCtx,
+        applyCtx,
+        j,
+        sto_in->data(),
+        sto_in->size(),
+        (uint32_t)(*index_id)));
 
     JS_HOOK_TEARDOWN();
 }
@@ -6384,8 +6307,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -6413,10 +6336,7 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    util_raddr,
-    JSValue acc_id)
+DEFINE_JS_FUNCTION(JSValue, util_raddr, JSValue acc_id)
 {
     JS_HOOK_SETUP();
 
@@ -6442,8 +6362,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -6478,19 +6398,13 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-
-
-
-DEFINE_JS_FUNCTION(
-    JSValue,
-    util_accid,
-    JSValue raddr)
+DEFINE_JS_FUNCTION(JSValue, util_accid, JSValue raddr)
 {
     JS_HOOK_SETUP();
 
     if (!JS_IsString(raddr))
         return JS_NewInt64(ctx, INVALID_ARGUMENT);
-   
+
     auto [len, str] = FromJSString(ctx, raddr, 49);
     if (len > 49)
         returnJS(TOO_BIG);
@@ -6556,14 +6470,17 @@ overlapping_memory(std::vector<uint64_t> regions)
     return false;
 }
 
-inline
-std::variant<int64_t, std::vector<uint8_t>>
+inline std::variant<int64_t, std::vector<uint8_t>>
 __sto_emplace(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint8_t* sread_ptr, size_t sread_len,
-        uint8_t* fread_ptr, size_t fread_len, uint32_t field_id)
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint8_t* sread_ptr,
+    size_t sread_len,
+    uint8_t* fread_ptr,
+    size_t fread_len,
+    uint32_t field_id)
 {
-
     // RH TODO: put these constants somewhere (votable?)
     if (sread_len > 1024 * 16)
         return TOO_BIG;
@@ -6639,7 +6556,7 @@ __sto_emplace(
     {
         size_t len = inject_start - start;
         memcpy(write_ptr, start, len);
-        bytes_written += len; 
+        bytes_written += len;
     }
 
     if (fread_len > 0)
@@ -6715,7 +6632,7 @@ DEFINE_WASM_FUNCTION(
 
         if (fread_len < 2)
             return TOO_SMALL;
-        
+
         // check for buffer overlaps
         if (overlapping_memory(
                 {write_ptr,
@@ -6727,8 +6644,15 @@ DEFINE_WASM_FUNCTION(
             return MEM_OVERLAP;
     }
 
-    auto out = __sto_emplace(hookCtx, applyCtx, j,
-        sread_ptr + memory, sread_len, fread_ptr + memory, fread_len, field_id);
+    auto out = __sto_emplace(
+        hookCtx,
+        applyCtx,
+        j,
+        sread_ptr + memory,
+        sread_len,
+        fread_ptr + memory,
+        fread_len,
+        field_id);
 
     if (std::holds_alternative<int64_t>(out))
         return std::get<int64_t>(out);
@@ -6740,11 +6664,11 @@ DEFINE_WASM_FUNCTION(
     if (vec.size() > write_len)
         return INTERNAL_ERROR;
 
-    WRITE_WASM_MEMORY_AND_RETURN(write_ptr, write_len, vec.data(), vec.size(), memory, memory_length);
+    WRITE_WASM_MEMORY_AND_RETURN(
+        write_ptr, write_len, vec.data(), vec.size(), memory, memory_length);
 
-    WASM_HOOK_TEARDOWN();    
+    WASM_HOOK_TEARDOWN();
 }
-
 
 DEFINE_JS_FUNCTION(
     JSValue,
@@ -6755,13 +6679,13 @@ DEFINE_JS_FUNCTION(
 {
     JS_HOOK_SETUP();
 
-    auto sto = FromJSIntArrayOrHexString(ctx, raw_sto, 16*1024);
-    auto field = FromJSIntArrayOrHexString(ctx, raw_field, 4*1024);
+    auto sto = FromJSIntArrayOrHexString(ctx, raw_sto, 16 * 1024);
+    auto field = FromJSIntArrayOrHexString(ctx, raw_field, 4 * 1024);
     auto field_id = FromJSInt(ctx, raw_field_id);
 
     if (!sto.has_value() || !field_id.has_value())
         returnJS(INVALID_ARGUMENT);
-    
+
     if (*field_id > 0xFFFFFFFFULL || *field_id < 0)
         returnJS(INVALID_ARGUMENT);
 
@@ -6770,12 +6694,16 @@ DEFINE_JS_FUNCTION(
 
     bool const isErase = !field.has_value();
 
-    auto ret = __sto_emplace(hookCtx, applyCtx, j,
-        sto->data(), sto->size(), 
-        isErase ? 0 : field->data(), 
-        isErase ? 0 : field->size(), 
+    auto ret = __sto_emplace(
+        hookCtx,
+        applyCtx,
+        j,
+        sto->data(),
+        sto->size(),
+        isErase ? 0 : field->data(),
+        isErase ? 0 : field->size(),
         *field_id);
-    
+
     if (std::holds_alternative<int64_t>(ret))
         returnJS(std::get<int64_t>(ret));
 
@@ -6825,30 +6753,24 @@ DEFINE_WASM_FUNCTION(
     return ret;
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    sto_erase,
-    JSValue raw_sto,
-    JSValue raw_field)
+DEFINE_JS_FUNCTION(JSValue, sto_erase, JSValue raw_sto, JSValue raw_field)
 {
     JS_HOOK_SETUP();
 
-    JSValueConst argv2[] = {
-        argv[0],
-        JS_UNDEFINED,
-        argv[1]
-    };
-    
+    JSValueConst argv2[] = {argv[0], JS_UNDEFINED, argv[1]};
+
     return FORWARD_JS_FUNCTION_CALL(sto_emplace, 3, argv2);
 
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t
+inline int64_t
 __sto_validate(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint8_t* read_ptr, size_t read_len)
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint8_t* read_ptr,
+    size_t read_len)
 {
     if (read_len < 2)
         return TOO_SMALL;
@@ -6868,7 +6790,6 @@ __sto_validate(
     }
 
     return upto == end ? 1 : 0;
-
 }
 
 DEFINE_WASM_FUNCTION(
@@ -6877,8 +6798,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     // RH TODO: see if an internal ripple function/class would do this better
 
@@ -6890,14 +6811,11 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    sto_validate,
-    JSValue raw_sto)
+DEFINE_JS_FUNCTION(JSValue, sto_validate, JSValue raw_sto)
 {
     JS_HOOK_SETUP();
 
-    auto sto = FromJSIntArrayOrHexString(ctx, raw_sto, 16*1024);
+    auto sto = FromJSIntArrayOrHexString(ctx, raw_sto, 16 * 1024);
 
     if (!sto.has_value())
         returnJS(INVALID_ARGUMENT);
@@ -6920,8 +6838,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t kread_ptr,
     uint32_t kread_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(dread_ptr, dread_len, memory_length) ||
         NOT_IN_BOUNDS(sread_ptr, sread_len, memory_length) ||
@@ -6953,7 +6871,6 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-
 DEFINE_JS_FUNCTION(
     JSValue,
     util_verify,
@@ -6968,7 +6885,6 @@ DEFINE_JS_FUNCTION(
     if (!vKey || vKey->size() != 33)
         returnJS(INVALID_KEY);
 
-
     auto vData = FromJSIntArrayOrHexString(ctx, rawData, 65536);
     if (!vData || vData->empty())
         returnJS(INVALID_ARGUMENT);
@@ -6976,7 +6892,6 @@ DEFINE_JS_FUNCTION(
     auto vSig = FromJSIntArrayOrHexString(ctx, rawSig, 1024);
     if (!vSig || vSig->size() < 30)
         returnJS(INVALID_ARGUMENT);
-
 
     ripple::Slice keyslice{vKey->data(), vKey->size()};
     ripple::Slice data{vData->data(), vData->size()};
@@ -6986,16 +6901,16 @@ DEFINE_JS_FUNCTION(
         returnJS(INVALID_KEY);
 
     ripple::PublicKey key{keyslice};
-    returnJS( verify(key, data, sig, false) ? 1 : 0 );
-    
+    returnJS(verify(key, data, sig, false) ? 1 : 0);
+
     JS_HOOK_TEARDOWN();
 }
 
 // Return the current fee base of the current ledger (multiplied by a margin)
 DEFINE_WASM_FUNCNARG(int64_t, fee_base)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     return view.fees().base.drops();
 
@@ -7006,26 +6921,27 @@ DEFINE_JS_FUNCNARG(JSValue, fee_base)
 {
     JS_HOOK_SETUP();
 
-    returnJS(view.fees().base.drops());    
+    returnJS(view.fees().base.drops());
 
     JS_HOOK_TEARDOWN();
 }
 
 // Return the fee base for a hypothetically emitted transaction from the current
 // hook based on byte count
-inline
-int64_t
+inline int64_t
 __etxn_fee_base(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint8_t* read_ptr, size_t read_len)
-{    
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint8_t* read_ptr,
+    size_t read_len)
+{
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
 
     try
     {
-        ripple::Slice tx{
-            reinterpret_cast<const void*>(read_ptr), read_len};
+        ripple::Slice tx{reinterpret_cast<const void*>(read_ptr), read_len};
 
         SerialIter sitTrans(tx);
 
@@ -7050,8 +6966,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -7061,29 +6977,28 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    etxn_fee_base,
-    JSValue txblob)
+DEFINE_JS_FUNCTION(JSValue, etxn_fee_base, JSValue txblob)
 {
     JS_HOOK_SETUP();
 
     auto blob = FromJSIntArrayOrHexString(ctx, txblob, 65536);
     if (!blob.has_value() || blob->empty())
         returnJS(INVALID_ARGUMENT);
-    
+
     returnJS(__etxn_fee_base(hookCtx, applyCtx, j, blob->data(), blob->size()));
 
     JS_HOOK_TEARDOWN();
 }
 
 // Populate an sfEmitDetails field in a soon-to-be emitted transaction
-inline
-int64_t __etxn_details(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint8_t* out_ptr, size_t max_len)
+inline int64_t
+__etxn_details(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint8_t* out_ptr,
+    size_t max_len)
 {
-    
     int64_t expected_size = 138U;
     if (!hookCtx.result.hasCallback)
         expected_size -= 22U;
@@ -7129,7 +7044,7 @@ int64_t __etxn_details(
     out += 32;
     *out++ = 0x5CU;  // sfEmitNonce                                     /* upto
                      // =  49 | size = 33 */
-    
+
     auto hash = __etxn_nonce(hookCtx, applyCtx, j);
     if (!hash.has_value())
         return INTERNAL_ERROR;
@@ -7147,7 +7062,7 @@ int64_t __etxn_details(
         *out++ = 0x8AU;  // sfEmitCallback preamble                         /*
                          // upto = 115 | size = 22 */
         *out++ = 0x14U;  // preamble cont
-    
+
         memcpy(out, hookCtx.result.account.data(), 20);
 
         out += 20;
@@ -7167,8 +7082,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t write_ptr,
     uint32_t write_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -7178,9 +7093,7 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCNARG(
-    JSValue,
-    etxn_details)
+DEFINE_JS_FUNCNARG(JSValue, etxn_details)
 {
     JS_HOOK_SETUP();
 
@@ -7210,8 +7123,8 @@ DEFINE_JS_FUNCNARG(
 // by the hook developer
 DEFINE_WASM_FUNCTION(int32_t, _g, uint32_t id, uint32_t maxitr)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (hookCtx.guard_map.find(id) == hookCtx.guard_map.end())
         hookCtx.guard_map[id] = 1;
@@ -7278,8 +7191,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_len,
     int64_t float1)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx on
-                   // current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx
+                        // on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -7333,8 +7246,8 @@ DEFINE_WASM_FUNCTION(
 
 DEFINE_WASM_FUNCTION(int64_t, float_set, int32_t exp, int64_t mantissa)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (mantissa == 0)
         return 0;
@@ -7351,11 +7264,7 @@ DEFINE_WASM_FUNCTION(int64_t, float_set, int32_t exp, int64_t mantissa)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_set,
-    JSValue raw_e,
-    JSValue raw_m)
+DEFINE_JS_FUNCTION(JSValue, float_set, JSValue raw_e, JSValue raw_m)
 {
     JS_HOOK_SETUP();
 
@@ -7433,10 +7342,14 @@ float_multiply_internal_parts(
     return ret;
 }
 
-inline
-int64_t __float_int(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        int64_t float1, uint32_t decimal_places, uint32_t absolute)
+inline int64_t
+__float_int(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    int64_t float1,
+    uint32_t decimal_places,
+    uint32_t absolute)
 {
     RETURN_IF_INVALID_FLOAT(float1);
     if (float1 == 0)
@@ -7475,10 +7388,9 @@ DEFINE_WASM_FUNCTION(
     uint32_t decimal_places,
     uint32_t absolute)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
-    return __float_int(hookCtx, applyCtx, j,
-        float1, decimal_places, absolute);
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
+    return __float_int(hookCtx, applyCtx, j, float1, decimal_places, absolute);
 
     WASM_HOOK_TEARDOWN();
 }
@@ -7496,21 +7408,25 @@ DEFINE_JS_FUNCTION(
     auto dp = FromJSInt(ctx, raw_dp);
     auto ab = FromJSInt(ctx, raw_abs);
 
-    if (any_missing(f1, dp, ab) ||
-        !fits_u32(dp, ab))
+    if (any_missing(f1, dp, ab) || !fits_u32(dp, ab))
         returnJS(INVALID_ARGUMENT);
 
-    // Note! This is the only (?) place where a float/... method has to return `returnJS` instead
-    // of `returnJSXFL` as this is where we cast to JS usable Number
-    returnJS(__float_int(hookCtx, applyCtx, j, *f1, (uint32_t)(*dp), (uint32_t)(*ab)));
+    // Note! This is the only (?) place where a float/... method has to return
+    // `returnJS` instead of `returnJSXFL` as this is where we cast to JS usable
+    // Number
+    returnJS(__float_int(
+        hookCtx, applyCtx, j, *f1, (uint32_t)(*dp), (uint32_t)(*ab)));
 
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __float_multiply(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        int64_t float1, int64_t float2)
+inline int64_t
+__float_multiply(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    int64_t float1,
+    int64_t float2)
 {
     RETURN_IF_INVALID_FLOAT(float1);
     RETURN_IF_INVALID_FLOAT(float2);
@@ -7528,25 +7444,20 @@ int64_t __float_multiply(
     return float_multiply_internal_parts(man1, exp1, neg1, man2, exp2, neg2);
 }
 
-
 DEFINE_WASM_FUNCTION(int64_t, float_multiply, int64_t float1, int64_t float2)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     return __float_multiply(hookCtx, applyCtx, j, float1, float2);
 
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_multiply,
-    JSValue raw_f1,
-    JSValue raw_f2)
+DEFINE_JS_FUNCTION(JSValue, float_multiply, JSValue raw_f1, JSValue raw_f2)
 {
     JS_HOOK_SETUP();
-    
+
     auto f1 = FromJSInt(ctx, raw_f1);
     auto f2 = FromJSInt(ctx, raw_f2);
 
@@ -7562,13 +7473,15 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __float_mulratio(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        int64_t float1,
-        uint32_t round_up,
-        uint32_t numerator,
-        uint32_t denominator)
+inline int64_t
+__float_mulratio(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    int64_t float1,
+    uint32_t round_up,
+    uint32_t numerator,
+    uint32_t denominator)
 {
     RETURN_IF_INVALID_FLOAT(float1);
     if (float1 == 0)
@@ -7597,10 +7510,11 @@ DEFINE_WASM_FUNCTION(
     uint32_t numerator,
     uint32_t denominator)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
-    return __float_mulratio(hookCtx, applyCtx, j, float1, round_up, numerator, denominator);
+    return __float_mulratio(
+        hookCtx, applyCtx, j, float1, round_up, numerator, denominator);
 
     WASM_HOOK_TEARDOWN();
 }
@@ -7620,7 +7534,14 @@ DEFINE_JS_FUNCTION(
     if (any_missing(f1, ru, n, d) || !fits_u32(ru, n, d))
         returnJS(INVALID_ARGUMENT);
 
-    int64_t const out = __float_mulratio(hookCtx, applyCtx, j, *f1, (uint32_t)(*ru), (uint32_t)(*n), (uint32_t)(*d));
+    int64_t const out = __float_mulratio(
+        hookCtx,
+        applyCtx,
+        j,
+        *f1,
+        (uint32_t)(*ru),
+        (uint32_t)(*n),
+        (uint32_t)(*d));
     if (out < 0)
         returnJS(out);
 
@@ -7631,8 +7552,8 @@ DEFINE_JS_FUNCTION(
 
 DEFINE_WASM_FUNCTION(int64_t, float_negate, int64_t float1)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (float1 == 0)
         return 0;
@@ -7642,17 +7563,14 @@ DEFINE_WASM_FUNCTION(int64_t, float_negate, int64_t float1)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_negate,
-    JSValue raw_f1)
+DEFINE_JS_FUNCTION(JSValue, float_negate, JSValue raw_f1)
 {
     JS_HOOK_SETUP();
 
     auto float1 = FromJSInt(ctx, raw_f1);
     if (!float1.has_value())
         returnJS(INVALID_ARGUMENT);
-    
+
     if (*float1 == 0)
         returnJS(0);
     RETURNJS_IF_INVALID_FLOAT(*float1);
@@ -7661,12 +7579,15 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __float_compare(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        int64_t float1, int64_t float2, uint32_t mode)
+inline int64_t
+__float_compare(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    int64_t float1,
+    int64_t float2,
+    uint32_t mode)
 {
-
     RETURN_IF_INVALID_FLOAT(float1);
     RETURN_IF_INVALID_FLOAT(float2);
 
@@ -7710,7 +7631,6 @@ int64_t __float_compare(
     {
         return XFL_OVERFLOW;
     }
-
 }
 
 DEFINE_WASM_FUNCTION(
@@ -7720,8 +7640,8 @@ DEFINE_WASM_FUNCTION(
     int64_t float2,
     uint32_t mode)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
     return __float_compare(hookCtx, applyCtx, j, float1, float2, mode);
 
     WASM_HOOK_TEARDOWN();
@@ -7740,18 +7660,20 @@ DEFINE_JS_FUNCTION(
     if (any_missing(f1, f2, mode) || !fits_u32(mode))
         returnJS(INVALID_ARGUMENT);
 
-    returnJS(__float_compare(hookCtx, applyCtx, j, *f1, *f2, (uint32_t)(*mode)));
+    returnJS(
+        __float_compare(hookCtx, applyCtx, j, *f1, *f2, (uint32_t)(*mode)));
 
     JS_HOOK_TEARDOWN();
 }
 
-
-inline
-int64_t __float_sum(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        int64_t float1, int64_t float2)
+inline int64_t
+__float_sum(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    int64_t float1,
+    int64_t float2)
 {
-
     RETURN_IF_INVALID_FLOAT(float1);
     RETURN_IF_INVALID_FLOAT(float2);
 
@@ -7789,18 +7711,14 @@ int64_t __float_sum(
 
 DEFINE_WASM_FUNCTION(int64_t, float_sum, int64_t float1, int64_t float2)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
     return __float_sum(hookCtx, applyCtx, j, float1, float2);
 
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_sum,
-    JSValue raw_f1,
-    JSValue raw_f2)
+DEFINE_JS_FUNCTION(JSValue, float_sum, JSValue raw_f1, JSValue raw_f2)
 {
     JS_HOOK_SETUP();
 
@@ -7813,17 +7731,17 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-std::variant<int64_t, std::vector<uint8_t>>
+inline std::variant<int64_t, std::vector<uint8_t>>
 __float_sto(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint32_t write_len,
-        std::optional<Currency> currency,
-        std::optional<AccountID> issuer,
-        int64_t float1,
-        uint32_t field_code)
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint32_t write_len,
+    std::optional<Currency> currency,
+    std::optional<AccountID> issuer,
+    int64_t float1,
+    uint32_t field_code)
 {
-
     RETURN_IF_INVALID_FLOAT(float1);
 
     uint16_t field = field_code & 0xFFFFU;
@@ -7960,7 +7878,6 @@ __float_sto(
     return vec;
 }
 
-
 DEFINE_WASM_FUNCTION(
     int64_t,
     float_sto,
@@ -7973,10 +7890,11 @@ DEFINE_WASM_FUNCTION(
     int64_t float1,
     uint32_t field_code)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
-    // error checking preserved here, in the same order to avoid a fork condition 
+    // error checking preserved here, in the same order to avoid a fork
+    // condition
 
     std::optional<Currency> currency;
     std::optional<AccountID> issuer;
@@ -8019,10 +7937,9 @@ DEFINE_WASM_FUNCTION(
 
         issuer = AccountID::fromVoid(memory + iread_ptr);
     }
-    
-    auto ret = __float_sto(hookCtx, applyCtx, j, write_len,
-        currency, issuer,        
-        float1, field_code);
+
+    auto ret = __float_sto(
+        hookCtx, applyCtx, j, write_len, currency, issuer, float1, field_code);
 
     if (std::holds_alternative<int64_t>(ret))
         return std::get<int64_t>(ret);
@@ -8032,10 +7949,8 @@ DEFINE_WASM_FUNCTION(
         return TOO_SMALL;
 
     WRITE_WASM_MEMORY_AND_RETURN(
-        write_ptr, write_len,
-        vec.data(), vec.size(),
-        memory, memory_length);
-        
+        write_ptr, write_len, vec.data(), vec.size(), memory, memory_length);
+
     WASM_HOOK_TEARDOWN();
 }
 
@@ -8048,7 +7963,6 @@ DEFINE_JS_FUNCTION(
     JSValue raw_fc)
 {
     JS_HOOK_SETUP();
-    
 
     auto [f1, fc] = FromJSInts(ctx, raw_f1, raw_fc);
     auto cur = FromJSIntArrayOrHexString(ctx, raw_cur, 20);
@@ -8063,7 +7977,6 @@ DEFINE_JS_FUNCTION(
     if (any_missing(f1, fc) || !fits_u32(fc))
         returnJS(INVALID_ARGUMENT);
 
-
     std::optional<Currency> currency;
     std::optional<AccountID> issuer;
     if (cur.has_value())
@@ -8072,17 +7985,17 @@ DEFINE_JS_FUNCTION(
         issuer = AccountID::fromVoid(isu->data());
 
     // RH TODO: 64 is wrong, figure out the longest this can be (< 64)
-    auto ret = __float_sto(hookCtx, applyCtx, j,
-        64, currency, issuer, *f1, *fc);
+    auto ret =
+        __float_sto(hookCtx, applyCtx, j, 64, currency, issuer, *f1, *fc);
 
     if (std::holds_alternative<int64_t>(ret))
         returnJS(std::get<int64_t>(ret));
 
     std::vector<uint8_t> const& vec = std::get<std::vector<uint8_t>>(ret);
     if (vec.size() > 64)
-        returnJS(INTERNAL_ERROR);    
-    
-    auto out = ToJSIntArray(ctx, vec); 
+        returnJS(INTERNAL_ERROR);
+
+    auto out = ToJSIntArray(ctx, vec);
     if (!out.has_value())
         returnJS(INTERNAL_ERROR);
     return *out;
@@ -8090,15 +8003,17 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __float_sto_set(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint8_t* read_ptr, uint32_t read_len)
+inline int64_t
+__float_sto_set(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint8_t* read_ptr,
+    uint32_t read_len)
 {
-
     if (read_len < 8)
         return NOT_AN_OBJECT;
-    
+
     uint8_t* upto = read_ptr;
 
     if (read_len > 8)
@@ -8162,7 +8077,6 @@ int64_t __float_sto_set(
         return 0;
 
     return hook_float::normalize_xfl(mantissa, exponent, is_negative);
-
 }
 
 DEFINE_WASM_FUNCTION(
@@ -8171,24 +8085,21 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (read_len < 8)
         return NOT_AN_OBJECT;
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
-    
+
     return __float_sto_set(hookCtx, applyCtx, j, memory + read_ptr, read_len);
 
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_sto_set,
-    JSValue raw_sto)
+DEFINE_JS_FUNCTION(JSValue, float_sto_set, JSValue raw_sto)
 {
     JS_HOOK_SETUP();
 
@@ -8284,8 +8195,8 @@ float_divide_internal(int64_t float1, int64_t float2, bool hasFix)
 
 DEFINE_WASM_FUNCTION(int64_t, float_divide, int64_t float1, int64_t float2)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     bool const hasFix = view.rules().enabled(fixFloatDivide);
     return float_divide_internal(float1, float2, hasFix);
@@ -8293,11 +8204,7 @@ DEFINE_WASM_FUNCTION(int64_t, float_divide, int64_t float1, int64_t float2)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_divide,
-    JSValue raw_f1,
-    JSValue raw_f2)
+DEFINE_JS_FUNCTION(JSValue, float_divide, JSValue raw_f1, JSValue raw_f2)
 {
     JS_HOOK_SETUP();
 
@@ -8309,7 +8216,7 @@ DEFINE_JS_FUNCTION(
     int64_t const out = float_divide_internal(*f1, *f2, fixV3);
     if (out < 0)
         returnJS(out);
-    
+
     returnJSXFL(out);
 
     JS_HOOK_TEARDOWN();
@@ -8331,8 +8238,8 @@ DEFINE_JS_FUNCNARG(JSValue, float_one)
 
 DEFINE_WASM_FUNCTION(int64_t, float_invert, int64_t float1)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (float1 == 0)
         return DIVISION_BY_ZERO;
@@ -8345,17 +8252,14 @@ DEFINE_WASM_FUNCTION(int64_t, float_invert, int64_t float1)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_invert,
-    JSValue raw_f1)
+DEFINE_JS_FUNCTION(JSValue, float_invert, JSValue raw_f1)
 {
     JS_HOOK_SETUP();
 
     auto f1 = FromJSInt(ctx, raw_f1);
     if (!f1.has_value())
         returnJS(INVALID_ARGUMENT);
-    
+
     if (*f1 == 0)
         returnJS(DIVISION_BY_ZERO);
     if (*f1 == float_one_internal)
@@ -8373,8 +8277,8 @@ DEFINE_JS_FUNCTION(
 
 DEFINE_WASM_FUNCTION(int64_t, float_mantissa, int64_t float1)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     RETURN_IF_INVALID_FLOAT(float1);
     if (float1 == 0)
@@ -8384,13 +8288,10 @@ DEFINE_WASM_FUNCTION(int64_t, float_mantissa, int64_t float1)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_mantissa,
-    JSValue raw_f1)
+DEFINE_JS_FUNCTION(JSValue, float_mantissa, JSValue raw_f1)
 {
     JS_HOOK_SETUP();
-    
+
     auto f1 = FromJSInt(ctx, raw_f1);
     if (!f1.has_value())
         returnJS(INVALID_ARGUMENT);
@@ -8403,16 +8304,16 @@ DEFINE_JS_FUNCTION(
     int64_t const out = get_mantissa(*f1);
     if (out < 0)
         returnJS(out);
-    
+
     returnJSXFL(out);
-    
+
     JS_HOOK_TEARDOWN();
 }
 
 DEFINE_WASM_FUNCTION(int64_t, float_sign, int64_t float1)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     RETURN_IF_INVALID_FLOAT(float1);
     if (float1 == 0)
@@ -8422,10 +8323,7 @@ DEFINE_WASM_FUNCTION(int64_t, float_sign, int64_t float1)
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_sign,
-    JSValue raw_f1)
+DEFINE_JS_FUNCTION(JSValue, float_sign, JSValue raw_f1)
 {
     JS_HOOK_SETUP();
 
@@ -8492,11 +8390,12 @@ double_to_xfl(double x)
     return ret;
 }
 
-
-inline
-int64_t __float_log(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        int64_t float1)
+inline int64_t
+__float_log(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    int64_t float1)
 {
     RETURN_IF_INVALID_FLOAT(float1);
 
@@ -8516,19 +8415,15 @@ int64_t __float_log(
 
 DEFINE_WASM_FUNCTION(int64_t, float_log, int64_t float1)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
-    
-    return __float_log(hookCtx, applyCtx, j, float1);
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
+    return __float_log(hookCtx, applyCtx, j, float1);
 
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_log,
-    JSValue raw_f1)
+DEFINE_JS_FUNCTION(JSValue, float_log, JSValue raw_f1)
 {
     JS_HOOK_SETUP();
 
@@ -8539,16 +8434,19 @@ DEFINE_JS_FUNCTION(
     int64_t const out = __float_log(hookCtx, applyCtx, j, *f1);
     if (out < 0)
         returnJS(out);
-    
+
     returnJSXFL(out);
 
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __float_root(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        int64_t float1, uint32_t n)
+inline int64_t
+__float_root(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    int64_t float1,
+    uint32_t n)
 {
     RETURN_IF_INVALID_FLOAT(float1);
     if (float1 == 0)
@@ -8566,24 +8464,19 @@ int64_t __float_root(
     double result = pow(inp, ((double)1.0f) / ((double)(n)));
 
     return double_to_xfl(result);
-
 }
 
 DEFINE_WASM_FUNCTION(int64_t, float_root, int64_t float1, uint32_t n)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     return __float_root(hookCtx, applyCtx, j, float1, n);
 
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    float_root,
-    JSValue raw_f1,
-    JSValue raw_n)
+DEFINE_JS_FUNCTION(JSValue, float_root, JSValue raw_f1, JSValue raw_n)
 {
     JS_HOOK_SETUP();
 
@@ -8608,8 +8501,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -8661,15 +8554,12 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    otxn_param,
-    JSValue param_key)
+DEFINE_JS_FUNCTION(JSValue, otxn_param, JSValue param_key)
 {
     JS_HOOK_SETUP();
 
-    std::optional<std::vector<uint8_t>> key =
-        FromJSIntArrayOrHexString(ctx, param_key, hook::maxHookParameterKeySize());
+    std::optional<std::vector<uint8_t>> key = FromJSIntArrayOrHexString(
+        ctx, param_key, hook::maxHookParameterKeySize());
 
     if (!key.has_value() || key->empty())
         returnJS(INVALID_ARGUMENT);
@@ -8706,11 +8596,12 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-std::optional<std::vector<uint8_t>>
- __hook_param(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        std::vector<uint8_t> const& paramName)
+inline std::optional<std::vector<uint8_t>>
+__hook_param(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    std::vector<uint8_t> const& paramName)
 {
     // first check for overrides set by prior hooks in the chain
     auto const& overrides = hookCtx.result.hookParamOverrides;
@@ -8723,7 +8614,8 @@ std::optional<std::vector<uint8_t>>
             if (param.size() == 0)
                 return {};  // allow overrides to "delete" parameters
 
-            return std::vector<uint8_t>{param.data(), param.data() + param.size()};
+            return std::vector<uint8_t>{
+                param.data(), param.data() + param.size()};
         }
     }
 
@@ -8749,8 +8641,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_ptr,
     uint32_t read_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -8773,24 +8665,22 @@ DEFINE_WASM_FUNCTION(
         return DOESNT_EXIST;
 
     WRITE_WASM_MEMORY_AND_RETURN(
-            write_ptr,
-            write_len,
-            param->data(),
-            param->size(),
-            memory,
-            memory_length);
+        write_ptr,
+        write_len,
+        param->data(),
+        param->size(),
+        memory,
+        memory_length);
 
     WASM_HOOK_TEARDOWN();
 }
 
-DEFINE_JS_FUNCTION(
-    JSValue,
-    hook_param,
-    JSValue raw_name)
+DEFINE_JS_FUNCTION(JSValue, hook_param, JSValue raw_name)
 {
     JS_HOOK_SETUP();
 
-    auto param_name = FromJSIntArrayOrHexString(ctx, raw_name, hook::maxHookParameterKeySize());
+    auto param_name = FromJSIntArrayOrHexString(
+        ctx, raw_name, hook::maxHookParameterKeySize());
 
     if (!param_name.has_value() || param_name->empty())
         returnJS(INVALID_ARGUMENT);
@@ -8801,7 +8691,7 @@ DEFINE_JS_FUNCTION(
         returnJS(DOESNT_EXIST);
 
     auto out = ToJSIntArray(ctx, *param);
-    
+
     if (!out.has_value())
         returnJS(INTERNAL_ERROR);
 
@@ -8810,12 +8700,14 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __hook_param_set(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint256 const& hash,
-        std::vector<uint8_t> const& paramName, 
-        std::vector<uint8_t> const& paramValue)
+inline int64_t
+__hook_param_set(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint256 const& hash,
+    std::vector<uint8_t> const& paramName,
+    std::vector<uint8_t> const& paramValue)
 {
     if (hookCtx.result.overrideCount >= hook_api::max_params)
         return TOO_MANY_PARAMS;
@@ -8844,8 +8736,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t hread_ptr,
     uint32_t hread_len)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length) ||
         NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length) ||
@@ -8885,30 +8777,37 @@ DEFINE_JS_FUNCTION(
 {
     JS_HOOK_SETUP();
 
-    auto param_key = FromJSIntArrayOrHexString(ctx, key, hook::maxHookParameterKeySize());
-    auto param_val = FromJSIntArrayOrHexString(ctx, val, hook::maxHookParameterValueSize());
+    auto param_key =
+        FromJSIntArrayOrHexString(ctx, key, hook::maxHookParameterKeySize());
+    auto param_val =
+        FromJSIntArrayOrHexString(ctx, val, hook::maxHookParameterValueSize());
     auto param_hash = FromJSIntArrayOrHexString(ctx, hhash, 32);
 
-    if (!param_key.has_value() || param_key->empty() || 
+    if (!param_key.has_value() || param_key->empty() ||
         param_key->size() > hook::maxHookParameterKeySize() ||
-        !param_val.has_value() || param_val->size() > hook::maxHookParameterValueSize() ||
+        !param_val.has_value() ||
+        param_val->size() > hook::maxHookParameterValueSize() ||
         !param_hash.has_value() || param_hash->size() != 32)
         returnJS(INVALID_ARGUMENT);
 
     ripple::uint256 hash = ripple::uint256::fromVoid(param_hash->data());
-        
+
     if (hookCtx.result.overrideCount >= hook_api::max_params)
         returnJS(TOO_MANY_PARAMS);
 
-    returnJS(__hook_param_set(hookCtx, applyCtx, j, hash, *param_key, *param_val));
+    returnJS(
+        __hook_param_set(hookCtx, applyCtx, j, hash, *param_key, *param_val));
 
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __hook_skip(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint256 const& hash, uint32_t flags)
+inline int64_t
+__hook_skip(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint256 const& hash,
+    uint32_t flags)
 {
     auto& skips = hookCtx.result.hookSkips;
 
@@ -8961,8 +8860,8 @@ DEFINE_WASM_FUNCTION(
     uint32_t read_len,
     uint32_t flags)
 {
-    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length, applyCtx,
-                   // hookCtx on current stack
+    WASM_HOOK_SETUP();  // populates memory_ctx, memory, memory_length,
+                        // applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -8980,29 +8879,23 @@ DEFINE_WASM_FUNCTION(
     WASM_HOOK_TEARDOWN();
 }
 
-
-DEFINE_JS_FUNCTION(
-    JSValue,
-    hook_skip,
-    JSValue raw_hhash,
-    JSValue raw_flags)
+DEFINE_JS_FUNCTION(JSValue, hook_skip, JSValue raw_hhash, JSValue raw_flags)
 {
     JS_HOOK_SETUP();
 
     auto hhash = FromJSIntArrayOrHexString(ctx, raw_hhash, 32);
     auto flags = FromJSInt(ctx, raw_flags);
 
-    if (!hhash.has_value() || hhash->size() != 32 ||
-        !flags.has_value() || *flags > 1 || *flags < 0)
+    if (!hhash.has_value() || hhash->size() != 32 || !flags.has_value() ||
+        *flags > 1 || *flags < 0)
         returnJS(INVALID_ARGUMENT);
 
     ripple::uint256 hash = ripple::uint256::fromVoid(hhash->data());
-   
+
     returnJS(__hook_skip(hookCtx, applyCtx, j, hash, *flags));
 
     JS_HOOK_TEARDOWN();
 }
-
 
 DEFINE_WASM_FUNCNARG(int64_t, hook_pos)
 {
@@ -9054,12 +8947,13 @@ DEFINE_JS_FUNCNARG(JSValue, hook_again)
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __meta_slot(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint32_t slot_into)
+inline int64_t
+__meta_slot(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint32_t slot_into)
 {
-
     if (!hookCtx.result.provisionalMeta)
         return PREREQUISITE_NOT_MET;
 
@@ -9084,7 +8978,6 @@ int64_t __meta_slot(
     hookCtx.slot[slot_into].entry = &(*hookCtx.slot[slot_into].storage);
 
     return slot_into;
-
 }
 
 DEFINE_WASM_FUNCTION(int64_t, meta_slot, uint32_t slot_into)
@@ -9096,11 +8989,7 @@ DEFINE_WASM_FUNCTION(int64_t, meta_slot, uint32_t slot_into)
     WASM_HOOK_TEARDOWN();
 }
 
-
-DEFINE_JS_FUNCTION(
-    JSValue,
-    meta_slot,
-    JSValue raw_slot_into)
+DEFINE_JS_FUNCTION(JSValue, meta_slot, JSValue raw_slot_into)
 {
     JS_HOOK_SETUP();
 
@@ -9113,10 +9002,13 @@ DEFINE_JS_FUNCTION(
     JS_HOOK_TEARDOWN();
 }
 
-inline
-int64_t __xpop_slot(
-        hook::HookContext& hookCtx, ApplyContext& applyCtx, beast::Journal& j,
-        uint32_t slot_into_tx, uint32_t slot_into_meta)
+inline int64_t
+__xpop_slot(
+    hook::HookContext& hookCtx,
+    ApplyContext& applyCtx,
+    beast::Journal& j,
+    uint32_t slot_into_tx,
+    uint32_t slot_into_meta)
 {
     if (applyCtx.tx.getFieldU16(sfTransactionType) != ttIMPORT)
         return PREREQUISITE_NOT_MET;
@@ -9178,7 +9070,6 @@ int64_t __xpop_slot(
         &(*hookCtx.slot[slot_into_meta].storage);
 
     return (slot_into_tx << 16U) + slot_into_meta;
-
 }
 
 DEFINE_WASM_FUNCTION(
@@ -9204,10 +9095,16 @@ DEFINE_JS_FUNCTION(
 
     auto slot_into_tx = FromJSInt(ctx, raw_slot_into_tx);
     auto slot_into_meta = FromJSInt(ctx, raw_slot_into_meta);
-    if (any_missing(slot_into_tx, slot_into_meta) || !fits_u32(slot_into_tx, slot_into_meta))
+    if (any_missing(slot_into_tx, slot_into_meta) ||
+        !fits_u32(slot_into_tx, slot_into_meta))
         returnJS(INVALID_ARGUMENT);
 
-    returnJS(__xpop_slot(hookCtx, applyCtx, j, (uint32_t)(*slot_into_tx), (uint32_t)(*slot_into_meta)));
+    returnJS(__xpop_slot(
+        hookCtx,
+        applyCtx,
+        j,
+        (uint32_t)(*slot_into_tx),
+        (uint32_t)(*slot_into_meta)));
 
     JS_HOOK_TEARDOWN();
 }
@@ -9221,7 +9118,8 @@ DEFINE_JS_FUNCTION(
 {
     JS_HOOK_SETUP();
 
-    int64_t result = __xpop_slot(hookCtx, applyCtx, slot_into_tx, slot_into_meta); 
+    int64_t result = __xpop_slot(hookCtx, applyCtx, slot_into_tx,
+slot_into_meta);
 
     JS_HOOK_TEARDOWN();
 }
