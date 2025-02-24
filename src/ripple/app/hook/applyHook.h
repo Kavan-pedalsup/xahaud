@@ -1269,12 +1269,12 @@ public:
 
         ~QuickJSVM()
         {
-            if (rt)
-                JS_FreeRuntime(rt);
             if (ctx)
                 JS_FreeContext(ctx);
-            rt = NULL;
+            if (rt)
+                JS_FreeRuntime(rt);
             ctx = NULL;
+            rt = NULL;
         }
     };
 
