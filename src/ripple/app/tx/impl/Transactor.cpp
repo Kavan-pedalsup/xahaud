@@ -1270,9 +1270,17 @@ Transactor::executeHookChain(
                 if (results.back().exitType == hook_api::ExitType::WASM_ERROR)
                 {
                     JLOG(j_.warn()) << "HookError[" << account << "-"
-                                    << ctx_.tx.getAccountID(sfAccount) << "]: "
+                                    << ctx_.tx.getAccountID(sfAccount)
                                     << "]: Execution failure (graceful) "
                                     << "HookHash: " << hookHash;
+                }
+                if (results.back().exitType == hook_api::ExitType::UNSET)
+                {
+                    JLOG(j_.warn())
+                        << "HookError[" << account << "-"
+                        << ctx_.tx.getAccountID(sfAccount)
+                        << "]: Execution failure (no exit type specified) "
+                        << "HookHash: " << hookHash;
                 }
                 return tecHOOK_REJECTED;
             }
@@ -1298,7 +1306,7 @@ Transactor::executeHookChain(
         {
             JLOG(j_.warn())
                 << "HookError[" << account << "-"
-                << ctx_.tx.getAccountID(sfAccount) << "]: "
+                << ctx_.tx.getAccountID(sfAccount)
                 << "]: Execution failure (exceptional) "
                 << "Exception: " << e.what() << " HookHash: " << hookHash;
 
@@ -1426,13 +1434,13 @@ Transactor::doHookCallback(
                 finalizeHookResult(callbackResult, ctx_, success);
 
             JLOG(j_.trace()) << "HookInfo[" << callbackAccountID << "-"
-                             << ctx_.tx.getAccountID(sfAccount) << "]: "
-                             << "Callback finalizeHookResult = " << result;
+                             << ctx_.tx.getAccountID(sfAccount)
+                             << "]: Callback finalizeHookResult = " << result;
         }
         catch (std::exception& e)
         {
             JLOG(j_.fatal()) << "HookError[" << callbackAccountID << "-"
-                             << ctx_.tx.getAccountID(sfAccount) << "]: "
+                             << ctx_.tx.getAccountID(sfAccount)
                              << "]: Callback failure " << e.what();
         }
     }
@@ -1678,13 +1686,13 @@ Transactor::doAgainAsWeak(
             results.push_back(aawResult);
 
             JLOG(j_.trace()) << "HookInfo[" << hookAccountID << "-"
-                             << ctx_.tx.getAccountID(sfAccount) << "]: "
-                             << " aaw Hook ExitCode = " << aawResult.exitCode;
+                             << ctx_.tx.getAccountID(sfAccount)
+                             << "]: aaw Hook ExitCode = " << aawResult.exitCode;
         }
         catch (std::exception& e)
         {
             JLOG(j_.fatal()) << "HookError[" << hookAccountID << "-"
-                             << ctx_.tx.getAccountID(sfAccount) << "]: "
+                             << ctx_.tx.getAccountID(sfAccount)
                              << "]: aaw failure " << e.what();
         }
     }
@@ -1923,6 +1931,7 @@ Transactor::operator()()
         uint32_t lgrCur = view().seq();
 
         bool const has240819 = view().rules().enabled(fix240819);
+        bool const has240911 = view().rules().enabled(fix240911);
 
         auto const& sfRewardFields =
             *(ripple::SField::knownCodeToField.at(917511 - has240819));
@@ -1971,7 +1980,11 @@ Transactor::operator()()
             uint32_t lgrElapsed = lgrCur - lgrLast;
 
             // overflow safety
-            if (lgrElapsed > lgrCur || lgrElapsed > lgrLast || lgrElapsed == 0)
+            if (!has240911 &&
+                (lgrElapsed > lgrCur || lgrElapsed > lgrLast ||
+                 lgrElapsed == 0))
+                continue;
+            if (has240911 && (lgrElapsed > lgrCur || lgrElapsed == 0))
                 continue;
 
             uint64_t accum = sle->getFieldU64(sfRewardAccumulator);

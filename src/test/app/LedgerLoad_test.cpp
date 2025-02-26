@@ -42,6 +42,9 @@ class LedgerLoad_test : public beast::unit_test::suite
         cfg->START_UP = type;
         assert(!dbPath.empty());
         cfg->legacy("database_path", dbPath);
+        auto& sectionNode = cfg->section(ConfigSection::nodeDatabase());
+        sectionNode.set("type", "memory");
+        cfg->overwrite(SECTION_RELATIONAL_DB, "backend", "sqlite");
         return cfg;
     }
 
@@ -62,7 +65,13 @@ class LedgerLoad_test : public beast::unit_test::suite
 
         retval.ledgerFile = td.file("ledgerdata.json");
 
-        Env env{*this};
+        Env env{*this, envconfig([](std::unique_ptr<Config> cfg) {
+                    auto& sectionNode =
+                        cfg->section(ConfigSection::nodeDatabase());
+                    sectionNode.set("type", "memory");
+                    cfg->overwrite(SECTION_RELATIONAL_DB, "backend", "sqlite");
+                    return cfg;
+                })};
         Account prev;
 
         for (auto i = 0; i < 20; ++i)
@@ -154,7 +163,7 @@ class LedgerLoad_test : public beast::unit_test::suite
         copy_file(
             sd.ledgerFile,
             ledgerFileCorrupt,
-            copy_option::overwrite_if_exists,
+            copy_options::overwrite_existing,
             ec);
         if (!BEAST_EXPECTS(!ec, ec.message()))
             return;

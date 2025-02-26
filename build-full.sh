@@ -1,4 +1,11 @@
-#!/bin/bash
+#!/bin/bash -u
+# We use set -e and bash with -u to bail on first non zero exit code of any
+# processes launched or upon any unbound variable.
+# We use set -x to print commands before running them to help with
+# debugging.
+set -ex
+
+set -e
 
 echo "START INSIDE CONTAINER - FULL"
 
@@ -19,7 +26,7 @@ yum-config-manager --disable centos-sclo-sclo
 ####
 
 cd /io;
-mkdir src/certs;
+mkdir -p src/certs;
 curl --silent -k https://raw.githubusercontent.com/RichardAH/rippled-release-builder/main/ca-bundle/certbundle.h -o src/certs/certbundle.h;
 if [ "`grep certbundle.h src/ripple/net/impl/RegisterSSLCerts.cpp | wc -l`" -eq "0" ]
 then
@@ -66,8 +73,8 @@ then
     #endif/g" src/ripple/net/impl/RegisterSSLCerts.cpp &&
     sed -i "s/#include <ripple\/net\/RegisterSSLCerts.h>/\0\n#include <certs\/certbundle.h>/g" src/ripple/net/impl/RegisterSSLCerts.cpp
 fi
-mkdir .nih_c;
-mkdir .nih_toolchain;
+mkdir -p .nih_c;
+mkdir -p .nih_toolchain;
 cd .nih_toolchain &&
 yum install -y wget lz4 lz4-devel git llvm13-static.x86_64 llvm13-devel.x86_64 devtoolset-10-binutils zlib-static ncurses-static -y \
   devtoolset-7-gcc-c++ \
@@ -90,11 +97,11 @@ echo "-- Install Cmake 3.23.1 --" &&
 pwd &&
 ( wget -nc -q https://github.com/Kitware/CMake/releases/download/v3.23.1/cmake-3.23.1-linux-x86_64.tar.gz; echo "" ) &&
 tar -xzf cmake-3.23.1-linux-x86_64.tar.gz -C /hbb/ &&
-echo "-- Install Boost 1.75.0 --" &&
+echo "-- Install Boost 1.86.0 --" &&
 pwd &&
-( wget -nc -q https://boostorg.jfrog.io/artifactory/main/release/1.75.0/source/boost_1_75_0.tar.gz; echo "" ) &&
-tar -xzf boost_1_75_0.tar.gz &&
-cd boost_1_75_0 && ./bootstrap.sh && ./b2  link=static -j$3 && ./b2 install &&
+( wget -nc -q https://archives.boost.io/release/1.86.0/source/boost_1_86_0.tar.gz; echo "" ) &&
+tar -xzf boost_1_86_0.tar.gz &&
+cd boost_1_86_0 && ./bootstrap.sh && ./b2  link=static -j$3 && ./b2 install &&
 cd ../ &&
 echo "-- Install Protobuf 3.20.0 --" &&
 pwd &&
@@ -115,7 +122,7 @@ tar -xf libunwind-13.0.1.src.tar.xz &&
 cp -r libunwind-13.0.1.src/include libunwind-13.0.1.src/src lld-13.0.1.src/ &&
 cd lld-13.0.1.src &&
 rm -rf build CMakeCache.txt &&
-mkdir build &&
+mkdir -p build &&
 cd build &&
 cmake .. -DLLVM_LIBRARY_DIR=/usr/lib64/llvm13/lib/ -DCMAKE_INSTALL_PREFIX=/usr/lib64/llvm13/ -DCMAKE_BUILD_TYPE=Release &&
 make -j$3 install &&
@@ -125,11 +132,11 @@ cd ../../ &&
 echo "-- Build WasmEdge --" &&
 ( wget -nc -q https://github.com/WasmEdge/WasmEdge/archive/refs/tags/0.11.2.zip; unzip -o 0.11.2.zip; ) &&
 cd WasmEdge-0.11.2 &&
-( mkdir build; echo "" ) &&
+( mkdir -p build; echo "" ) &&
 cd build &&
-export BOOST_ROOT="/usr/local/src/boost_1_75_0" &&
+export BOOST_ROOT="/usr/local/src/boost_1_86_0" &&
 export Boost_LIBRARY_DIRS="/usr/local/lib" &&
-export BOOST_INCLUDEDIR="/usr/local/src/boost_1_75_0" &&
+export BOOST_INCLUDEDIR="/usr/local/src/boost_1_86_0" &&
 export PATH=`echo $PATH | sed -E "s/devtoolset-7/devtoolset-9/g"` &&
 cmake .. \
     -DCMAKE_BUILD_TYPE=Release \

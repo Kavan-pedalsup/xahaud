@@ -23,6 +23,9 @@
 #include <ripple/ledger/View.h>
 #include <ripple/protocol/Feature.h>
 #include <ripple/protocol/Indexes.h>
+#include <ripple/protocol/TxFlags.h>
+#include <ripple/protocol/st.h>
+
 namespace ripple {
 
 TxConsequences
@@ -67,6 +70,16 @@ Remit::preflight(PreflightContext const& ctx)
     {
         JLOG(ctx.j.warn()) << "Malformed transaction: Remit to self.";
         return temREDUNDANT;
+    }
+
+    if (ctx.rules.enabled(fix20250131))
+    {
+        if (!dstID || dstID == noAccount())
+        {
+            JLOG(ctx.j.warn())
+                << "Malformed transaction: Remit to invalid account.";
+            return temMALFORMED;
+        }
     }
 
     if (ctx.tx.isFieldPresent(sfInform))

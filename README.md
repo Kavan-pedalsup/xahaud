@@ -1,4 +1,4 @@
-# Xahau
+# Xahau 
 
 **Note:** Throughout this README, references to "we" or "our" pertain to the community and contributors involved in the Xahau network. It does not imply a legal entity or a specific collection of individuals.
 
@@ -67,5 +67,5 @@ git-subtree. See those directories' README files for more details.
   - [explorer.xahau.network](https://explorer.xahau.network)
 - **Testnet & Faucet**: Test applications and obtain test XAH at [xahau-test.net](https://xahau-test.net) and use the testnet explorer at [explorer.xahau.network](https://explorer.xahau.network).
 - **Supporting Wallets**: A list of wallets that support XAH and Xahau-based assets.
-  - [Xumm](https://xumm.app)
+  - [Xaman](https://xaman.app)
   - [Crossmark](https://crossmark.io)

@@ -392,6 +392,7 @@ target_sources (rippled PRIVATE
   src/ripple/app/misc/NegativeUNLVote.cpp
   src/ripple/app/misc/NetworkOPs.cpp
   src/ripple/app/misc/SHAMapStoreImp.cpp
+  src/ripple/app/misc/StateAccounting.cpp
   src/ripple/app/misc/detail/impl/WorkSSL.cpp
   src/ripple/app/misc/impl/AccountTxPaging.cpp
   src/ripple/app/misc/impl/AmendmentTable.cpp
@@ -433,13 +434,17 @@ target_sources (rippled PRIVATE
   src/ripple/app/tx/impl/CancelOffer.cpp
   src/ripple/app/tx/impl/CashCheck.cpp
   src/ripple/app/tx/impl/Change.cpp
+  src/ripple/app/tx/impl/ClaimReward.cpp
   src/ripple/app/tx/impl/CreateCheck.cpp
   src/ripple/app/tx/impl/CreateOffer.cpp
   src/ripple/app/tx/impl/CreateTicket.cpp
   src/ripple/app/tx/impl/DeleteAccount.cpp
   src/ripple/app/tx/impl/DepositPreauth.cpp
   src/ripple/app/tx/impl/Escrow.cpp
+  src/ripple/app/tx/impl/GenesisMint.cpp
+  src/ripple/app/tx/impl/Import.cpp
   src/ripple/app/tx/impl/InvariantCheck.cpp
+  src/ripple/app/tx/impl/Invoke.cpp
   src/ripple/app/tx/impl/NFTokenAcceptOffer.cpp
   src/ripple/app/tx/impl/NFTokenBurn.cpp
   src/ripple/app/tx/impl/NFTokenCancelOffer.cpp
@@ -448,14 +453,10 @@ target_sources (rippled PRIVATE
   src/ripple/app/tx/impl/OfferStream.cpp
   src/ripple/app/tx/impl/PayChan.cpp
   src/ripple/app/tx/impl/Payment.cpp
-  src/ripple/app/tx/impl/SetAccount.cpp
-  src/ripple/app/tx/impl/SetRegularKey.cpp
-  src/ripple/app/tx/impl/SetHook.cpp
-  src/ripple/app/tx/impl/ClaimReward.cpp
-  src/ripple/app/tx/impl/GenesisMint.cpp
-  src/ripple/app/tx/impl/Import.cpp
-  src/ripple/app/tx/impl/Invoke.cpp
   src/ripple/app/tx/impl/Remit.cpp
+  src/ripple/app/tx/impl/SetAccount.cpp
+  src/ripple/app/tx/impl/SetHook.cpp
+  src/ripple/app/tx/impl/SetRegularKey.cpp
   src/ripple/app/tx/impl/SetSignerList.cpp
   src/ripple/app/tx/impl/SetTrust.cpp
   src/ripple/app/tx/impl/SignerEntries.cpp
@@ -538,7 +539,9 @@ target_sources (rippled PRIVATE
        subdir: nodestore
   #]===============================]
   src/ripple/nodestore/backend/CassandraFactory.cpp
+  src/ripple/nodestore/backend/RWDBFactory.cpp
   src/ripple/nodestore/backend/MemoryFactory.cpp
+  src/ripple/nodestore/backend/FlatmapFactory.cpp
   src/ripple/nodestore/backend/NuDBFactory.cpp
   src/ripple/nodestore/backend/NullFactory.cpp
   src/ripple/nodestore/backend/RocksDBFactory.cpp
@@ -669,6 +672,9 @@ target_sources (rippled PRIVATE
   src/ripple/rpc/impl/ShardVerificationScheduler.cpp
   src/ripple/rpc/impl/Status.cpp
   src/ripple/rpc/impl/TransactionSign.cpp
+  src/ripple/rpc/impl/NFTokenID.cpp
+  src/ripple/rpc/impl/NFTokenOfferID.cpp
+  src/ripple/rpc/impl/NFTSyntheticSerializer.cpp
   #[===============================[
      main sources:
        subdir: perflog

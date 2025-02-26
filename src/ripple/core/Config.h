@@ -25,6 +25,7 @@
 #include <ripple/basics/base_uint.h>
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/beast/utility/Journal.h>
+#include <ripple/core/ConfigSections.h>
 #include <ripple/protocol/PublicKey.h>
 #include <ripple/protocol/SystemParameters.h>  // VFALCO Breaks levelization
 #include <boost/beast/core/string.hpp>
@@ -154,6 +155,8 @@ public:
     std::map<std::string, PublicKey>
         IMPORT_VL_KEYS;  // hex string -> class PublicKey (for caching purposes)
 
+    std::vector<std::string> DATAGRAM_MONITOR;
+
     enum StartUpType {
         FRESH,
         NORMAL,
@@ -240,7 +243,7 @@ public:
     bool LEDGER_REPLAY = false;
 
     // Work queue limits
-    int MAX_TRANSACTIONS = 250;
+    int MAX_TRANSACTIONS = 1000;
     static constexpr int MAX_JOB_QUEUE_TX = 1000;
     static constexpr int MIN_JOB_QUEUE_TX = 100;
 
@@ -349,6 +352,21 @@ public:
     reporting() const
     {
         return RUN_REPORTING;
+    }
+    bool
+    mem_backend() const
+    {
+        static bool const isMem =
+            (!section(SECTION_RELATIONAL_DB).empty() &&
+             boost::beast::iequals(
+                 get(section(SECTION_RELATIONAL_DB), "backend"), "rwdb")) ||
+            (!section("node_db").empty() &&
+             (boost::beast::iequals(get(section("node_db"), "type"), "rwdb") ||
+              boost::beast::iequals(
+                  get(section("node_db"), "type"), "flatmap")));
+        // RHNOTE: memory type is not selected for here because it breaks
+        // tests
+        return isMem;
     }
 
     bool
