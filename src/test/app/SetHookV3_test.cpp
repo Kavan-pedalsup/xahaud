@@ -32,7 +32,7 @@ namespace ripple {
 
 namespace test {
 
-class SetHook_test : public beast::unit_test::suite
+class SetHookV3_test : public beast::unit_test::suite
 {
 private:
     // helper
@@ -50,12 +50,11 @@ public:
     std::string
     loadHook()
     {
-        std::string name = "/Users/darkmatter/projects/ledger-works/xahaud/src/test/app/base.wasm";
+        std::string name = "/Users/darkmatter/projects/ledger-works/xahaud/src/test/app/wasm/custom.wasm";
         if (!std::filesystem::exists(name)) {
             std::cout << "File does not exist: " << name << "\n";
             return "";
         }
-
 
         std::ifstream hookFile(name, std::ios::binary);
 
@@ -100,6 +99,7 @@ public:
         env.close();
 
         std::string hook = loadHook();
+        std::cout << "Hook: " << hook << "\n";
 
         // install the hook on alice
         env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
@@ -123,7 +123,7 @@ public:
     void
     testWithFeatures(FeatureBitset features)
     {
-        testSimple(sa);
+        testSimple(features);
     }
 
     void

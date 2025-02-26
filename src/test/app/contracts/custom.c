@@ -9,16 +9,12 @@
 // #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
 // #define GUARDM(maxiter, n) _g(( (1ULL << 31U) + (__LINE__ << 16) + n), (maxiter)+1)
 
-// int64_t methodCreate(uint32_t reserved) {
-//     TRACESTR("somefunc.c: Called.");
-//     for (int i = 0; GUARD(10), i < 10; i++) {
-//         TRACESTR("somefunc.c: Iterating.");
-//     }
-//     return accept(SBUF("somefunc.c: Finished."), __LINE__);
-// }
+// hooks-cli compile-c contracts/custom.c build
 
-int64_t hook(uint32_t reserved) {
-    TRACESTR("Base.c: Called.");
-    _g(1,1);
-    return accept(SBUF("base.c: Finished."), __LINE__);;
+int64_t methodCreate(uint32_t reserved) {
+    TRACESTR("somefunc.c: Called.");
+    for (int i = 0; GUARD(10), i < 10; i++) {
+        TRACESTR("somefunc.c: Iterating.");
+    }
+    return accept(SBUF("somefunc.c: Finished."), __LINE__);
 }
