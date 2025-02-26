@@ -723,6 +723,9 @@ public:
         uint32_t wasmParam,
         beast::Journal const& j)
     {
+
+        static WasmEdge_String _hookFunctionName = WasmEdge_StringCreateByCString("methodCreate");
+
         // HookExecutor can only execute once
         assert(!spent);
 
@@ -761,7 +764,7 @@ public:
             vm.ctx,
             reinterpret_cast<const uint8_t*>(wasm),
             len,
-            callback ? cbakFunctionName : hookFunctionName,
+            _hookFunctionName,
             params,
             1,
             returns,

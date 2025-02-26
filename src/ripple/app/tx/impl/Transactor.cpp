@@ -1768,7 +1768,7 @@ Transactor::operator()()
 
         // write state if all chains executed successfully
         if (isTesSuccess(result))
-            hook::finalizeHookState(stateMap, ctx_, ctx_.tx.getTransactionID());
+            result = hook::finalizeHookState(stateMap, ctx_, ctx_.tx.getTransactionID());
 
         // write hook results
         // this happens irrespective of whether final result was a tesSUCCESS
@@ -2018,8 +2018,9 @@ Transactor::operator()()
         for (auto const& [accID, hookHashes] : aawMap)
             doAgainAsWeak(accID, hookHashes, stateMap, weakResults, proMeta);
 
+        result = hook::finalizeHookState(stateMap, ctx_, ctx_.tx.getTransactionID());
+
         // write hook results
-        hook::finalizeHookState(stateMap, ctx_, ctx_.tx.getTransactionID());
         for (auto& weakResult : weakResults)
             hook::finalizeHookResult(weakResult, ctx_, isTesSuccess(result));
 

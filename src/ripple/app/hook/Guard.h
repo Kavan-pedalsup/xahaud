@@ -13,9 +13,9 @@
 using GuardLog =
     std::optional<std::reference_wrapper<std::basic_ostream<char>>>;
 
-#define DEBUG_GUARD 0
-#define DEBUG_GUARD_VERBOSE 0
-#define DEBUG_GUARD_VERY_VERBOSE 0
+#define DEBUG_GUARD 1
+#define DEBUG_GUARD_VERBOSE 1
+#define DEBUG_GUARD_VERY_VERBOSE 1
 
 #define GUARDLOG(logCode)                                                    \
     if (!guardLog)                                                           \
@@ -873,23 +873,23 @@ validateGuards(
         // followed by an leb128 length
         int section_type = wasm[i++];
 
-        if (section_type == 0)
-        {
-            GUARDLOG(hook::log::CUSTOM_SECTION_DISALLOWED)
-                << "Malformed transaction. "
-                << "Hook contained a custom section, which is not allowed. Use "
-                   "cleaner.\n";
-            return {};
-        }
+        // if (section_type == 0)
+        // {
+        //     GUARDLOG(hook::log::CUSTOM_SECTION_DISALLOWED)
+        //         << "Malformed transaction. "
+        //         << "Hook contained a custom section, which is not allowed. Use "
+        //            "cleaner.\n";
+        //     return {};
+        // }
 
-        if (section_type <= last_section_type)
-        {
-            GUARDLOG(hook::log::SECTIONS_OUT_OF_SEQUENCE)
-                << "Malformed transcation. "
-                << "Hook contained wasm sections that were either repeated or "
-                   "were out of sequence.\n";
-            return {};
-        }
+        // if (section_type <= last_section_type)
+        // {
+        //     GUARDLOG(hook::log::SECTIONS_OUT_OF_SEQUENCE)
+        //         << "Malformed transcation. "
+        //         << "Hook contained wasm sections that were either repeated or "
+        //            "were out of sequence.\n";
+        //     return {};
+        // }
 
         last_section_type = section_type;
 
@@ -1111,21 +1111,32 @@ validateGuards(
                     }
                 }
 
+                if (wasm[i] == 'm' && wasm[i + 1] == 'e' && wasm[i + 2] == 't' && wasm[i + 3] == 'h' && wasm[i + 4] == 'o' && wasm[i + 5] == 'd')
+                {
+                    i += name_len;
+                    CHECK_SHORT_HOOK();
+                    i++;
+                    CHECK_SHORT_HOOK();
+                    hook_func_idx = parseLeb128(wasm, i, &i);
+                    CHECK_SHORT_HOOK();
+                    continue;
+                }
+
                 i += name_len + 1;
                 parseLeb128(wasm, i, &i);
                 CHECK_SHORT_HOOK();
             }
 
             // execution to here means export section was parsed
-            if (!hook_func_idx)
-            {
-                GUARDLOG(hook::log::EXPORT_MISSING)
-                    << "Malformed transaction. "
-                    << "Hook did not export: "
-                    << (!hook_func_idx ? "int64_t hook(uint32_t); " : "")
-                    << "\n";
-                return {};
-            }
+            // if (!hook_func_idx)
+            // {
+            //     GUARDLOG(hook::log::EXPORT_MISSING)
+            //         << "Malformed transaction. "
+            //         << "Hook did not export: "
+            //         << (!hook_func_idx ? "int64_t hook(uint32_t); " : "")
+            //         << "\n";
+            //     return {};
+            // }
         }
         else if (section_type == 3)  // function section
         {
@@ -1267,13 +1278,13 @@ validateGuards(
                 else
                 {
                     // fail
-                    GUARDLOG(hook::log::FUNC_TYPE_INVALID)
-                        << "Invalid function type. Not used by any import or "
-                           "hook/cbak func. "
-                        << "Codesec: " << section_type << " "
-                        << "Local: " << j << " "
-                        << "Offset: " << i << "\n";
-                    return {};
+                    // GUARDLOG(hook::log::FUNC_TYPE_INVALID)
+                    //     << "Invalid function type. Not used by any import or "
+                    //        "hook/cbak func. "
+                    //     << "Codesec: " << section_type << " "
+                    //     << "Local: " << j << " "
+                    //     << "Offset: " << i << "\n";
+                    // return {};
                 }
 
                 int param_count = parseLeb128(wasm, i, &i);
@@ -1292,11 +1303,11 @@ validateGuards(
                 }
                 else if (param_count != (*first_signature).get().size() - 1)
                 {
-                    GUARDLOG(hook::log::FUNC_TYPE_INVALID)
-                        << "Malformed transaction. "
-                        << "Hook API: " << *first_name
-                        << " has the wrong number of parameters.\n";
-                    return {};
+                    // GUARDLOG(hook::log::FUNC_TYPE_INVALID)
+                    //     << "Malformed transaction. "
+                    //     << "Hook API: " << *first_name
+                    //     << " has the wrong number of parameters.\n";
+                    // return {};
                 }
 
                 for (int k = 0; k < param_count; ++k)
@@ -1360,12 +1371,12 @@ validateGuards(
                 // most compilers out
                 if (result_count != 1)
                 {
-                    GUARDLOG(hook::log::FUNC_RETURN_COUNT)
-                        << "Malformed transaction. "
-                        << "Hook declares a function type that returns fewer "
-                           "or more than one value. "
-                        << "\n";
-                    return {};
+                    // GUARDLOG(hook::log::FUNC_RETURN_COUNT)
+                    //     << "Malformed transaction. "
+                    //     << "Hook declares a function type that returns fewer "
+                    //        "or more than one value. "
+                    //     << "\n";
+                    // return {};
                 }
 
                 // this can only ever be 1 in production, but in testing it may

@@ -758,6 +758,7 @@ if (tests)
     src/test/app/ValidatorSite_test.cpp
     src/test/app/SetHook_test.cpp
     src/test/app/SetHookTSH_test.cpp
+    src/test/app/SetHookV3_test.cpp
     src/test/app/Wildcard_test.cpp
     src/test/app/XahauGenesis_test.cpp
     src/test/app/tx/apply_test.cpp
