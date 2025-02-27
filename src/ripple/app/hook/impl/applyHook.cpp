@@ -6648,9 +6648,9 @@ DEFINE_WASM_FUNCTION(
         hookCtx,
         applyCtx,
         j,
-        sread_ptr + memory,
+        memory + sread_ptr,
         sread_len,
-        fread_ptr + memory,
+        fread_ptr ? memory + fread_ptr : nullptr,
         fread_len,
         field_id);
 
@@ -6700,7 +6700,7 @@ DEFINE_JS_FUNCTION(
         j,
         sto->data(),
         sto->size(),
-        isErase ? 0 : field->data(),
+        isErase ? nullptr : field->data(),
         isErase ? 0 : field->size(),
         *field_id);
 
