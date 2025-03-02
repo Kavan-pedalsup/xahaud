@@ -100,8 +100,48 @@ private:
     const size_t numThreads;
     std::ofstream& outfile;
     beast::Journal journal;
-    std::mutex fileMutex;  // Mutex for synchronizing file writes
+    std::mutex fileMutex;              // Mutex for synchronizing file writes
+    std::atomic<bool> aborted{false};  // Flag to signal process abortion
 
+    // Safely write to the file with proper synchronization
+    bool
+    writeToFile(const void* data, size_t size)
+    {
+        std::lock_guard<std::mutex> lock(fileMutex);
+        if (aborted)
+            return false;
+
+        outfile.write(reinterpret_cast<const char*>(data), size);
+        if (outfile.fail())
+        {
+            JLOG(journal.error())
+                << "Failed to write to output file: " << std::strerror(errno);
+            aborted = true;
+            return false;
+        }
+        return true;
+    }
+
+    // Convert SHAMapNodeType to CatalogueNodeType
+    CatalogueNodeType
+    convertNodeType(SHAMapNodeType type)
+    {
+        switch (type)
+        {
+            case SHAMapNodeType::tnINNER:
+                return CatalogueNodeType::INNER;
+            case SHAMapNodeType::tnACCOUNT_STATE:
+                return CatalogueNodeType::ACCOUNT_STATE;
+            case SHAMapNodeType::tnTRANSACTION_NM:
+                return CatalogueNodeType::TRANSACTION;
+            case SHAMapNodeType::tnTRANSACTION_MD:
+                return CatalogueNodeType::TRANSACTION_META;
+            default:
+                throw std::runtime_error("Unknown node type");
+        }
+    }
+
+    // Serialize a single node to the output file
     void
     serializeNode(
         SHAMapTreeNode const& node,
@@ -110,107 +150,127 @@ private:
         bool isRoot,
         DeltaType deltaType = DeltaType::ADDED)
     {
-        Serializer s;
-
-        // First serialize the node to get its data
-        Serializer nodeData;
-        node.serializeForWire(nodeData);
-
-        // Now create a SHAMapTreeNode from the wire format
-        auto newNode = SHAMapTreeNode::makeFromWire(nodeData.slice());
-
-        if (!newNode)
-        {
-            JLOG(journal.error()) << "Failed to create node from wire format "
-                                     "during serialization";
+        if (aborted)
             return;
-        }
 
-        // Serialize with prefix (this is what's used when storing nodes)
-        newNode->serializeWithPrefix(s);
-
-        // Prepare the node header
-        NodeHeader header;
-        header.size = s.getLength();
-        header.sequence = sequence;
-
-        // Continue with the rest of the function as before...
-        if (node.isInner())
+        try
         {
-            header.type = CatalogueNodeType::INNER;
-        }
-        else
-        {
-            auto leafNode = static_cast<SHAMapLeafNode const*>(&node);
-            auto nodeType = leafNode->getType();
+            // Serialize the node with prefix format for consistency
+            Serializer s;
+            node.serializeWithPrefix(s);
 
-            if (nodeType == SHAMapNodeType::tnACCOUNT_STATE)
-                header.type = CatalogueNodeType::ACCOUNT_STATE;
-            else if (nodeType == SHAMapNodeType::tnTRANSACTION_NM)
-                header.type = CatalogueNodeType::TRANSACTION;
-            else if (nodeType == SHAMapNodeType::tnTRANSACTION_MD)
-                header.type = CatalogueNodeType::TRANSACTION_META;
+            // Prepare the node header
+            NodeHeader header;
+            header.size = s.getLength();
+            header.sequence = sequence;
+
+            // Set the node type
+            header.type = convertNodeType(node.getType());
+
+            header.isRoot = isRoot ? 1 : 0;
+            header.deltaType = deltaType;
+            header.hash = node.getHash().as_uint256();
+
+            // For inner nodes, store the nodeID; for leaf nodes, store the key
+            if (node.isInner())
+            {
+                header.nodeID = nodeID.getNodeID();
+            }
             else
-                throw std::runtime_error("Unknown node type");
+            {
+                auto leafNode = static_cast<SHAMapLeafNode const*>(&node);
+                header.nodeID = leafNode->peekItem()->key();
+            }
+
+            // Write the header and data to file
+            if (!writeToFile(&header, sizeof(header)))
+                return;
+
+            auto const& data = s.getData();
+            if (!writeToFile(data.data(), data.size()))
+                return;
         }
-
-        header.isRoot = isRoot ? 1 : 0;
-        header.deltaType = deltaType;
-        header.hash = node.getHash().as_uint256();
-
-        // For inner nodes, store the nodeID; for leaf nodes, store the key
-        if (node.isInner())
+        catch (std::exception const& e)
         {
-            header.nodeID = nodeID.getNodeID();
+            JLOG(journal.error()) << "Error serializing node: " << e.what();
+            aborted = true;
         }
-        else
-        {
-            auto leafNode = static_cast<SHAMapLeafNode const*>(&node);
-            header.nodeID = leafNode->peekItem()->key();
-        }
-
-        // Thread-safe file write
-        // std::lock_guard<std::mutex> lock(fileMutex_);
-        outfile.write(reinterpret_cast<const char*>(&header), sizeof(header));
-        auto const& data = s.getData();
-        outfile.write(reinterpret_cast<const char*>(data.data()), data.size());
     }
 
     // Serialize an entire SHAMap - used for the base (first) ledger
     void
     serializeFullMap(const SHAMap& map, uint32_t sequence)
     {
-        using StackEntry = std::pair<SHAMapTreeNode*, SHAMapNodeID>;
-        std::stack<StackEntry> nodeStack;
+        if (aborted)
+            return;
 
-        JLOG(journal.info()) << "Serializing root node with hash: "
-                             << to_string(map.root_->getHash().as_uint256());
-
-        // Start with the root
-        nodeStack.push({map.root_.get(), SHAMapNodeID()});
-
-        while (!nodeStack.empty())
+        try
         {
-            auto [node, nodeID] = nodeStack.top();
-            nodeStack.pop();
+            using StackEntry = std::pair<SHAMapTreeNode*, SHAMapNodeID>;
+            std::stack<StackEntry> nodeStack;
 
-            bool isRoot = (node == map.root_.get());
-            serializeNode(*node, sequence, nodeID, isRoot);
+            JLOG(journal.info())
+                << "Serializing root node with hash: "
+                << to_string(map.root_->getHash().as_uint256());
 
-            // Add children of inner nodes to the stack
-            if (node->isInner())
+            // Start with the root
+            nodeStack.push({map.root_.get(), SHAMapNodeID()});
+
+            while (!nodeStack.empty() && !aborted)
             {
-                auto inner = static_cast<SHAMapInnerNode*>(node);
-                for (int i = 0; i < 16; ++i)
+                auto [node, nodeID] = nodeStack.top();
+                nodeStack.pop();
+
+                bool isRoot = (node == map.root_.get());
+                serializeNode(*node, sequence, nodeID, isRoot);
+
+                // Add children of inner nodes to the stack
+                if (node->isInner())
                 {
-                    if (!inner->isEmptyBranch(i))
+                    auto inner = static_cast<SHAMapInnerNode*>(node);
+                    // Process branches in reverse order so they're processed in
+                    // ascending order
+                    for (int i = 15; i >= 0; --i)
                     {
-                        auto childNode = map.descendThrow(inner, i);
-                        auto childID = nodeID.getChildNodeID(i);
-                        nodeStack.push({childNode, childID});
+                        if (!inner->isEmptyBranch(i))
+                        {
+                            try
+                            {
+                                auto childNode = map.descendThrow(inner, i);
+                                auto childID = nodeID.getChildNodeID(i);
+                                nodeStack.push({childNode, childID});
+                            }
+                            catch (std::exception const& e)
+                            {
+                                JLOG(journal.error())
+                                    << "Error descending to child " << i << ": "
+                                    << e.what();
+                                // Continue with other children
+                            }
+                        }
                     }
                 }
             }
+        }
+        catch (std::exception const& e)
+        {
+            JLOG(journal.error()) << "Error in serializeFullMap: " << e.what();
+            aborted = true;
+        }
+    }
+
+    // Helper to find a leaf node in a map by key
+    SHAMapLeafNode*
+    findLeafInMap(const SHAMap& map, uint256 const& key) const
+    {
+        try
+        {
+            return map.findKey(key);
+        }
+        catch (std::exception const& e)
+        {
+            JLOG(journal.error()) << "Error finding key in map: " << e.what();
+            return nullptr;
         }
     }
 
@@ -221,105 +281,113 @@ private:
         const SHAMap& newMap,
         uint32_t sequence)
     {
-        // Use SHAMap's compare method to get differences
-        SHAMap::Delta differences;
-        if (!oldMap.compare(
-                newMap, differences, std::numeric_limits<int>::max()))
-        {
-            // Too many differences, just serialize the whole map
-            JLOG(journal.warn())
-                << "Too many differences between ledger " << (sequence - 1)
-                << " and " << sequence << ", serializing full state";
-            serializeFullMap(newMap, sequence);
+        if (aborted)
             return;
-        }
 
-        JLOG(journal.info())
-            << "Found " << differences.size() << " differences between ledger "
-            << (sequence - 1) << " and " << sequence;
-
-        // Process each difference
-        for (auto const& [key, deltaItem] : differences)
+        try
         {
-            auto const& oldItem = deltaItem.first;
-            auto const& newItem = deltaItem.second;
-
-            // Determine the type of change
-            DeltaType type;
-            if (!oldItem)
+            // Use SHAMap's compare method to get differences
+            SHAMap::Delta differences;
+            if (!oldMap.compare(
+                    newMap, differences, std::numeric_limits<int>::max()))
             {
-                type = DeltaType::ADDED;
-            }
-            else if (!newItem)
-            {
-                type = DeltaType::REMOVED;
-            }
-            else
-            {
-                type = DeltaType::MODIFIED;
+                // Too many differences, just serialize the whole map
+                JLOG(journal.warn())
+                    << "Too many differences between ledger " << (sequence - 1)
+                    << " and " << sequence << ", serializing full state";
+                serializeFullMap(newMap, sequence);
+                return;
             }
 
-            // Serialize the appropriate item
-            if (type == DeltaType::REMOVED)
-            {
-                // For removed items, we only need to store a minimal record
-                // Create a stripped-down header
-                NodeHeader header;
-                memset(&header, 0, sizeof(header));
-                header.size = 0;  // No data for removed items
-                header.sequence = sequence;
-                header.type =
-                    CatalogueNodeType::ACCOUNT_STATE;  // Assume account state
-                header.isRoot = 0;
-                header.deltaType = DeltaType::REMOVED;
-                header.hash = SHAMapHash(key).as_uint256();
-                header.nodeID = key;
+            JLOG(journal.info()) << "Found " << differences.size()
+                                 << " differences between ledger "
+                                 << (sequence - 1) << " and " << sequence;
 
-                std::lock_guard<std::mutex> lock(fileMutex);
-                outfile.write(
-                    reinterpret_cast<const char*>(&header), sizeof(header));
-            }
-            else
+            // Track processed keys to avoid duplicates
+            std::unordered_set<uint256, beast::uhash<>> processedKeys;
+
+            // Process each difference
+            for (auto const& [key, deltaItem] : differences)
             {
-                // First try to find it directly using the key
-                auto leaf = findLeafInMap(newMap, key);
-                if (leaf)
+                if (aborted)
+                    return;
+
+                // Skip if already processed
+                if (processedKeys.find(key) != processedKeys.end())
+                    continue;
+
+                processedKeys.insert(key);
+
+                auto const& oldItem = deltaItem.first;
+                auto const& newItem = deltaItem.second;
+
+                // Determine the type of change
+                DeltaType type;
+                if (!oldItem)
+                    type = DeltaType::ADDED;
+                else if (!newItem)
+                    type = DeltaType::REMOVED;
+                else
+                    type = DeltaType::MODIFIED;
+
+                if (type == DeltaType::REMOVED)
                 {
-                    // Create a nodeID for the leaf
-                    SHAMapNodeID nodeID(SHAMap::leafDepth, key);
-                    serializeNode(*leaf, sequence, nodeID, false, type);
+                    // For removed items, we only need to store a minimal record
+                    NodeHeader header;
+                    memset(&header, 0, sizeof(header));
+                    header.size = 0;  // No data for removed items
+                    header.sequence = sequence;
+                    header.type =
+                        CatalogueNodeType::ACCOUNT_STATE;  // Default type
+                    header.isRoot = 0;
+                    header.deltaType = DeltaType::REMOVED;
+                    header.hash = SHAMapHash(key).as_uint256();
+                    header.nodeID = key;
+
+                    if (!writeToFile(&header, sizeof(header)))
+                        return;
                 }
                 else
                 {
-                    JLOG(journal.warn()) << "Couldn't find node for key " << key
-                                         << " in ledger " << sequence;
+                    // For added/modified items, find and serialize the node
+                    try
+                    {
+                        auto leaf = findLeafInMap(newMap, key);
+                        if (leaf)
+                        {
+                            // Create a nodeID for the leaf
+                            SHAMapNodeID nodeID(SHAMap::leafDepth, key);
+                            serializeNode(*leaf, sequence, nodeID, false, type);
+                        }
+                        else
+                        {
+                            JLOG(journal.warn())
+                                << "Couldn't find node for key " << key
+                                << " in ledger " << sequence;
+                        }
+                    }
+                    catch (std::exception const& e)
+                    {
+                        JLOG(journal.error())
+                            << "Error processing delta item: " << e.what();
+                        // Continue with other items
+                    }
                 }
             }
         }
-    }
-
-    // Helper to find a leaf node in a map by key
-    SHAMapLeafNode*
-    findLeafInMap(const SHAMap& map, uint256 const& key) const
-    {
-        // Using SHAMap's private walkTowardsKey method through friend access
-        return map.findKey(key);
-    }
-
-    // Helper to compute the hash of a ledger's state map
-    uint256
-    getLedgerStateHash(std::shared_ptr<ReadView const> const& ledger) const
-    {
-        // Get the accountStateHash from the ledger info
-        return ledger->info().accountHash;
+        catch (std::exception const& e)
+        {
+            JLOG(journal.error()) << "Error in serializeMapDelta: " << e.what();
+            aborted = true;
+        }
     }
 
     // Process a batch of ledgers in a worker thread
-    // Each thread computes deltas for its assigned ledgers
     void
     processBatch(size_t startIdx, size_t endIdx)
     {
-        for (size_t i = startIdx; i < endIdx && i < ledgers.size(); ++i)
+        for (size_t i = startIdx; i < endIdx && i < ledgers.size() && !aborted;
+             ++i)
         {
             try
             {
@@ -355,8 +423,91 @@ private:
             {
                 JLOG(journal.error())
                     << "Error processing ledger: " << e.what();
+                aborted = true;
             }
         }
+    }
+
+    // Helper to serialize ledger transaction data
+    bool
+    serializeLedgerTransactions(
+        ReadView const& ledger,
+        std::streampos& headerStart)
+    {
+        auto const& info = ledger.info();
+
+        headerStart = outfile.tellp();
+        uint64_t nextHeaderOffset = 0;
+
+        // Reserve space for the next header offset
+        if (!writeToFile(&nextHeaderOffset, sizeof(nextHeaderOffset)))
+            return false;
+
+        // Write ledger header information
+        if (!writeToFile(&info.seq, sizeof(info.seq)) ||
+            !writeToFile(&info.parentCloseTime, sizeof(info.parentCloseTime)) ||
+            !writeToFile(info.hash.data(), 32) ||
+            !writeToFile(info.txHash.data(), 32) ||
+            !writeToFile(info.accountHash.data(), 32) ||
+            !writeToFile(info.parentHash.data(), 32) ||
+            !writeToFile(&info.drops, sizeof(info.drops)) ||
+            !writeToFile(&info.validated, sizeof(info.validated)) ||
+            !writeToFile(&info.accepted, sizeof(info.accepted)) ||
+            !writeToFile(&info.closeFlags, sizeof(info.closeFlags)) ||
+            !writeToFile(
+                &info.closeTimeResolution, sizeof(info.closeTimeResolution)) ||
+            !writeToFile(&info.closeTime, sizeof(info.closeTime)))
+        {
+            return false;
+        }
+
+        // Write transaction data
+        try
+        {
+            for (auto& i : ledger.txs)
+            {
+                if (aborted)
+                    return false;
+
+                assert(i.first);
+                auto const& txnId = i.first->getTransactionID();
+                if (!writeToFile(txnId.data(), 32))
+                    return false;
+
+                Serializer sTxn = i.first->getSerializer();
+                uint32_t txnSize = sTxn.getLength();
+                if (!writeToFile(&txnSize, sizeof(txnSize)) ||
+                    !writeToFile(sTxn.data(), txnSize))
+                {
+                    return false;
+                }
+
+                uint32_t metaSize = 0;
+                if (i.second)
+                {
+                    Serializer sMeta = i.second->getSerializer();
+                    metaSize = sMeta.getLength();
+                    if (!writeToFile(&metaSize, sizeof(metaSize)) ||
+                        !writeToFile(sMeta.data(), metaSize))
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    if (!writeToFile(&metaSize, sizeof(metaSize)))
+                        return false;
+                }
+            }
+        }
+        catch (std::exception const& e)
+        {
+            JLOG(journal.error()) << "Error serializing transaction in ledger "
+                                  << info.seq << ": " << e.what();
+            return false;
+        }
+
+        return true;
     }
 
 public:
@@ -366,7 +517,7 @@ public:
         beast::Journal journal_,
         size_t numThreads_ = std::thread::hardware_concurrency())
         : ledgers(ledgers_)
-        , numThreads(1)  // numThreads_ > 0 ? numThreads_ : 1)
+        , numThreads(numThreads_ > 0 ? 1 : 1)  // Force single thread for now
         , outfile(outfile_)
         , journal(journal_)
     {
@@ -374,179 +525,85 @@ public:
             << "Created CatalogueProcessor with " << numThreads << " threads";
     }
 
-    // Process all ledgers using parallel threads
-    void
+    // Process all ledgers using single thread for now (to ensure file
+    // coherence)
+    bool
     streamAll()
     {
-        //        numThreads = 1;
         JLOG(journal.info())
             << "Starting to stream " << ledgers.size()
             << " ledgers to catalogue file using " << numThreads << " threads";
 
-        // First ledger must be processed separately to establish the base state
         if (ledgers.empty())
         {
             JLOG(journal.warn()) << "No ledgers to process";
-            return;
+            return false;
         }
 
-        // Special case: if there's only one ledger, just process it directly
-        if (ledgers.size() == 1 || numThreads == 1)
-        {
-            processBatch(0, ledgers.size());
-            return;
-        }
+        // Process ledgers sequentially to ensure file coherence
+        processBatch(0, ledgers.size());
 
-        // For multiple ledgers with multiple threads:
-        // - First ledger must be processed first (base state)
-        // - Remaining ledgers can be processed in parallel
-
-        // Process the first ledger
-        auto baseLedger = ledgers[0];
-        uint32_t baseSeq = baseLedger->info().seq;
-        auto& baseStateMap =
-            static_cast<const Ledger*>(baseLedger.get())->stateMap();
-
-        JLOG(journal.info())
-            << "Serializing complete state for base ledger " << baseSeq;
-        serializeFullMap(baseStateMap, baseSeq);
-
-        // Now process remaining ledgers in parallel
-        std::vector<std::future<void>> futures;
-
-        // Calculate batch size
-        size_t remaining = ledgers.size() - 1;  // Skip the first ledger
-        size_t batchSize = (remaining + numThreads - 1) / numThreads;
-
-        // Launch worker threads
-        for (size_t i = 0; i < numThreads && i * batchSize + 1 < ledgers.size();
-             ++i)
-        {
-            size_t startIdx = i * batchSize + 1;  // +1 to skip the first ledger
-            size_t endIdx = std::min(startIdx + batchSize, ledgers.size());
-
-            futures.emplace_back(std::async(
-                std::launch::async,
-                &CatalogueProcessor::processBatch,
-                this,
-                startIdx,
-                endIdx));
-        }
-
-        // Wait for all threads to complete
-        for (auto& future : futures)
-        {
-            future.get();
-        }
-
-        JLOG(journal.info()) << "Completed streaming all ledgers";
+        return !aborted;
     }
 
     // Add transaction data for each ledger
-    void
+    bool
     addTransactions()
     {
         JLOG(journal.info())
             << "Adding transaction data for " << ledgers.size() << " ledgers";
 
+        std::vector<std::streampos> headerPositions;
+        headerPositions.reserve(ledgers.size());
+
         for (auto const& ledger : ledgers)
         {
-            auto const& info = ledger->info();
+            if (aborted)
+                return false;
 
-            auto headerStart = outfile.tellp();
-            uint64_t nextHeaderOffset = 0;
-
-            // Reserve space for the next header offset
-            outfile.write(
-                reinterpret_cast<const char*>(&nextHeaderOffset),
-                sizeof(nextHeaderOffset));
-
-            // Write ledger header information
-            outfile.write(
-                reinterpret_cast<const char*>(&info.seq), sizeof(info.seq));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.parentCloseTime),
-                sizeof(info.parentCloseTime));
-            outfile.write(info.hash.cdata(), 32);
-            outfile.write(info.txHash.cdata(), 32);
-            outfile.write(info.accountHash.cdata(), 32);
-            outfile.write(info.parentHash.cdata(), 32);
-            outfile.write(
-                reinterpret_cast<const char*>(&info.drops), sizeof(info.drops));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.validated),
-                sizeof(info.validated));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.accepted),
-                sizeof(info.accepted));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.closeFlags),
-                sizeof(info.closeFlags));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.closeTimeResolution),
-                sizeof(info.closeTimeResolution));
-            outfile.write(
-                reinterpret_cast<const char*>(&info.closeTime),
-                sizeof(info.closeTime));
-
-            // Write transaction data
-            try
+            std::streampos headerStart;
+            if (!serializeLedgerTransactions(*ledger, headerStart))
             {
-                for (auto& i : ledger->txs)
-                {
-                    assert(i.first);
-                    auto const& txnId = i.first->getTransactionID();
-                    outfile.write(txnId.cdata(), 32);
-
-                    Serializer sTxn = i.first->getSerializer();
-                    uint32_t txnSize = sTxn.getLength();
-                    outfile.write(
-                        reinterpret_cast<const char*>(&txnSize),
-                        sizeof(txnSize));
-                    outfile.write(
-                        reinterpret_cast<const char*>(sTxn.data()), txnSize);
-
-                    uint32_t metaSize = 0;
-                    if (i.second)
-                    {
-                        Serializer sMeta = i.second->getSerializer();
-                        metaSize = sMeta.getLength();
-                        outfile.write(
-                            reinterpret_cast<const char*>(&metaSize),
-                            sizeof(metaSize));
-                        outfile.write(
-                            reinterpret_cast<const char*>(sMeta.data()),
-                            metaSize);
-                    }
-                    else
-                    {
-                        outfile.write(
-                            reinterpret_cast<const char*>(&metaSize),
-                            sizeof(metaSize));
-                    }
-                }
-            }
-            catch (std::exception const& e)
-            {
-                JLOG(journal.error())
-                    << "Error serializing transaction in ledger " << info.seq
-                    << ": " << e.what();
+                aborted = true;
+                return false;
             }
 
-            // Update the next header offset
-            auto currentPos = outfile.tellp();
-            outfile.seekp(headerStart);
-            nextHeaderOffset = currentPos;
-            outfile.write(
-                reinterpret_cast<const char*>(&nextHeaderOffset),
-                sizeof(nextHeaderOffset));
-            outfile.seekp(currentPos);
+            headerPositions.push_back(headerStart);
+        }
 
-            JLOG(journal.debug())
-                << "Added transactions for ledger " << info.seq;
+        // Now update all the next header offsets
+        for (size_t i = 0; i < headerPositions.size() - 1; ++i)
+        {
+            std::lock_guard<std::mutex> lock(fileMutex);
+
+            outfile.seekp(headerPositions[i]);
+            if (outfile.fail())
+            {
+                JLOG(journal.error()) << "Failed to seek to header position";
+                aborted = true;
+                return false;
+            }
+
+            uint64_t nextOffset = headerPositions[i + 1];
+            outfile.write(
+                reinterpret_cast<const char*>(&nextOffset), sizeof(nextOffset));
+            if (outfile.fail())
+            {
+                JLOG(journal.error()) << "Failed to write next header offset";
+                aborted = true;
+                return false;
+            }
         }
 
         JLOG(journal.info()) << "Completed adding transaction data";
+        return true;
+    }
+
+    // Check if the process was aborted
+    bool
+    wasAborted() const
+    {
+        return aborted;
     }
 };
 
@@ -584,11 +641,13 @@ doCatalogueCreate(RPC::JsonContext& context)
                 rpcINTERNAL,
                 "cannot stat output_file: " + std::string(strerror(errno)));
 
-        if (std::ofstream(filepath.c_str(), std::ios::out).fail())
+        std::ofstream testWrite(filepath.c_str(), std::ios::out);
+        if (testWrite.fail())
             return rpcError(
                 rpcINTERNAL,
                 "output_file location is not writeable: " +
                     std::string(strerror(errno)));
+        testWrite.close();
     }
 
     std::ofstream outfile(filepath.c_str(), std::ios::out | std::ios::binary);
@@ -639,13 +698,20 @@ doCatalogueCreate(RPC::JsonContext& context)
     CatalogueProcessor processor(lpLedgers, outfile, context.j, numThreads);
 
     // Stream all state data first
-    processor.streamAll();
+    if (!processor.streamAll())
+    {
+        return rpcError(rpcINTERNAL, "Error occurred while processing ledgers");
+    }
 
     // Remember where we are after all state data
     auto ledgerTxOffset = outfile.tellp();
 
     // Now add transaction data
-    processor.addTransactions();
+    if (!processor.addTransactions())
+    {
+        return rpcError(
+            rpcINTERNAL, "Error occurred while processing transaction data");
+    }
 
     // Seek back to start
     outfile.seekp(0, std::ios::beg);
@@ -673,6 +739,7 @@ doCatalogueCreate(RPC::JsonContext& context)
     outfile.close();
     uint64_t size = static_cast<uint64_t>(bytes_written);
 
+    // Validate the newly created file
     {
         std::ifstream validateFile(filepath, std::ios::binary);
         CATLHeader validateHeader;
@@ -752,11 +819,10 @@ doCatalogueLoad(RPC::JsonContext& context)
             "catalogue network ID mismatch: " +
                 std::to_string(header.network_id));
 
-    // Create maps to store nodes by sequence
-    std::map<
-        uint32_t,
-        std::map<uint256, std::pair<std::vector<uint8_t>, SHAMapNodeID>>>
+    // Maps to store nodes for each ledger sequence
+    std::map<uint32_t, std::map<uint256, std::tuple<Blob, SHAMapNodeID, bool>>>
         nodesByLedger;
+
     std::map<uint32_t, uint256> rootHashesByLedger;
     std::map<uint32_t, std::vector<std::pair<uint256, DeltaType>>>
         deltasByLedger;
@@ -771,7 +837,8 @@ doCatalogueLoad(RPC::JsonContext& context)
     size_t removedCount = 0;
 
     // First pass: Read all node data
-    while (infile.tellg() < header.ledger_tx_offset)
+    std::streampos currentPos = infile.tellg();
+    while (currentPos < header.ledger_tx_offset && !infile.eof())
     {
         NodeHeader nodeHeader;
         infile.read(reinterpret_cast<char*>(&nodeHeader), sizeof(nodeHeader));
@@ -779,6 +846,16 @@ doCatalogueLoad(RPC::JsonContext& context)
             break;
 
         stateNodeCount++;
+
+        // Validate node header
+        if (nodeHeader.sequence < header.min_ledger ||
+            nodeHeader.sequence > header.max_ledger)
+        {
+            JLOG(context.j.error())
+                << "Invalid node sequence: " << nodeHeader.sequence;
+            return rpcError(
+                rpcINTERNAL, "Corrupted catalogue file: invalid node sequence");
+        }
 
         // Count by delta type
         if (nodeHeader.deltaType == DeltaType::ADDED)
@@ -789,9 +866,19 @@ doCatalogueLoad(RPC::JsonContext& context)
             removedCount++;
 
         // Read the node data
-        std::vector<uint8_t> nodeData;
+        Blob nodeData;
         if (nodeHeader.size > 0)
         {
+            // Add a reasonable size limit as a safety check
+            if (nodeHeader.size > 1024 * 1024)  // 1MB
+            {
+                JLOG(context.j.error())
+                    << "Suspiciously large node size: " << nodeHeader.size;
+                return rpcError(
+                    rpcINTERNAL,
+                    "Corrupted catalogue file: unreasonable node size");
+            }
+
             nodeData.resize(nodeHeader.size);
             infile.read(
                 reinterpret_cast<char*>(nodeData.data()), nodeHeader.size);
@@ -801,34 +888,44 @@ doCatalogueLoad(RPC::JsonContext& context)
 
         // Store the node data and track deltas
         SHAMapNodeID nodeID;
-        if (nodeHeader.type == CatalogueNodeType::INNER)
+        if (nodeHeader.isRoot)
         {
-            // For inner nodes, recreate the nodeID
-            nodeID = SHAMapNodeID::createID(
-                0, nodeHeader.nodeID);  // Depth will be recalculated
+            // Root node has depth 0
+            nodeID = SHAMapNodeID();
+        }
+        else if (
+            static_cast<CatalogueNodeType>(nodeHeader.type) ==
+            CatalogueNodeType::INNER)
+        {
+            // For inner nodes, create a basic ID - proper paths created during
+            // tree building
+            nodeID = SHAMapNodeID::createID(0, nodeHeader.nodeID);
         }
         else
         {
-            // For leaf nodes, create an ID at leafDepth with the key
+            // For leaf nodes, use leaf depth
             nodeID = SHAMapNodeID(SHAMap::leafDepth, nodeHeader.nodeID);
         }
 
-        // Store the node data by ledger sequence
-        nodesByLedger[nodeHeader.sequence][nodeHeader.hash] = {
-            nodeData, nodeID};
+        // Store the node by ledger sequence and hash
+        bool isRoot = (nodeHeader.isRoot == 1);
+        nodesByLedger[nodeHeader.sequence][nodeHeader.hash] =
+            std::make_tuple(std::move(nodeData), nodeID, isRoot);
 
         // Track deltas for non-base ledgers
         if (nodeHeader.sequence != header.base_ledger_seq)
         {
             deltasByLedger[nodeHeader.sequence].emplace_back(
-                nodeHeader.hash, nodeHeader.deltaType);
+                nodeHeader.hash, static_cast<DeltaType>(nodeHeader.deltaType));
         }
 
         // If this is a root node, store its hash
-        if (nodeHeader.isRoot)
+        if (isRoot)
         {
             rootHashesByLedger[nodeHeader.sequence] = nodeHeader.hash;
         }
+
+        currentPos = infile.tellg();
     }
 
     JLOG(context.j.info()) << "Read " << stateNodeCount << " state nodes"
@@ -849,20 +946,34 @@ doCatalogueLoad(RPC::JsonContext& context)
     size_t txLedgerCount = 0;
     size_t txCount = 0;
 
+    // Read transaction data for each ledger
     while (!infile.eof())
     {
         uint64_t nextOffset;
         infile.read(reinterpret_cast<char*>(&nextOffset), sizeof(nextOffset));
-        if (infile.fail())
+        if (infile.fail() || infile.eof())
             break;
 
         LedgerInfo info;
         infile.read(reinterpret_cast<char*>(&info.seq), sizeof(info.seq));
+        if (infile.fail())
+            break;
+
+        // Validate ledger sequence
+        if (info.seq < header.min_ledger || info.seq > header.max_ledger)
+        {
+            JLOG(context.j.error())
+                << "Invalid transaction ledger sequence: " << info.seq;
+            return rpcError(
+                rpcINTERNAL,
+                "Corrupted catalogue file: invalid tx ledger sequence");
+        }
+
         infile.read(
             reinterpret_cast<char*>(&info.parentCloseTime),
             sizeof(info.parentCloseTime));
 
-        // Read hash values using temporary buffer to avoid type issues
+        // Read hash values using a buffer
         unsigned char hashBuf[32];
 
         infile.read(reinterpret_cast<char*>(hashBuf), 32);
@@ -896,7 +1007,7 @@ doCatalogueLoad(RPC::JsonContext& context)
 
         // Read transactions until we reach the next ledger or end of file
         auto currentPos = infile.tellg();
-        while (currentPos < nextOffset || nextOffset == 0)
+        while ((nextOffset == 0 || currentPos < nextOffset) && !infile.eof())
         {
             // Read transaction ID with temporary buffer
             unsigned char txIDBuf[32];
@@ -910,6 +1021,16 @@ doCatalogueLoad(RPC::JsonContext& context)
             uint32_t txnSize;
             infile.read(reinterpret_cast<char*>(&txnSize), sizeof(txnSize));
 
+            // Safety check
+            if (txnSize > 1024 * 1024)  // 1MB
+            {
+                JLOG(context.j.error())
+                    << "Suspiciously large transaction size: " << txnSize;
+                return rpcError(
+                    rpcINTERNAL,
+                    "Corrupted catalogue file: unreasonable tx size");
+            }
+
             std::vector<uint8_t> txnData(txnSize);
             infile.read(reinterpret_cast<char*>(txnData.data()), txnSize);
 
@@ -920,22 +1041,41 @@ doCatalogueLoad(RPC::JsonContext& context)
             std::vector<uint8_t> metaData;
             if (metaSize > 0)
             {
+                // Safety check
+                if (metaSize > 1024 * 1024)  // 1MB
+                {
+                    JLOG(context.j.error())
+                        << "Suspiciously large metadata size: " << metaSize;
+                    return rpcError(
+                        rpcINTERNAL,
+                        "Corrupted catalogue file: unreasonable metadata size");
+                }
+
                 metaData.resize(metaSize);
                 infile.read(reinterpret_cast<char*>(metaData.data()), metaSize);
             }
 
-            // Create and store transaction objects
-            auto txn = std::make_shared<STTx>(
-                SerialIter{txnData.data(), txnData.size()});
-
-            std::shared_ptr<TxMeta> meta;
-            if (!metaData.empty())
+            try
             {
-                meta = std::make_shared<TxMeta>(txID, info.seq, metaData);
-            }
+                // Create transaction objects
+                auto txn = std::make_shared<STTx>(
+                    SerialIter{txnData.data(), txnData.size()});
 
-            txsByLedger[info.seq].emplace_back(txn, meta);
-            txCount++;
+                std::shared_ptr<TxMeta> meta;
+                if (!metaData.empty())
+                {
+                    meta = std::make_shared<TxMeta>(txID, info.seq, metaData);
+                }
+
+                txsByLedger[info.seq].emplace_back(txn, meta);
+                txCount++;
+            }
+            catch (std::exception const& e)
+            {
+                JLOG(context.j.error())
+                    << "Error processing transaction: " << e.what();
+                // Continue with other transactions
+            }
 
             // Update current position for next iteration check
             currentPos = infile.tellg();
@@ -953,6 +1093,9 @@ doCatalogueLoad(RPC::JsonContext& context)
 
     JLOG(context.j.info()) << "Read transactions for " << txLedgerCount
                            << " ledgers, total transactions: " << txCount;
+
+    // Close the file as we've read all the data we need
+    infile.close();
 
     // Now rebuild and load ledgers
     JLOG(context.j.info()) << "Rebuilding ledgers...";
@@ -987,17 +1130,18 @@ doCatalogueLoad(RPC::JsonContext& context)
                 continue;
             }
 
-            // Use the correct constructor for base ledger
-            ledger = std::make_shared<Ledger>(
-                infoIt->second,
-                context.app.config(),
-                context.app.getNodeFamily());
+            // Find the root node
+            auto const rootHash = rootIt->second;
+            auto nodesIt = nodesByLedger.find(seq);
+            if (nodesIt == nodesByLedger.end())
+            {
+                JLOG(context.j.error())
+                    << "Missing nodes for base ledger " << seq;
+                continue;
+            }
 
-            // Now build the state tree by adding all nodes for this ledger
-            auto& nodesForLedger = nodesByLedger[seq];
-
-            // Start with the root node
-            auto rootNodeIt = nodesForLedger.find(rootIt->second);
+            auto const& nodesForLedger = nodesIt->second;
+            auto rootNodeIt = nodesForLedger.find(rootHash);
             if (rootNodeIt == nodesForLedger.end())
             {
                 JLOG(context.j.error())
@@ -1005,151 +1149,200 @@ doCatalogueLoad(RPC::JsonContext& context)
                 continue;
             }
 
-            auto const& rootData = nodesByLedger[seq][rootIt->second].first;
+            // Create the ledger with the info
+            ledger = std::make_shared<Ledger>(
+                infoIt->second,
+                context.app.config(),
+                context.app.getNodeFamily());
+
+            // Now build the state tree by adding nodes
+            auto const& [rootData, rootNodeID, isRoot] = rootNodeIt->second;
             JLOG(context.j.info()) << "Loading root node for ledger " << seq
-                                   << ", hash: " << to_string(rootIt->second)
+                                   << ", hash: " << to_string(rootHash)
                                    << ", data size: " << rootData.size();
 
-            // Examine first few bytes of data
+            // Debug output of first bytes
             if (rootData.size() >= 16)
             {
                 std::stringstream ss;
                 ss << "Root data first 16 bytes: ";
                 for (size_t i = 0; i < 16; ++i)
                     ss << std::hex << std::setw(2) << std::setfill('0')
-                       << (int)rootData[i] << " ";
+                       << static_cast<int>(rootData[i]) << " ";
                 JLOG(context.j.info()) << ss.str();
             }
 
-            // Try to create the node using makeFromPrefix (what we stored)
-            auto testNode = SHAMapTreeNode::makeFromPrefix(
-                Slice(rootData.data(), rootData.size()),
-                SHAMapHash(rootIt->second));
-
-            if (!testNode)
+            try
             {
-                JLOG(context.j.error())
-                    << "Failed to create test node from prefix format";
-                continue;
-            }
+                // Convert from prefix format to wire format for the root node
+                auto rootNode = SHAMapTreeNode::makeFromPrefix(
+                    Slice(rootData.data(), rootData.size()),
+                    SHAMapHash(rootHash));
 
-            JLOG(context.j.info()) << "Created test node with hash: "
-                                   << to_string(testNode->getHash());
-
-            auto& [_, rootNodeID] = rootNodeIt->second;
-
-            Serializer s;
-            testNode->serializeForWire(s);
-
-            // s.addRaw(Slice(rootData.data(), rootData.size()));
-            if (!ledger->stateMap()
-                     .addRootNode(
-                         SHAMapHash(rootIt->second), s.slice(), nullptr)
-                     .isGood())
-            {
-                JLOG(context.j.error())
-                    << "Failed to add root node for base ledger " << seq
-                    << ", root hash: " << to_string(rootIt->second)
-                    << ", data size: " << rootData.size();
-                // Try to dump some of the data for debugging
-                if (rootData.size() > 0)
+                if (!rootNode)
                 {
-                    std::stringstream ss;
-                    ss << "Data: ";
-                    for (size_t i = 0;
-                         i < std::min<size_t>(32, rootData.size());
-                         ++i)
-                        ss << std::hex << std::setw(2) << std::setfill('0')
-                           << (int)rootData[i] << " ";
-                    JLOG(context.j.info()) << ss.str();
-                }
-                continue;
-            }
-
-            // Process all other nodes using a queue approach
-            std::queue<uint256> nodeQueue;
-            std::set<uint256> processedNodes;
-
-            processedNodes.insert(rootIt->second);
-
-            // Add the root node's children to the queue
-            auto rootNode = SHAMapTreeNode::makeFromPrefix(
-                Slice(rootData.data(), rootData.size()),
-                SHAMapHash(rootIt->second));
-
-            if (rootNode && rootNode->isInner())
-            {
-                auto innerRoot =
-                    std::static_pointer_cast<SHAMapInnerNode>(rootNode);
-                for (int i = 0; i < 16; i++)
-                {
-                    if (!innerRoot->isEmptyBranch(i))
-                    {
-                        auto childHash =
-                            innerRoot->getChildHash(i).as_uint256();
-                        nodeQueue.push(childHash);
-                    }
-                }
-            }
-
-            // Process all nodes
-            while (!nodeQueue.empty())
-            {
-                auto nodeHash = nodeQueue.front();
-                nodeQueue.pop();
-
-                // Skip if already processed
-                if (processedNodes.find(nodeHash) != processedNodes.end())
-                    continue;
-
-                processedNodes.insert(nodeHash);
-
-                auto nodeIt = nodesForLedger.find(nodeHash);
-                if (nodeIt == nodesForLedger.end())
-                {
-                    JLOG(context.j.warn())
-                        << "Missing node data for hash " << nodeHash;
+                    JLOG(context.j.error())
+                        << "Failed to create root node from prefix data";
                     continue;
                 }
 
-                auto& [nodeData, nodeID] = nodeIt->second;
+                // Now serialize it in wire format for addRootNode
+                Serializer s;
+                rootNode->serializeForWire(s);
 
-                // Add the node to the map
                 if (!ledger->stateMap()
-                         .addKnownNode(
-                             nodeID,
-                             Slice(nodeData.data(), nodeData.size()),
-                             nullptr)
+                         .addRootNode(SHAMapHash(rootHash), s.slice(), nullptr)
                          .isGood())
                 {
-                    JLOG(context.j.warn()) << "Failed to add node " << nodeHash;
+                    JLOG(context.j.error()) << "Failed to add root node";
                     continue;
                 }
 
-                // If this is an inner node, add its children to the queue
-                auto node = SHAMapTreeNode::makeFromPrefix(
-                    Slice(nodeData.data(), nodeData.size()),
-                    SHAMapHash(nodeHash));
+                // Build a map of parent-child relationships and proper node IDs
+                std::map<uint256, std::vector<std::pair<uint256, int>>>
+                    childrenByParent;
+                std::map<uint256, SHAMapNodeID> nodeIDMap;
 
-                if (node && node->isInner())
+                // Initialize with the root
+                nodeIDMap[rootHash] = SHAMapNodeID();
+
+                // First pass: Build parent-child relationships
+                for (auto const& [hash, nodeTuple] : nodesForLedger)
                 {
-                    auto innerNode =
-                        std::static_pointer_cast<SHAMapInnerNode>(node);
-                    for (int i = 0; i < 16; i++)
+                    auto const& nodeData = std::get<0>(nodeTuple);
+                    try
                     {
-                        if (!innerNode->isEmptyBranch(i))
+                        auto node = SHAMapTreeNode::makeFromPrefix(
+                            Slice(nodeData.data(), nodeData.size()),
+                            SHAMapHash(hash));
+
+                        if (node && node->isInner())
                         {
-                            auto childHash =
-                                innerNode->getChildHash(i).as_uint256();
-                            nodeQueue.push(childHash);
+                            auto inner =
+                                std::static_pointer_cast<SHAMapInnerNode>(node);
+                            for (int i = 0; i < 16; ++i)
+                            {
+                                if (!inner->isEmptyBranch(i))
+                                {
+                                    auto childHash =
+                                        inner->getChildHash(i).as_uint256();
+                                    childrenByParent[hash].emplace_back(
+                                        childHash, i);
+                                }
+                            }
                         }
                     }
+                    catch (std::exception const& e)
+                    {
+                        JLOG(context.j.warn())
+                            << "Error analyzing node " << to_string(hash)
+                            << ": " << e.what();
+                    }
                 }
+
+                // Second pass: Build a queue of nodes to process with proper
+                // node IDs
+                std::queue<std::pair<uint256, SHAMapNodeID>> nodeQueue;
+                std::set<uint256> processedNodes;
+
+                // Start with the root (already added)
+                processedNodes.insert(rootHash);
+
+                // Queue the root's children
+                for (auto const& [childHash, branch] :
+                     childrenByParent[rootHash])
+                {
+                    SHAMapNodeID childID =
+                        SHAMapNodeID().getChildNodeID(branch);
+                    nodeQueue.push({childHash, childID});
+                    nodeIDMap[childHash] = childID;
+                }
+
+                // Process all nodes in breadth-first order
+                while (!nodeQueue.empty())
+                {
+                    auto [nodeHash, nodeID] = nodeQueue.front();
+                    nodeQueue.pop();
+
+                    // Skip if already processed
+                    if (processedNodes.find(nodeHash) != processedNodes.end())
+                        continue;
+
+                    processedNodes.insert(nodeHash);
+
+                    // Find this node in our data
+                    auto nodeIt = nodesForLedger.find(nodeHash);
+                    if (nodeIt == nodesForLedger.end())
+                    {
+                        JLOG(context.j.error())
+                            << "Missing node data for " << to_string(nodeHash);
+                        continue;
+                    }
+
+                    auto const& [nodeData, origNodeID, isNodeRoot] =
+                        nodeIt->second;
+
+                    try
+                    {
+                        // Convert from prefix format to wire format for adding
+                        // node
+                        auto node = SHAMapTreeNode::makeFromPrefix(
+                            Slice(nodeData.data(), nodeData.size()),
+                            SHAMapHash(nodeHash));
+
+                        if (!node)
+                        {
+                            JLOG(context.j.error())
+                                << "Failed to create node from prefix data";
+                            continue;
+                        }
+
+                        // Now serialize it in wire format
+                        Serializer s;
+                        node->serializeForWire(s);
+
+                        // Add to the map with proper nodeID
+                        auto result = ledger->stateMap().addKnownNode(
+                            nodeID, s.slice(), nullptr);
+
+                        if (!result.isGood())
+                        {
+                            JLOG(context.j.warn())
+                                << "Failed to add node " << to_string(nodeHash)
+                                << " result: " << result.get();
+                        }
+
+                        // Queue children if this is an inner node
+                        if (node->isInner() && result.isGood())
+                        {
+                            for (auto const& [childHash, branch] :
+                                 childrenByParent[nodeHash])
+                            {
+                                SHAMapNodeID childID =
+                                    nodeID.getChildNodeID(branch);
+                                nodeQueue.push({childHash, childID});
+                                nodeIDMap[childHash] = childID;
+                            }
+                        }
+                    }
+                    catch (std::exception const& e)
+                    {
+                        JLOG(context.j.error())
+                            << "Error processing node " << to_string(nodeHash)
+                            << ": " << e.what();
+                    }
+                }
+            }
+            catch (std::exception const& e)
+            {
+                JLOG(context.j.error())
+                    << "Exception processing base ledger: " << e.what();
+                continue;
             }
         }
         else
         {
-            // Delta-based ledger - start with a snapshot of the previous ledger
+            // For non-base ledgers, start with a copy of the previous ledger
             if (!prevLedger)
             {
                 JLOG(context.j.error())
@@ -1158,90 +1351,90 @@ doCatalogueLoad(RPC::JsonContext& context)
                 continue;
             }
 
-            // Use the correct constructor for delta-based ledger
+            // Create the ledger from the previous one
             ledger =
                 std::make_shared<Ledger>(*prevLedger, infoIt->second.closeTime);
 
-            // Apply deltas to the state map
+            // Apply deltas from previous to current ledger
             auto deltaIt = deltasByLedger.find(seq);
-            if (deltaIt == deltasByLedger.end())
-            {
-                JLOG(context.j.warn()) << "No deltas found for ledger " << seq;
-            }
-            else
+            if (deltaIt != deltasByLedger.end())
             {
                 auto& deltas = deltaIt->second;
+                auto& nodesForLedger = nodesByLedger[seq];
 
                 for (auto const& [hash, deltaType] : deltas)
                 {
-                    auto nodeIt = nodesByLedger[seq].find(hash);
-
-                    if (nodeIt == nodesByLedger[seq].end())
-                    {
-                        JLOG(context.j.warn())
-                            << "Missing node data for delta in ledger " << seq;
-                        continue;
-                    }
-
-                    auto& [nodeData, nodeID] = nodeIt->second;
-
                     if (deltaType == DeltaType::REMOVED)
                     {
-                        // Remove the item from the map
-                        if (!ledger->stateMap().delItem(nodeID.getNodeID()))
+                        // Handle removal - find the key to remove
+                        auto nodeIt = nodesForLedger.find(hash);
+                        if (nodeIt != nodesForLedger.end())
                         {
-                            JLOG(context.j.warn())
-                                << "Failed to remove item for delta in ledger "
-                                << seq;
+                            uint256 const& key =
+                                std::get<1>(nodeIt->second).getNodeID();
+                            ledger->rawErase(key);
                         }
                     }
-                    else if (
-                        deltaType == DeltaType::ADDED ||
-                        deltaType == DeltaType::MODIFIED)
+                    else
                     {
-                        // Create a node from the data
-                        auto node = SHAMapTreeNode::makeFromPrefix(
-                            Slice(nodeData.data(), nodeData.size()),
-                            SHAMapHash(hash));
-
-                        if (!node)
+                        // For added/modified nodes, find and apply
+                        auto nodeIt = nodesForLedger.find(hash);
+                        if (nodeIt != nodesForLedger.end())
                         {
-                            JLOG(context.j.warn())
-                                << "Failed to create node from delta data in "
-                                   "ledger "
-                                << seq;
-                            continue;
-                        }
+                            auto const& [nodeData, nodeID, isNodeRoot] =
+                                nodeIt->second;
 
-                        if (node->isLeaf())
-                        {
-                            auto leaf =
-                                std::static_pointer_cast<SHAMapLeafNode>(node);
-                            auto item = leaf->peekItem();
-
-                            // Update or add the item
-                            auto nodeType = leaf->getType();
-
-                            if (deltaType == DeltaType::ADDED)
+                            try
                             {
-                                if (!ledger->stateMap().addItem(nodeType, item))
+                                // Convert from prefix format to wire format
+                                auto node = SHAMapTreeNode::makeFromPrefix(
+                                    Slice(nodeData.data(), nodeData.size()),
+                                    SHAMapHash(hash));
+
+                                if (!node)
                                 {
-                                    JLOG(context.j.warn())
-                                        << "Failed to add item for delta in "
-                                           "ledger "
-                                        << seq;
+                                    JLOG(context.j.error())
+                                        << "Failed to create node from prefix "
+                                           "data";
+                                    continue;
+                                }
+
+                                if (node->isLeaf())
+                                {
+                                    auto leaf = std::static_pointer_cast<
+                                        SHAMapLeafNode>(node);
+                                    auto item = leaf->peekItem();
+
+                                    SHAMapNodeType nodeType = leaf->getType();
+
+                                    if (deltaType == DeltaType::ADDED)
+                                    {
+                                        ledger->stateMap().addItem(
+                                            nodeType, item);
+                                    }
+                                    else
+                                    {
+                                        ledger->stateMap().updateGiveItem(
+                                            nodeType, item);
+                                    }
+                                }
+                                else
+                                {
+                                    // Serialize for wire format for inner nodes
+                                    Serializer s;
+                                    node->serializeForWire(s);
+
+                                    // Add node directly to the tree with proper
+                                    // node ID
+                                    ledger->stateMap().addKnownNode(
+                                        nodeID, s.slice(), nullptr);
                                 }
                             }
-                            else
+                            catch (std::exception const& e)
                             {
-                                if (!ledger->stateMap().updateGiveItem(
-                                        nodeType, item))
-                                {
-                                    JLOG(context.j.warn())
-                                        << "Failed to update item for delta in "
-                                           "ledger "
-                                        << seq;
-                                }
+                                JLOG(context.j.error())
+                                    << "Error processing delta node: "
+                                    << e.what();
                             }
                         }
                     }
@@ -1288,7 +1481,7 @@ doCatalogueLoad(RPC::JsonContext& context)
             infoIt->second.closeTimeResolution,
             infoIt->second.closeFlags & sLCF_NoConsensusTime);
 
-        ledger->setImmutable(true);  // Use default parameter
+        ledger->setImmutable(true);
 
         // Store in ledger master
         context.app.getLedgerMaster().storeLedger(ledger);
