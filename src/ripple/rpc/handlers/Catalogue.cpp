@@ -112,7 +112,7 @@ private:
         DeltaType deltaType = DeltaType::ADDED)
     {
         Serializer s;
-        node.serializeWithPrefix(s);
+        node.serializeForWire(s);
 
         // Prepare the node header
         NodeHeader header;
@@ -166,6 +166,10 @@ private:
     {
         using StackEntry = std::pair<SHAMapTreeNode*, SHAMapNodeID>;
         std::stack<StackEntry> nodeStack;
+
+        //        JLOG(journal.info())
+        std::cout << "Serializing root node with hash: "
+                  << to_string(map.root_->getHash().as_uint256()) << "\n";
 
         // Start with the root
         nodeStack.push({map.root_.get(), SHAMapNodeID()});
@@ -653,6 +657,22 @@ doCatalogueCreate(RPC::JsonContext& context)
     outfile.close();
     uint64_t size = static_cast<uint64_t>(bytes_written);
 
+    {
+        std::ifstream validateFile(filepath, std::ios::binary);
+        CATLHeader validateHeader;
+        validateFile.read(
+            reinterpret_cast<char*>(&validateHeader), sizeof(CATLHeader));
+        if (validateFile.fail() || memcmp(validateHeader.magic, "CATL", 4) != 0)
+        {
+            std::cout << "Catalogue file appears to be corrupted!\n";
+        }
+        else
+        {
+            std::cout << "Catalogue file header verified OK\n";
+        }
+        validateFile.close();
+    }
+
     // Return the result
     Json::Value jvResult;
     jvResult[jss::min_ledger] = min_ledger;
@@ -978,7 +998,21 @@ doCatalogueLoad(RPC::JsonContext& context)
                      .isGood())
             {
                 JLOG(context.j.error())
-                    << "Failed to add root node for base ledger " << seq;
+                    << "Failed to add root node for base ledger " << seq
+                    << ", root hash: " << to_string(rootIt->second)
+                    << ", data size: " << rootData.size();
+                // Try to dump some of the data for debugging
+                if (rootData.size() > 0)
+                {
+                    std::stringstream ss;
+                    ss << "Data: ";
+                    for (size_t i = 0;
+                         i < std::min<size_t>(32, rootData.size());
+                         ++i)
+                        ss << std::hex << std::setw(2) << std::setfill('0')
+                           << (int)rootData[i] << " ";
+                    JLOG(context.j.error()) << ss.str();
+                }
                 continue;
             }
 
