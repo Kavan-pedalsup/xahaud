@@ -257,6 +257,20 @@ class Catalogue_test : public beast::unit_test::suite
             Account("bob").id(),
             Currency(to_currency("EUR")));
 
+        std::cout << "bobKeylet: " << to_string(bobKeylet.key) << "\n";
+        std::cout << "charlieKeylet: " << to_string(charlieKeylet.key) << "\n";
+        std::cout << "eurTrustKeylet: " << to_string(eurTrustKeylet.key)
+                  << "\n";
+
+        auto const ledger3 = env.app().getLedgerMaster().getLedgerByHash(
+            env.app().getLedgerMaster().getHashBySeq(3));
+
+        for (auto const& sle : ledger3->sles)
+        {
+            std::cout << "sourceledger key (" << ledger3->info().seq
+                      << "): " << to_string(sle->key()) << "\n";
+        }
+
         // Get original state entries
         auto const bobAcct = sourceLedger->read(bobKeylet);
         auto const charlieAcct = sourceLedger->read(charlieKeylet);
@@ -326,35 +340,127 @@ class Catalogue_test : public beast::unit_test::suite
             auto const loadedLedger = loadEnv.closed();
 
             // After loading each ledger
-            //
-// After loading each ledger
-std::cout << "\n=== Original Ledger Information ===\n"
-          << "Sequence: " << to_string(sourceLedger->info().seq) << "\n"
-          << "Hash: " << to_string(sourceLedger->info().hash) << "\n"
-          << "Parent Close Time: " << to_string(sourceLedger->info().parentCloseTime.time_since_epoch().count()) << "\n"
-          << "Transaction Hash: " << to_string(sourceLedger->info().txHash) << "\n"
-          << "Account Hash: " << to_string(sourceLedger->info().accountHash) << "\n"
-          << "Parent Hash: " << to_string(sourceLedger->info().parentHash) << "\n"
-          << "Drops: " << to_string(sourceLedger->info().drops) << "\n"
-          << "Validated: " << (sourceLedger->info().validated ? "true" : "false") << "\n"
-          << "Accepted: " << (sourceLedger->info().accepted ? "true" : "false") << "\n"
-          << "Close Flags: " << sourceLedger->info().closeFlags << "\n"
-          << "Close Time Resolution: " << to_string(sourceLedger->info().closeTimeResolution.count()) << "\n"
-          << "Close Time: " << to_string(sourceLedger->info().closeTime.time_since_epoch().count()) << "\n"
-          << "\n=== Loaded Ledger Information ===\n"
-          << "Sequence: " << to_string(loadedLedger->info().seq) << "\n"
-          << "Hash: " << to_string(loadedLedger->info().hash) << "\n"
-          << "Parent Close Time: " << to_string(loadedLedger->info().parentCloseTime.time_since_epoch().count()) << "\n"
-          << "Transaction Hash: " << to_string(loadedLedger->info().txHash) << "\n"
-          << "Account Hash: " << to_string(loadedLedger->info().accountHash) << "\n"
-          << "Parent Hash: " << to_string(loadedLedger->info().parentHash) << "\n"
-          << "Drops: " << to_string(loadedLedger->info().drops) << "\n"
-          << "Validated: " << (loadedLedger->info().validated ? "true" : "false") << "\n"
-          << "Accepted: " << (loadedLedger->info().accepted ? "true" : "false") << "\n"
-          << "Close Flags: " << loadedLedger->info().closeFlags << "\n"
-          << "Close Time Resolution: " << to_string(loadedLedger->info().closeTimeResolution.count()) << "\n"
-          << "Close Time: " << to_string(loadedLedger->info().closeTime.time_since_epoch().count()) << "\n"
-          << std::endl;
+
+            auto const loadedLedger3 =
+                loadEnv.app().getLedgerMaster().getLedgerByHash(
+                    loadEnv.app().getLedgerMaster().getHashBySeq(3));
+
+            std::cout
+                << "\n=== Original Ledger Information ===\n"
+                << "Sequence: " << to_string(sourceLedger->info().seq) << "\n"
+                << "Hash: " << to_string(sourceLedger->info().hash) << "\n"
+                << "Parent Close Time: "
+                << to_string(sourceLedger->info()
+                                 .parentCloseTime.time_since_epoch()
+                                 .count())
+                << "\n"
+                << "Transaction Hash: "
+                << to_string(sourceLedger->info().txHash) << "\n"
+                << "Account Hash: "
+                << to_string(sourceLedger->info().accountHash) << "\n"
+                << "Parent Hash: " << to_string(sourceLedger->info().parentHash)
+                << "\n"
+                << "Drops: " << to_string(sourceLedger->info().drops) << "\n"
+                << "Validated: "
+                << (sourceLedger->info().validated ? "true" : "false") << "\n"
+                << "Accepted: "
+                << (sourceLedger->info().accepted ? "true" : "false") << "\n"
+                << "Close Flags: " << sourceLedger->info().closeFlags << "\n"
+                << "Close Time Resolution: "
+                << to_string(sourceLedger->info().closeTimeResolution.count())
+                << "\n"
+                << "Close Time: "
+                << to_string(sourceLedger->info()
+                                 .closeTime.time_since_epoch()
+                                 .count())
+                << "\n"
+                << "\n=== Loaded Ledger Information ===\n"
+                << "Sequence: " << to_string(loadedLedger->info().seq) << "\n"
+                << "Hash: " << to_string(loadedLedger->info().hash) << "\n"
+                << "Parent Close Time: "
+                << to_string(loadedLedger->info()
+                                 .parentCloseTime.time_since_epoch()
+                                 .count())
+                << "\n"
+                << "Transaction Hash: "
+                << to_string(loadedLedger->info().txHash) << "\n"
+                << "Account Hash: "
+                << to_string(loadedLedger->info().accountHash) << "\n"
+                << "Parent Hash: " << to_string(loadedLedger->info().parentHash)
+                << "\n"
+                << "Drops: " << to_string(loadedLedger->info().drops) << "\n"
+                << "Validated: "
+                << (loadedLedger->info().validated ? "true" : "false") << "\n"
+                << "Accepted: "
+                << (loadedLedger->info().accepted ? "true" : "false") << "\n"
+                << "Close Flags: " << loadedLedger->info().closeFlags << "\n"
+                << "Close Time Resolution: "
+                << to_string(loadedLedger->info().closeTimeResolution.count())
+                << "\n"
+                << "Close Time: "
+                << to_string(loadedLedger->info()
+                                 .closeTime.time_since_epoch()
+                                 .count())
+                << "\n"
+                << std::endl;
+
+            std::cout
+                << "\n=== Original Ledger3 Information ===\n"
+                << "Sequence: " << to_string(ledger3->info().seq) << "\n"
+                << "Hash: " << to_string(ledger3->info().hash) << "\n"
+                << "Parent Close Time: "
+                << to_string(ledger3->info()
+                                 .parentCloseTime.time_since_epoch()
+                                 .count())
+                << "\n"
+                << "Transaction Hash: " << to_string(ledger3->info().txHash)
+                << "\n"
+                << "Account Hash: " << to_string(ledger3->info().accountHash)
+                << "\n"
+                << "Parent Hash: " << to_string(ledger3->info().parentHash)
+                << "\n"
+                << "Drops: " << to_string(ledger3->info().drops) << "\n"
+                << "Validated: "
+                << (ledger3->info().validated ? "true" : "false") << "\n"
+                << "Accepted: " << (ledger3->info().accepted ? "true" : "false")
+                << "\n"
+                << "Close Flags: " << ledger3->info().closeFlags << "\n"
+                << "Close Time Resolution: "
+                << to_string(ledger3->info().closeTimeResolution.count())
+                << "\n"
+                << "Close Time: "
+                << to_string(
+                       ledger3->info().closeTime.time_since_epoch().count())
+                << "\n"
+                << "\n=== Loaded Ledger3 Information ===\n"
+                << "Sequence: " << to_string(loadedLedger3->info().seq) << "\n"
+                << "Hash: " << to_string(loadedLedger3->info().hash) << "\n"
+                << "Parent Close Time: "
+                << to_string(loadedLedger3->info()
+                                 .parentCloseTime.time_since_epoch()
+                                 .count())
+                << "\n"
+                << "Transaction Hash: "
+                << to_string(loadedLedger3->info().txHash) << "\n"
+                << "Account Hash: "
+                << to_string(loadedLedger3->info().accountHash) << "\n"
+                << "Parent Hash: "
+                << to_string(loadedLedger3->info().parentHash) << "\n"
+                << "Drops: " << to_string(loadedLedger3->info().drops) << "\n"
+                << "Validated: "
+                << (loadedLedger3->info().validated ? "true" : "false") << "\n"
+                << "Accepted: "
+                << (loadedLedger3->info().accepted ? "true" : "false") << "\n"
+                << "Close Flags: " << loadedLedger3->info().closeFlags << "\n"
+                << "Close Time Resolution: "
+                << to_string(loadedLedger3->info().closeTimeResolution.count())
+                << "\n"
+                << "Close Time: "
+                << to_string(loadedLedger3->info()
+                                 .closeTime.time_since_epoch()
+                                 .count())
+                << "\n"
+                << std::endl;
 
             auto const loadedBobAcct = loadedLedger->read(bobKeylet);
             auto const loadedCharlieAcct = loadedLedger->read(charlieKeylet);
@@ -362,9 +468,12 @@ std::cout << "\n=== Original Ledger Information ===\n"
 
             auto const& ll = *loadedLedger;
 
-            std::cout << "bob exists: " << (ll.exists(bobKeylet) ? "t" : "f") << "\n";
-            std::cout << "chl exists: " << (ll.exists(charlieKeylet) ? "t" : "f") << "\n";
-            std::cout << "eur exists: " << (ll.exists(eurTrustKeylet) ? "t" : "f") << "\n";
+            std::cout << "bob exists: " << (ll.exists(bobKeylet) ? "t" : "f")
+                      << "\n";
+            std::cout << "chl exists: "
+                      << (ll.exists(charlieKeylet) ? "t" : "f") << "\n";
+            std::cout << "eur exists: "
+                      << (ll.exists(eurTrustKeylet) ? "t" : "f") << "\n";
 
             BEAST_EXPECT(!!loadedBobAcct);
             BEAST_EXPECT(!!loadedCharlieAcct);
