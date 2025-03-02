@@ -102,7 +102,6 @@ private:
     beast::Journal journal;
     std::mutex fileMutex;  // Mutex for synchronizing file writes
 
-    // Method to directly serialize a SHAMapTreeNode using friend access
     void
     serializeNode(
         SHAMapTreeNode const& node,
@@ -112,13 +111,30 @@ private:
         DeltaType deltaType = DeltaType::ADDED)
     {
         Serializer s;
-        node.serializeForWire(s);
+
+        // First serialize the node to get its data
+        Serializer nodeData;
+        node.serializeForWire(nodeData);
+
+        // Now create a SHAMapTreeNode from the wire format
+        auto newNode = SHAMapTreeNode::makeFromWire(nodeData.slice());
+
+        if (!newNode)
+        {
+            JLOG(journal.error()) << "Failed to create node from wire format "
+                                     "during serialization";
+            return;
+        }
+
+        // Serialize with prefix (this is what's used when storing nodes)
+        newNode->serializeWithPrefix(s);
 
         // Prepare the node header
         NodeHeader header;
         header.size = s.getLength();
         header.sequence = sequence;
 
+        // Continue with the rest of the function as before...
         if (node.isInner())
         {
             header.type = CatalogueNodeType::INNER;
@@ -154,7 +170,7 @@ private:
         }
 
         // Thread-safe file write
-        std::lock_guard<std::mutex> lock(fileMutex);
+        // std::lock_guard<std::mutex> lock(fileMutex_);
         outfile.write(reinterpret_cast<const char*>(&header), sizeof(header));
         auto const& data = s.getData();
         outfile.write(reinterpret_cast<const char*>(data.data()), data.size());
@@ -167,9 +183,8 @@ private:
         using StackEntry = std::pair<SHAMapTreeNode*, SHAMapNodeID>;
         std::stack<StackEntry> nodeStack;
 
-        //        JLOG(journal.info())
-        std::cout << "Serializing root node with hash: "
-                  << to_string(map.root_->getHash().as_uint256()) << "\n";
+        JLOG(journal.info()) << "Serializing root node with hash: "
+                             << to_string(map.root_->getHash().as_uint256());
 
         // Start with the root
         nodeStack.push({map.root_.get(), SHAMapNodeID()});
@@ -351,7 +366,7 @@ public:
         beast::Journal journal_,
         size_t numThreads_ = std::thread::hardware_concurrency())
         : ledgers(ledgers_)
-        , numThreads(numThreads_ > 0 ? numThreads_ : 1)
+        , numThreads(1)  // numThreads_ > 0 ? numThreads_ : 1)
         , outfile(outfile_)
         , journal(journal_)
     {
@@ -363,6 +378,7 @@ public:
     void
     streamAll()
     {
+        //        numThreads = 1;
         JLOG(journal.info())
             << "Starting to stream " << ledgers.size()
             << " ledgers to catalogue file using " << numThreads << " threads";
@@ -664,11 +680,12 @@ doCatalogueCreate(RPC::JsonContext& context)
             reinterpret_cast<char*>(&validateHeader), sizeof(CATLHeader));
         if (validateFile.fail() || memcmp(validateHeader.magic, "CATL", 4) != 0)
         {
-            std::cout << "Catalogue file appears to be corrupted!\n";
+            JLOG(context.j.error())
+                << "Catalogue file appears to be corrupted!";
         }
         else
         {
-            std::cout << "Catalogue file header verified OK\n";
+            JLOG(context.j.info()) << "Catalogue file header verified OK";
         }
         validateFile.close();
     }
@@ -988,13 +1005,46 @@ doCatalogueLoad(RPC::JsonContext& context)
                 continue;
             }
 
-            auto& [rootData, rootNodeID] = rootNodeIt->second;
+            auto const& rootData = nodesByLedger[seq][rootIt->second].first;
+            JLOG(context.j.info()) << "Loading root node for ledger " << seq
+                                   << ", hash: " << to_string(rootIt->second)
+                                   << ", data size: " << rootData.size();
 
+            // Examine first few bytes of data
+            if (rootData.size() >= 16)
+            {
+                std::stringstream ss;
+                ss << "Root data first 16 bytes: ";
+                for (size_t i = 0; i < 16; ++i)
+                    ss << std::hex << std::setw(2) << std::setfill('0')
+                       << (int)rootData[i] << " ";
+                JLOG(context.j.info()) << ss.str();
+            }
+
+            // Try to create the node using makeFromPrefix (what we stored)
+            auto testNode = SHAMapTreeNode::makeFromPrefix(
+                Slice(rootData.data(), rootData.size()),
+                SHAMapHash(rootIt->second));
+
+            if (!testNode)
+            {
+                JLOG(context.j.error())
+                    << "Failed to create test node from prefix format";
+                continue;
+            }
+
+            JLOG(context.j.info()) << "Created test node with hash: "
+                                   << to_string(testNode->getHash());
+
+            auto& [_, rootNodeID] = rootNodeIt->second;
+
+            Serializer s;
+            testNode->serializeForWire(s);
+
+            // s.addRaw(Slice(rootData.data(), rootData.size()));
             if (!ledger->stateMap()
                      .addRootNode(
-                         SHAMapHash(rootIt->second),
-                         Slice(rootData.data(), rootData.size()),
-                         nullptr)
+                         SHAMapHash(rootIt->second), s.slice(), nullptr)
                      .isGood())
             {
                 JLOG(context.j.error())
@@ -1011,7 +1061,7 @@ doCatalogueLoad(RPC::JsonContext& context)
                          ++i)
                         ss << std::hex << std::setw(2) << std::setfill('0')
                            << (int)rootData[i] << " ";
-                    JLOG(context.j.error()) << ss.str();
+                    JLOG(context.j.info()) << ss.str();
                 }
                 continue;
             }

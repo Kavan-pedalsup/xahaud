@@ -82,11 +82,12 @@ class Catalogue_test : public beast::unit_test::suite
     }
 
     void
-    testCatalogueCreateBadInput()
+    testCatalogueCreateBadInput(FeatureBitset features)
     {
         testcase("catalogue_create: Invalid parameters");
         using namespace test::jtx;
-        Env env{*this};
+        Env env{
+            *this, envconfig(), features, nullptr, beast::severities::kInfo};
 
         // No parameters
         {
@@ -155,13 +156,14 @@ class Catalogue_test : public beast::unit_test::suite
     }
 
     void
-    testCatalogueCreate()
+    testCatalogueCreate(FeatureBitset features)
     {
         testcase("catalogue_create: Basic functionality");
         using namespace test::jtx;
 
         // Create environment and some test ledgers
-        Env env{*this};
+        Env env{
+            *this, envconfig(), features, nullptr, beast::severities::kInfo};
         prepareLedgerData(env, 5);
 
         boost::filesystem::path tempDir =
@@ -194,11 +196,12 @@ class Catalogue_test : public beast::unit_test::suite
     }
 
     void
-    testCatalogueLoadBadInput()
+    testCatalogueLoadBadInput(FeatureBitset features)
     {
         testcase("catalogue_load: Invalid parameters");
         using namespace test::jtx;
-        Env env{*this};
+        Env env{
+            *this, envconfig(), features, nullptr, beast::severities::kInfo};
 
         // No parameters
         {
@@ -239,13 +242,14 @@ class Catalogue_test : public beast::unit_test::suite
     }
 
     void
-    testCatalogueLoadAndVerify()
+    testCatalogueLoadAndVerify(FeatureBitset features)
     {
         testcase("catalogue_load: Load and verify");
         using namespace test::jtx;
 
         // Create environment and test data
-        Env env{*this};
+        Env env{
+            *this, envconfig(), features, nullptr, beast::severities::kInfo};
         prepareLedgerData(env, 5);
 
         // Store some key state information before catalogue creation
@@ -312,7 +316,12 @@ class Catalogue_test : public beast::unit_test::suite
         }
 
         // Create a new environment for loading with unique port
-        Env loadEnv{*this, test::jtx::envconfig(test::jtx::port_increment, 3)};
+        Env loadEnv{
+            *this,
+            test::jtx::envconfig(test::jtx::port_increment, 3),
+            features,
+            nullptr,
+            beast::severities::kInfo};
 
         // Now load the catalogue
         {
@@ -322,6 +331,7 @@ class Catalogue_test : public beast::unit_test::suite
             auto const result =
                 loadEnv.client().invoke("catalogue_load", params)[jss::result];
 
+            std::cout << result << "\n";
             BEAST_EXPECT(result[jss::status] == jss::success);
             BEAST_EXPECT(result[jss::ledger_min] == minLedger);
             BEAST_EXPECT(result[jss::ledger_max] == maxLedger);
@@ -546,16 +556,21 @@ class Catalogue_test : public beast::unit_test::suite
     }
 
     void
-    testNetworkMismatch()
+    testNetworkMismatch(FeatureBitset features)
     {
         testcase("catalogue_load: Network ID mismatch");
         using namespace test::jtx;
 
         // Create environment with different network IDs
-        Env env1{*this, envconfig([](std::unique_ptr<Config> cfg) {
-                     cfg->NETWORK_ID = 123;
-                     return cfg;
-                 })};
+        Env env1{
+            *this,
+            envconfig([](std::unique_ptr<Config> cfg) {
+                cfg->NETWORK_ID = 123;
+                return cfg;
+            }),
+            features,
+            nullptr,
+            beast::severities::kInfo};
         prepareLedgerData(env1, 5);
 
         boost::filesystem::path tempDir =
@@ -578,10 +593,15 @@ class Catalogue_test : public beast::unit_test::suite
         }
 
         // Try to load catalogue in environment with different network ID
-        Env env2{*this, envconfig([](std::unique_ptr<Config> cfg) {
-                     cfg->NETWORK_ID = 456;
-                     return cfg;
-                 })};
+        Env env2{
+            *this,
+            envconfig([](std::unique_ptr<Config> cfg) {
+                cfg->NETWORK_ID = 456;
+                return cfg;
+            }),
+            features,
+            nullptr,
+            beast::severities::kInfo};
 
         {
             Json::Value params{Json::objectValue};
@@ -601,11 +621,13 @@ public:
     void
     run() override
     {
-        testCatalogueCreateBadInput();
-        testCatalogueCreate();
-        testCatalogueLoadBadInput();
-        testCatalogueLoadAndVerify();
-        testNetworkMismatch();
+        using namespace test::jtx;
+        FeatureBitset const all{supported_amendments()};
+        testCatalogueCreateBadInput(all);
+        testCatalogueCreate(all);
+        testCatalogueLoadBadInput(all);
+        testCatalogueLoadAndVerify(all);
+        testNetworkMismatch(all);
     }
 };
 
