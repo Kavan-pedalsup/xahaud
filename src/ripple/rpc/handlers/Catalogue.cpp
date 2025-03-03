@@ -1155,6 +1155,8 @@ doCatalogueLoad(RPC::JsonContext& context)
                 context.app.config(),
                 context.app.getNodeFamily());
 
+            ledger->setDrops(ledgerInfoBySeq[seq].drops.drops());
+
             // Now build the state tree by adding nodes
             auto const& [rootData, rootNodeID, isRoot] = rootNodeIt->second;
             JLOG(context.j.info()) << "Loading root node for ledger " << seq
@@ -1354,6 +1356,8 @@ doCatalogueLoad(RPC::JsonContext& context)
             // Create the ledger from the previous one
             ledger =
                 std::make_shared<Ledger>(*prevLedger, infoIt->second.closeTime);
+
+            ledger->setDrops(ledgerInfoBySeq[seq].drops.drops());
 
             // Apply deltas from previous to current ledger
             auto deltaIt = deltasByLedger.find(seq);

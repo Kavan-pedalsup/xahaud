@@ -278,6 +278,9 @@ public:
     void
     setCloseFlags(int closeFlags);
 
+    void
+    setDrops(uint64_t drops);
+
     bool
     isImmutable() const
     {
@@ -308,8 +311,6 @@ public:
     {
         info_.drops = totDrops;
     }
-
-    
 
     SHAMap const&
     stateMap() const

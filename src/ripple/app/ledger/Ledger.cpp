@@ -385,10 +385,17 @@ Ledger::setImmutable(bool rehash)
     setup();
 }
 
+// raw setters for catalogue
 void
 Ledger::setCloseFlags(int closeFlags)
 {
     info_.closeFlags = closeFlags;
+}
+
+void
+Ledger::setDrops(uint64_t drops)
+{
+    info_.drops = drops;
 }
 
 void
