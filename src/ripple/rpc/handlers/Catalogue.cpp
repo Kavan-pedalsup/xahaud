@@ -1474,7 +1474,7 @@ doCatalogueLoad(RPC::JsonContext& context)
         }
 
         // Finalize the ledger
-        ledger->updateSkipList();
+        // ledger->updateSkipList();
         ledger->stateMap().flushDirty(hotACCOUNT_NODE);
         ledger->txMap().flushDirty(hotTRANSACTION_NODE);
 
