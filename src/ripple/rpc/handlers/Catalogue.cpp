@@ -1476,10 +1476,15 @@ doCatalogueLoad(RPC::JsonContext& context)
 
         // Set the ledger as validated
         ledger->setValidated();
+
+        auto cf = ledger->info().closeFlags;
         ledger->setAccepted(
             infoIt->second.closeTime,
             infoIt->second.closeTimeResolution,
             infoIt->second.closeFlags & sLCF_NoConsensusTime);
+
+        // hacky
+        ledger->setCloseFlags(cf);
 
         ledger->setImmutable(true);
 
