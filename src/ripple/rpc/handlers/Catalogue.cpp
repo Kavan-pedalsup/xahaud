@@ -48,6 +48,9 @@
 
 namespace ripple {
 
+using time_point = NetClock::time_point;
+using duration = NetClock::duration;
+
 static constexpr uint16_t CATALOGUE_VERSION = 1;
 
 #define CATL 0x4C544143UL /*"CATL" in LE*/
@@ -109,10 +112,14 @@ private:
 
             auto const& info = ledger->info();
 
+            uint64_t closeTime = info.closeTime.time_since_epoch().count();
+            uint64_t parentCloseTime =
+                info.parentCloseTime.time_since_epoch().count();
+            uint32_t closeTimeResolution = info.closeTimeResolution.count();
+
             // Write ledger header information
             if (!writeToFile(&info.seq, sizeof(info.seq)) ||
-                !writeToFile(
-                    &info.parentCloseTime, sizeof(info.parentCloseTime)) ||
+                !writeToFile(&parentCloseTime, sizeof(parentCloseTime)) ||
                 !writeToFile(info.hash.data(), 32) ||
                 !writeToFile(info.txHash.data(), 32) ||
                 !writeToFile(info.accountHash.data(), 32) ||
@@ -122,9 +129,8 @@ private:
                 !writeToFile(&info.accepted, sizeof(info.accepted)) ||
                 !writeToFile(&info.closeFlags, sizeof(info.closeFlags)) ||
                 !writeToFile(
-                    &info.closeTimeResolution,
-                    sizeof(info.closeTimeResolution)) ||
-                !writeToFile(&info.closeTime, sizeof(info.closeTime)))
+                    &closeTimeResolution, sizeof(closeTimeResolution)) ||
+                !writeToFile(&closeTime, sizeof(closeTime)))
             {
                 return false;
             }
@@ -347,11 +353,14 @@ doCatalogueLoad(RPC::JsonContext& context)
     while (!infile.eof())
     {
         LedgerInfo info;
+        uint64_t closeTime = -1;
+        uint64_t parentCloseTime = -1;
+        uint32_t closeTimeResolution = -1;
         if (!infile.read(
                 reinterpret_cast<char*>(&info.seq), sizeof(info.seq)) ||
             !infile.read(
-                reinterpret_cast<char*>(&info.parentCloseTime),
-                sizeof(info.parentCloseTime)) ||
+                reinterpret_cast<char*>(&parentCloseTime),
+                sizeof(parentCloseTime)) ||
             !infile.read(reinterpret_cast<char*>(info.hash.data()), 32) ||
             !infile.read(reinterpret_cast<char*>(info.txHash.data()), 32) ||
             !infile.read(
@@ -369,20 +378,22 @@ doCatalogueLoad(RPC::JsonContext& context)
                 reinterpret_cast<char*>(&info.closeFlags),
                 sizeof(info.closeFlags)) ||
             !infile.read(
-                reinterpret_cast<char*>(&info.closeTimeResolution),
-                sizeof(info.closeTimeResolution)) ||
+                reinterpret_cast<char*>(&closeTimeResolution),
+                sizeof(closeTimeResolution)) ||
             !infile.read(
-                reinterpret_cast<char*>(&info.closeTime),
-                sizeof(info.closeTime)))
+                reinterpret_cast<char*>(&closeTime), sizeof(closeTime)))
         {
             JLOG(context.j.warn()) << "Catalogue load expected but could not "
                                       "read the next ledger header.";
             break;
         }
+        info.closeTime = time_point{duration{closeTime}};
+        info.parentCloseTime = time_point{duration{parentCloseTime}};
+        info.closeTimeResolution = duration{closeTimeResolution};
 
         JLOG(context.j.info()) << "Found ledger " << info.seq << "...";
 
-        if (info.seq != expected_seq)
+        if (info.seq != expected_seq++)
         {
             JLOG(context.j.error())
                 << "Expected ledger " << expected_seq << ", bailing";
