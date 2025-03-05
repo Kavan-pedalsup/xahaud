@@ -1243,7 +1243,9 @@ SHAMap::invariants() const
 }
 
 std::size_t
-SHAMap::serializeToStream(std::ostream& stream, SHAMap const* baseSHAMap) const
+SHAMap::serializeToStream(
+    std::ostream& stream,
+    std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap) const
 {
     std::unordered_set<SHAMapHash, beast::uhash<>> writtenNodes;
 
@@ -1286,15 +1288,16 @@ SHAMap::serializeToStream(std::ostream& stream, SHAMap const* baseSHAMap) const
     };
 
     // If we're creating a delta, first compute the differences
-    if (baseSHAMap && baseSHAMap->root_)
+    if (baseSHAMap && baseSHAMap->get().root_)
     {
+        const SHAMap& baseMap = baseSHAMap->get();
+
         // Only compute delta if the maps are different
-        if (getHash() != baseSHAMap->getHash())
+        if (getHash() != baseMap.getHash())
         {
             Delta differences;
 
-            if (compare(
-                    *baseSHAMap, differences, std::numeric_limits<int>::max()))
+            if (compare(baseMap, differences, std::numeric_limits<int>::max()))
             {
                 // Process each difference
                 for (auto const& [key, deltaItem] : differences)
@@ -1387,7 +1390,9 @@ SHAMap::serializeToStream(std::ostream& stream, SHAMap const* baseSHAMap) const
 }
 
 bool
-SHAMap::deserializeFromStream(std::istream& stream, SHAMap const* baseSHAMap)
+SHAMap::deserializeFromStream(
+    std::istream& stream,
+    std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap)
 {
     try
     {
@@ -1401,7 +1406,7 @@ SHAMap::deserializeFromStream(std::istream& stream, SHAMap const* baseSHAMap)
         // If we have a base map, start with a copy of it
         if (baseSHAMap)
         {
-            root_ = baseSHAMap->root_;
+            root_ = baseSHAMap->get().root_;
             if (root_)
                 unshare();
         }

@@ -22,7 +22,6 @@
 #include <ripple/app/tx/apply.h>
 #include <ripple/basics/Log.h>
 #include <ripple/basics/Slice.h>
-#include <ripple/ledger/ReadView.h>
 #include <ripple/net/RPCErr.h>
 #include <ripple/protocol/ErrorCodes.h>
 #include <ripple/protocol/LedgerFormats.h>
@@ -68,7 +67,7 @@ struct CATLHeader
 class CatalogueProcessor
 {
 private:
-    std::vector<std::shared_ptr<ReadView const>>& ledgers;
+    std::vector<std::shared_ptr<Ledger const>>& ledgers;
     std::ofstream& outfile;
     beast::Journal journal;
     std::atomic<bool> aborted{false};
@@ -88,7 +87,10 @@ private:
     }
 
     bool
-    outputLedger(ReadView const& ledger, SHAMap const* prevStateMap = nullptr)
+    outputLedger(
+        Ledger const& ledger,
+        std::optional<std::reference_wrapper<const SHAMap>> prevStateMap =
+            std::nullopt)
     {
         uint32_t seq = ledger.info().seq;
         try
@@ -127,15 +129,10 @@ private:
                 return false;
             }
 
-            auto& stateMap =
-                static_cast<const Ledger*>(ledger.get())->stateMap();
-
             size_t stateNodesWritten =
-                stateMap.serializeToStream(outfile, prevStateMap);
+                ledger->stateMap().serializeToStream(outfile, prevStateMap);
 
-            auto& txMap = static_cast<const Ledger*>(ledger.get())->txMap();
-
-            size_t txNodesWritten = txMap.serializeToStream(outfile, nullptr);
+            size_t txNodesWritten = ledger->txMap().serializeToStream(outfile);
 
             JLOG(journal.info()) << "Ledger " << seq << ": Wrote "
                                  << stateNodesWritten << " state nodes, "
@@ -154,7 +151,7 @@ private:
 
 public:
     CatalogueProcessor(
-        std::vector<std::shared_ptr<ReadView const>>& ledgers_,
+        std::vector<std::shared_ptr<Ledger const>>& ledgers_,
         std::ofstream& outfile_,
         beast::Journal journal_)
         : ledgers(ledgers_), outfile(outfile_), journal(journal_)
@@ -178,18 +175,11 @@ public:
         if (!outputLedger(*ledgers.front()))
             return false;
 
-        // For subsequent ledgers, process as deltas from the previous
-        SHAMap const* prevStateMap =
-            &static_cast<const Ledger*>(ledgers.front().get())->stateMap();
-
         for (size_t i = 1; i < ledgers.size(); ++i)
         {
             auto ledger = ledgers[i];
-            if (!outputLedger(*ledger, prevStateMap))
+            if (!outputLedger(*ledger, ledgers[i - 1]->stateMap()))
                 return false;
-
-            prevStateMap =
-                &static_cast<const Ledger*>(ledger.get())->stateMap();
         }
 
         return !aborted;
@@ -251,14 +241,14 @@ doCatalogueCreate(RPC::JsonContext& context)
     if (min_ledger > max_ledger)
         return rpcError(rpcINVALID_PARAMS, "min_ledger must be <= max_ledger");
 
-    std::vector<std::shared_ptr<ReadView const>> lpLedgers;
+    std::vector<std::shared_ptr<Ledger const>> lpLedgers;
 
     // Grab all ledgers of interest
     lpLedgers.reserve(max_ledger - min_ledger + 1);
 
     for (auto i = min_ledger; i <= max_ledger; ++i)
     {
-        std::shared_ptr<ReadView const> ptr;
+        std::shared_ptr<Ledger const> ptr;
         auto status = RPC::getLedger(ptr, i, context);
         if (status.toErrorCode() != rpcSUCCESS)  // Status isn't OK
             return rpcError(status);
@@ -440,8 +430,9 @@ doCatalogueLoad(RPC::JsonContext& context)
             ledger->setLedgerInfo(info);
 
             // Apply delta (only leaf-node changes)
-            if (!ledger->stateMap().deserializeFromStream(
-                    infile, &prevLedger->stateMap()))
+            SHAMap const& prevMap = prevLedger->stateMap();
+
+            if (!ledger->stateMap().deserializeFromStream(infile, prevMap))
             {
                 JLOG(context.j.error())
                     << "Failed to apply delta to ledger " << info.seq;
@@ -450,8 +441,7 @@ doCatalogueLoad(RPC::JsonContext& context)
         }
 
         // pull in the tx map
-        if (!ledger->txMap().deserializeFromStream(
-                infile, &prevLedger->txMap()))
+        if (!ledger->txMap().deserializeFromStream(infile, prevLedger->txMap()))
         {
             JLOG(context.j.error())
                 << "Failed to apply delta to ledger " << info.seq;

@@ -380,8 +380,10 @@ public:
      * @return Number of nodes written
      */
     std::size_t
-    serializeToStream(std::ostream& stream, SHAMap const* baseSHAMap = nullptr)
-        const;
+    serializeToStream(
+        std::ostream& stream,
+        std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap =
+            std::nullopt) const;
 
     /**
      * Deserialize a SHAMap from a stream
@@ -394,7 +396,8 @@ public:
     bool
     deserializeFromStream(
         std::istream& stream,
-        SHAMap const* baseSHAMap = nullptr);
+        std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap =
+            std::nullopt);
 
 private:
     using SharedPtrNodeStack =
