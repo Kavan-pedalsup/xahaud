@@ -488,7 +488,7 @@ class Catalogue_test : public beast::unit_test::suite
             loadedEurTrust->getFieldAmount(sfLowLimit).mantissa() ==
                 2000000000);
 
-        boost::filesystem::remove_all(tempDir);
+        // boost::filesystem::remove_all(tempDir);
     }
 
     void
