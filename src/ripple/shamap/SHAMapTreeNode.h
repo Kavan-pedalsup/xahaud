@@ -48,6 +48,7 @@ enum SHAMapNodeType : uint8_t {
     tnTRANSACTION_NM = 2,  // transaction, no metadata
     tnTRANSACTION_MD = 3,  // transaction, with metadata
     tnACCOUNT_STATE = 4,
+    tnREMOVE = 254,   // special type to mark deleted nodes in serialization
     tnTERMINAL = 255  // special type to mark the end of a serialization stream
 };
 

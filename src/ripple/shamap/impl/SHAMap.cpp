@@ -1275,14 +1275,12 @@ SHAMap::serializeToStream(
     };
 
     auto serializeRemovedLeaf = [&stream](uint256 const& key) -> bool {
-        // to indicate a node is removed it is written with size 0
+        // to indicate a node is removed it is written with a removal type
+        auto t = SHAMapNodeType::tnREMOVE;
+        stream.write(reinterpret_cast<char const*>(&t), 1);
 
         // write the key
         stream.write(reinterpret_cast<char const*>(key.data()), 32);
-
-        // write the data size 0
-        uint32_t size{0};
-        stream.write(reinterpret_cast<char const*>(&size), 4);
 
         return !stream.fail();
     };
@@ -1328,6 +1326,10 @@ SHAMap::serializeToStream(
                             ++nodeCount;
                     }
                 }
+
+                // write a terminal symbol to indicate the map stream has ended
+                auto t = SHAMapNodeType::tnTERMINAL;
+                stream.write(reinterpret_cast<char const*>(&t), 1);
 
                 return nodeCount;
             }
@@ -1439,29 +1441,35 @@ SHAMap::deserializeFromStream(
                 return false;
             }
 
-            s.read(reinterpret_cast<char*>(&size), 4);
-
-            if (size == 0)
+            if (nodeType == SHAMapNodeType::tnREMOVE)
             {
                 // deletion
                 if (!hasItem(key))
                 {
                     std::cout << "item already missing at delete request "
                               << to_string(key) << "\n";
-                    return false;
+                    // return false;
                 }
-
-                std::cout << "Successfully deleted " << to_string(key) << "\n";
-                delItem(key);
+                else
+                {
+                    std::cout << "Successfully deleted " << to_string(key)
+                              << "\n";
+                    delItem(key);
+                }
                 return true;
             }
 
-            if (hasItem(key))
-            {
-                std::cout << "Removing modified item ahead of replacement "
-                          << to_string(key) << "\n";
-                delItem(key);
-            }
+            s.read(reinterpret_cast<char*>(&size), 4);
+
+            /*
+                        if (hasItem(key))
+                        {
+                            std::cout << "Removing modified item ahead of
+               replacement "
+                                      << to_string(key) << "\n";
+                            delItem(key);
+                        }
+            */
 
             if (s.fail())
             {
@@ -1489,6 +1497,9 @@ SHAMap::deserializeFromStream(
             }
 
             auto item = make_shamapitem(key, makeSlice(data));
+            if (hasItem(key))
+                return updateGiveItem(nodeType, std::move(item));
+
             return addGiveItem(nodeType, std::move(item));
         };
 

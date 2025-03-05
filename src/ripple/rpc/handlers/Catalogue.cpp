@@ -112,25 +112,26 @@ private:
 
             auto const& info = ledger->info();
 
-            uint64_t closeTime = info.closeTime.time_since_epoch().count();
-            uint64_t parentCloseTime =
-                info.parentCloseTime.time_since_epoch().count();
+            uint64_t closeTime =
+                0xCAFED00DCAFEBABEULL;  // info.closeTime.time_since_epoch().count();
+            uint64_t parentCloseTime = 0xDEADBEEFC001D00D;
+            //                info.parentCloseTime.time_since_epoch().count();
             uint32_t closeTimeResolution = info.closeTimeResolution.count();
+
+            uint64_t drops = info.drops.drops();
 
             // Write ledger header information
             if (!writeToFile(&info.seq, sizeof(info.seq)) ||
-                !writeToFile(&parentCloseTime, sizeof(parentCloseTime)) ||
                 !writeToFile(info.hash.data(), 32) ||
                 !writeToFile(info.txHash.data(), 32) ||
                 !writeToFile(info.accountHash.data(), 32) ||
                 !writeToFile(info.parentHash.data(), 32) ||
-                !writeToFile(&info.drops, sizeof(info.drops)) ||
-                !writeToFile(&info.validated, sizeof(info.validated)) ||
-                !writeToFile(&info.accepted, sizeof(info.accepted)) ||
+                !writeToFile(&drops, sizeof(drops)) ||
                 !writeToFile(&info.closeFlags, sizeof(info.closeFlags)) ||
                 !writeToFile(
                     &closeTimeResolution, sizeof(closeTimeResolution)) ||
-                !writeToFile(&closeTime, sizeof(closeTime)))
+                !writeToFile(&closeTime, sizeof(closeTime)) ||
+                !writeToFile(&parentCloseTime, sizeof(parentCloseTime)))
             {
                 return false;
             }
@@ -356,24 +357,16 @@ doCatalogueLoad(RPC::JsonContext& context)
         uint64_t closeTime = -1;
         uint64_t parentCloseTime = -1;
         uint32_t closeTimeResolution = -1;
+        uint64_t drops = -1;
+
         if (!infile.read(
                 reinterpret_cast<char*>(&info.seq), sizeof(info.seq)) ||
-            !infile.read(
-                reinterpret_cast<char*>(&parentCloseTime),
-                sizeof(parentCloseTime)) ||
             !infile.read(reinterpret_cast<char*>(info.hash.data()), 32) ||
             !infile.read(reinterpret_cast<char*>(info.txHash.data()), 32) ||
             !infile.read(
                 reinterpret_cast<char*>(info.accountHash.data()), 32) ||
             !infile.read(reinterpret_cast<char*>(info.parentHash.data()), 32) ||
-            !infile.read(
-                reinterpret_cast<char*>(&info.drops), sizeof(info.drops)) ||
-            !infile.read(
-                reinterpret_cast<char*>(&info.validated),
-                sizeof(info.validated)) ||
-            !infile.read(
-                reinterpret_cast<char*>(&info.accepted),
-                sizeof(info.accepted)) ||
+            !infile.read(reinterpret_cast<char*>(&drops), sizeof(drops)) ||
             !infile.read(
                 reinterpret_cast<char*>(&info.closeFlags),
                 sizeof(info.closeFlags)) ||
@@ -381,7 +374,10 @@ doCatalogueLoad(RPC::JsonContext& context)
                 reinterpret_cast<char*>(&closeTimeResolution),
                 sizeof(closeTimeResolution)) ||
             !infile.read(
-                reinterpret_cast<char*>(&closeTime), sizeof(closeTime)))
+                reinterpret_cast<char*>(&closeTime), sizeof(closeTime)) ||
+            !infile.read(
+                reinterpret_cast<char*>(&parentCloseTime),
+                sizeof(parentCloseTime)))
         {
             JLOG(context.j.warn()) << "Catalogue load expected but could not "
                                       "read the next ledger header.";
@@ -390,6 +386,8 @@ doCatalogueLoad(RPC::JsonContext& context)
         info.closeTime = time_point{duration{closeTime}};
         info.parentCloseTime = time_point{duration{parentCloseTime}};
         info.closeTimeResolution = duration{closeTimeResolution};
+
+        info.drops = drops;
 
         JLOG(context.j.info()) << "Found ledger " << info.seq << "...";
 
@@ -463,13 +461,12 @@ doCatalogueLoad(RPC::JsonContext& context)
         ledger->stateMap().flushDirty(hotACCOUNT_NODE);
         ledger->txMap().flushDirty(hotTRANSACTION_NODE);
 
-        // Set the ledger as validated
-        ledger->setValidated();
-
         ledger->setAccepted(
             info.closeTime,
             info.closeTimeResolution,
             info.closeFlags & sLCF_NoConsensusTime);
+
+        ledger->setValidated();
 
         // Set the proper close flags
         ledger->setCloseFlags(info.closeFlags);
