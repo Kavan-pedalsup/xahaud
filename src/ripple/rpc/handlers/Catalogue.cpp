@@ -441,7 +441,7 @@ doCatalogueLoad(RPC::JsonContext& context)
         }
 
         // pull in the tx map
-        if (!ledger->txMap().deserializeFromStream(infile, prevLedger->txMap()))
+        if (!ledger->txMap().deserializeFromStream(infile))
         {
             JLOG(context.j.error())
                 << "Failed to apply delta to ledger " << info.seq;
