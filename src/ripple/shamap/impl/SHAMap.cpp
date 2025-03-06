@@ -1397,32 +1397,18 @@ SHAMap::deserializeFromStream(std::istream& stream)
 {
     try
     {
-        JLOG(journal_.debug())
-            << "Starting to deserialize from stream at position "
-            << stream.tellg();
+        JLOG(journal_.debug()) << "Deserialization: Starting to deserialize "
+                                  "from stream at position "
+                               << stream.tellg();
 
         if (state_ != SHAMapState::Modifying && state_ != SHAMapState::Synching)
             return false;
 
         if (!root_)
             root_ = std::make_shared<SHAMapInnerNode>(cowid_);
-        /*
-                // If we have a base map, start with a copy of it
-                if (baseSHAMap.has_value())
-                {
-                    root_ = baseSHAMap->get().root_;
-                    if (root_)
-                        unshare();
-                }
-                else
-                {
-                    // Start with a fresh empty root
-                    root_ = std::make_shared<SHAMapInnerNode>(cowid_);
-                }
-        */
 
         // Define a lambda to deserialize a leaf node
-        auto deserializeLeaf = [this](
+        auto deserializeLeaf = [this, &stream](
                                    std::istream& s,
                                    SHAMapNodeType& nodeType /* out */) -> bool {
             s.read(reinterpret_cast<char*>(&nodeType), 1);
@@ -1434,13 +1420,16 @@ SHAMap::deserializeFromStream(std::istream& stream)
             }
 
             uint256 key;
-            uint32_t size = 0xDEADBEEFUL;
+            uint32_t size{0};
 
             s.read(reinterpret_cast<char*>(key.data()), 32);
 
             if (s.fail())
             {
-                std::cout << "Failed reading 32 byte key\n";
+                JLOG(journal_.error())
+                    << "Deserialization: stopped unexpectedly at "
+                    << stream.tellg()
+                    << " while trying to read key of next entry";
                 return false;
             }
 
@@ -1449,42 +1438,33 @@ SHAMap::deserializeFromStream(std::istream& stream)
                 // deletion
                 if (!hasItem(key))
                 {
-                    std::cout << "item already missing at delete request "
-                              << to_string(key) << "\n";
-                    // return false;
+                    JLOG(journal_.error())
+                        << "Deserialization: removal of key " << to_string(key)
+                        << " but key is already absent.";
+                    return false;
                 }
-                else
-                {
-                    std::cout << "Successfully deleted " << to_string(key)
-                              << "\n";
-                    delItem(key);
-                }
+                delItem(key);
                 return true;
             }
 
             s.read(reinterpret_cast<char*>(&size), 4);
 
-            /*
-                        if (hasItem(key))
-                        {
-                            std::cout << "Removing modified item ahead of
-               replacement "
-                                      << to_string(key) << "\n";
-                            delItem(key);
-                        }
-            */
-
             if (s.fail())
             {
-                std::cout << "Failed reading 1 byte node type at "
-                          << to_string(key) << "\n";
+                JLOG(journal_.error())
+                    << "Deserialization: stopped unexpectedly at "
+                    << stream.tellg()
+                    << " while trying to read size of data for key "
+                    << to_string(key);
                 return false;
             }
 
             if (size > 1024 * 1024 * 1024)
             {
-                std::cout << "Size of leaf " << to_string(key)
-                          << "suspiciously large (" << size << ") bailing\n";
+                JLOG(journal_.error())
+                    << "Deserialization: size of " << to_string(key)
+                    << " is suspiciously large (" << size
+                    << " bytes), bailing.";
                 return false;
             }
 
@@ -1494,22 +1474,17 @@ SHAMap::deserializeFromStream(std::istream& stream)
             s.read(reinterpret_cast<char*>(data.data()), size);
             if (s.fail())
             {
-                std::cout << "EOF while reading " << size << " bytes for leaf "
-                          << to_string(key) << "\n";
+                JLOG(journal_.error())
+                    << "Deserialization: Unexpected EOF while reading data for "
+                    << to_string(key);
                 return false;
             }
 
             auto item = make_shamapitem(key, makeSlice(data));
             if (hasItem(key))
-            {
-                std::cout << "Modifying item: " << to_string(key) << "\n";
                 return updateGiveItem(nodeType, std::move(item));
-            }
-            else
-            {
-                std::cout << "Adding item:    " << to_string(key) << "\n";
-                return addGiveItem(nodeType, std::move(item));
-            }
+
+            return addGiveItem(nodeType, std::move(item));
         };
 
         SHAMapNodeType lastParsed;
@@ -1519,8 +1494,8 @@ SHAMap::deserializeFromStream(std::istream& stream)
 
         if (lastParsed != SHAMapNodeType::tnTERMINAL)
         {
-            std::cout << "unexpected end of nodes while deserializing, "
-                         "terminal node not found\n";
+            JLOG(journal_.error())
+                << "Deserialization: Unexpected EOF, terminal node not found.";
             return false;
         }
 

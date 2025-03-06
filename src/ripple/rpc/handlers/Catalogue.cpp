@@ -350,7 +350,7 @@ doCatalogueLoad(RPC::JsonContext& context)
     uint32_t expected_seq = header.min_ledger;
 
     // Process each ledger sequentially
-    while (!infile.eof())
+    while (!infile.eof() && expected_seq <= header.max_ledger)
     {
         LedgerInfo info;
         uint64_t closeTime = -1;
@@ -438,15 +438,8 @@ doCatalogueLoad(RPC::JsonContext& context)
                 context.app.config(),
                 context.app.getNodeFamily(),
                 *snapshot);
-            /*
-                        // Create ledger from previous
-                        ledger = std::make_shared<Ledger>(
-                            *prevLedger, context.app.timeKeeper().closeTime());
 
-                        ledger->setLedgerInfo(info);
-            */
             // Apply delta (only leaf-node changes)
-
             if (!ledger->stateMap().deserializeFromStream(infile))
             {
                 JLOG(context.j.error())
