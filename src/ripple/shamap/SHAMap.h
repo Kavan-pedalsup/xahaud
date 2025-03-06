@@ -394,10 +394,9 @@ public:
      * @return True if deserialization succeeded
      */
     bool
-    deserializeFromStream(
-        std::istream& stream,
-        std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap =
-            std::nullopt);
+    deserializeFromStream(std::istream& stream);
+    //        std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap =
+    //            std::nullopt);
 
 private:
     using SharedPtrNodeStack =

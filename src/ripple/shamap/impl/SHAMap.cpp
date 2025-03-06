@@ -1300,8 +1300,8 @@ SHAMap::serializeToStream(
                 // Process each difference
                 for (auto const& [key, deltaItem] : differences)
                 {
-                    auto const& oldItem = deltaItem.first;
-                    auto const& newItem = deltaItem.second;
+                    auto const& newItem = deltaItem.first;
+                    auto const& oldItem = deltaItem.second;
 
                     if (!oldItem && newItem)
                     {
@@ -1392,9 +1392,8 @@ SHAMap::serializeToStream(
 }
 
 bool
-SHAMap::deserializeFromStream(
-    std::istream& stream,
-    std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap)
+SHAMap::deserializeFromStream(std::istream& stream)
+//,   std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap)
 {
     try
     {
@@ -1405,18 +1404,22 @@ SHAMap::deserializeFromStream(
         if (state_ != SHAMapState::Modifying && state_ != SHAMapState::Synching)
             return false;
 
-        // If we have a base map, start with a copy of it
-        if (baseSHAMap)
-        {
-            root_ = baseSHAMap->get().root_;
-            if (root_)
-                unshare();
-        }
-        else
-        {
-            // Start with a fresh empty root
+        if (!root_)
             root_ = std::make_shared<SHAMapInnerNode>(cowid_);
-        }
+        /*
+                // If we have a base map, start with a copy of it
+                if (baseSHAMap.has_value())
+                {
+                    root_ = baseSHAMap->get().root_;
+                    if (root_)
+                        unshare();
+                }
+                else
+                {
+                    // Start with a fresh empty root
+                    root_ = std::make_shared<SHAMapInnerNode>(cowid_);
+                }
+        */
 
         // Define a lambda to deserialize a leaf node
         auto deserializeLeaf = [this](
@@ -1498,9 +1501,15 @@ SHAMap::deserializeFromStream(
 
             auto item = make_shamapitem(key, makeSlice(data));
             if (hasItem(key))
+            {
+                std::cout << "Modifying item: " << to_string(key) << "\n";
                 return updateGiveItem(nodeType, std::move(item));
-
-            return addGiveItem(nodeType, std::move(item));
+            }
+            else
+            {
+                std::cout << "Adding item:    " << to_string(key) << "\n";
+                return addGiveItem(nodeType, std::move(item));
+            }
         };
 
         SHAMapNodeType lastParsed;

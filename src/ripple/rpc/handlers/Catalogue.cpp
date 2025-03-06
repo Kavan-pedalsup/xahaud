@@ -112,10 +112,9 @@ private:
 
             auto const& info = ledger->info();
 
-            uint64_t closeTime =
-                0xCAFED00DCAFEBABEULL;  // info.closeTime.time_since_epoch().count();
-            uint64_t parentCloseTime = 0xDEADBEEFC001D00D;
-            //                info.parentCloseTime.time_since_epoch().count();
+            uint64_t closeTime = info.closeTime.time_since_epoch().count();
+            uint64_t parentCloseTime =
+                info.parentCloseTime.time_since_epoch().count();
             uint32_t closeTimeResolution = info.closeTimeResolution.count();
 
             uint64_t drops = info.drops.drops();
@@ -432,16 +431,23 @@ doCatalogueLoad(RPC::JsonContext& context)
                 return rpcError(rpcINTERNAL, "Missing previous ledger");
             }
 
-            // Create ledger from previous
+            auto snapshot = prevLedger->stateMap().snapShot(true);
+
             ledger = std::make_shared<Ledger>(
-                *prevLedger, context.app.timeKeeper().closeTime());
+                info,
+                context.app.config(),
+                context.app.getNodeFamily(),
+                *snapshot);
+            /*
+                        // Create ledger from previous
+                        ledger = std::make_shared<Ledger>(
+                            *prevLedger, context.app.timeKeeper().closeTime());
 
-            ledger->setLedgerInfo(info);
-
+                        ledger->setLedgerInfo(info);
+            */
             // Apply delta (only leaf-node changes)
-            SHAMap const& prevMap = prevLedger->stateMap();
 
-            if (!ledger->stateMap().deserializeFromStream(infile, prevMap))
+            if (!ledger->stateMap().deserializeFromStream(infile))
             {
                 JLOG(context.j.error())
                     << "Failed to apply delta to ledger " << info.seq;
