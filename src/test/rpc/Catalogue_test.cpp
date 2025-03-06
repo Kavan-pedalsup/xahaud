@@ -186,7 +186,8 @@ class Catalogue_test : public beast::unit_test::suite
         BEAST_EXPECT(result[jss::min_ledger] == 3);
         BEAST_EXPECT(result[jss::max_ledger] == 5);
         BEAST_EXPECT(result[jss::output_file] == cataloguePath);
-        BEAST_EXPECT(result[jss::bytes_written].asUInt() > 0);
+        BEAST_EXPECT(result[jss::file_size].asUInt() > 0);
+        BEAST_EXPECT(result[jss::ledgers_written].asUInt() == 3);
 
         // Verify file exists and is not empty
         BEAST_EXPECT(boost::filesystem::exists(cataloguePath));
@@ -274,8 +275,12 @@ class Catalogue_test : public beast::unit_test::suite
         BEAST_EXPECT(bobAcct != nullptr);
         BEAST_EXPECT(charlieAcct != nullptr);
         BEAST_EXPECT(eurTrust != nullptr);
+
+        std::cout << "mantissa: "
+                  << eurTrust->getFieldAmount(sfLowLimit).mantissa() << "\n";
         BEAST_EXPECT(
-            eurTrust->getFieldAmount(sfLowLimit).mantissa() == 2000000000);
+            eurTrust->getFieldAmount(sfLowLimit).mantissa() ==
+            2000000000000000ULL);
 
         // Get initial complete_ledgers range
         auto const originalCompleteLedgers =
@@ -357,81 +362,200 @@ class Catalogue_test : public beast::unit_test::suite
                 continue;
             }
 
-            std::cout
-                << "\n=== Original Ledger " << seq << " Information ===\n"
-                << "Sequence: " << to_string(sourceLedger->info().seq) << "\n"
-                << "Hash: " << to_string(sourceLedger->info().hash) << "\n"
-                << "Parent Close Time: "
-                << to_string(sourceLedger->info()
-                                 .parentCloseTime.time_since_epoch()
-                                 .count())
-                << "\n"
-                << "Transaction Hash: "
-                << to_string(sourceLedger->info().txHash) << "\n"
-                << "Account Hash: "
-                << to_string(sourceLedger->info().accountHash) << "\n"
-                << "Parent Hash: " << to_string(sourceLedger->info().parentHash)
-                << "\n"
-                << "Drops: " << to_string(sourceLedger->info().drops) << "\n"
-                << "Validated: "
-                << (sourceLedger->info().validated ? "true" : "false") << "\n"
-                << "Accepted: "
-                << (sourceLedger->info().accepted ? "true" : "false") << "\n"
-                << "Close Flags: " << sourceLedger->info().closeFlags << "\n"
-                << "Close Time Resolution: "
-                << to_string(sourceLedger->info().closeTimeResolution.count())
-                << "\n"
-                << "Close Time: "
-                << to_string(sourceLedger->info()
-                                 .closeTime.time_since_epoch()
-                                 .count())
-                << "\n";
+            // Check basic ledger properties
+            BEAST_EXPECT(sourceLedger->info().seq == loadedLedger->info().seq);
+            BEAST_EXPECT(
+                sourceLedger->info().hash == loadedLedger->info().hash);
+            BEAST_EXPECT(
+                sourceLedger->info().txHash == loadedLedger->info().txHash);
+            BEAST_EXPECT(
+                sourceLedger->info().accountHash ==
+                loadedLedger->info().accountHash);
+            BEAST_EXPECT(
+                sourceLedger->info().parentHash ==
+                loadedLedger->info().parentHash);
+            BEAST_EXPECT(
+                sourceLedger->info().drops == loadedLedger->info().drops);
 
-            std::cout
-                << "\n=== Loaded Ledger " << seq << " Information ===\n"
-                << "Sequence: " << to_string(loadedLedger->info().seq) << "\n"
-                << "Hash: " << to_string(loadedLedger->info().hash) << "\n"
-                << "Parent Close Time: "
-                << to_string(loadedLedger->info()
-                                 .parentCloseTime.time_since_epoch()
-                                 .count())
-                << "\n"
-                << "Transaction Hash: "
-                << to_string(loadedLedger->info().txHash) << "\n"
-                << "Account Hash: "
-                << to_string(loadedLedger->info().accountHash) << "\n"
-                << "Parent Hash: " << to_string(loadedLedger->info().parentHash)
-                << "\n"
-                << "Drops: " << to_string(loadedLedger->info().drops) << "\n"
-                << "Validated: "
-                << (loadedLedger->info().validated ? "true" : "false") << "\n"
-                << "Accepted: "
-                << (loadedLedger->info().accepted ? "true" : "false") << "\n"
-                << "Close Flags: " << loadedLedger->info().closeFlags << "\n"
-                << "Close Time Resolution: "
-                << to_string(loadedLedger->info().closeTimeResolution.count())
-                << "\n"
-                << "Close Time: "
-                << to_string(loadedLedger->info()
-                                 .closeTime.time_since_epoch()
-                                 .count())
-                << "\n"
-                << std::endl;
+            // Check time-related properties
+            BEAST_EXPECT(
+                sourceLedger->info().closeFlags ==
+                loadedLedger->info().closeFlags);
+            BEAST_EXPECT(
+                sourceLedger->info().closeTimeResolution.count() ==
+                loadedLedger->info().closeTimeResolution.count());
+            BEAST_EXPECT(
+                sourceLedger->info().closeTime.time_since_epoch().count() ==
+                loadedLedger->info().closeTime.time_since_epoch().count());
+            BEAST_EXPECT(
+                sourceLedger->info()
+                    .parentCloseTime.time_since_epoch()
+                    .count() ==
+                loadedLedger->info()
+                    .parentCloseTime.time_since_epoch()
+                    .count());
 
-            // Print all SLEs in the source ledger
-            std::cout << "\n=== SLEs in Source Ledger " << seq << " ===\n";
+            // Check validation state
+            BEAST_EXPECT(
+                sourceLedger->info().validated ==
+                loadedLedger->info().validated);
+            BEAST_EXPECT(
+                sourceLedger->info().accepted == loadedLedger->info().accepted);
+
+            // Check SLE counts
+            std::size_t sourceCount = 0;
+            std::size_t loadedCount = 0;
+
             for (auto const& sle : sourceLedger->sles)
             {
-                std::cout << "sourceledger key (" << seq
-                          << "): " << to_string(sle->key()) << "\n";
+                sourceCount++;
             }
 
-            // Print all SLEs in the loaded ledger
-            std::cout << "\n=== SLEs in Loaded Ledger " << seq << " ===\n";
             for (auto const& sle : loadedLedger->sles)
             {
-                std::cout << "loadedledger key (" << seq
-                          << "): " << to_string(sle->key()) << "\n";
+                loadedCount++;
+            }
+
+            BEAST_EXPECT(sourceCount == loadedCount);
+            /*
+             std::cout << "Ledger " << seq
+                      << " SLE count: source=" << sourceCount
+                      << ", loaded=" << loadedCount << "\n";
+            */
+            // Check existence of imported keylets
+            for (auto const& sle : sourceLedger->sles)
+            {
+                auto const key = sle->key();
+                bool exists = loadedLedger->exists(keylet::unchecked(key));
+                if (!exists)
+                {
+                    std::cout
+                        << "Key missing in loaded ledger: " << to_string(key)
+                        << "\n";
+                }
+                BEAST_EXPECT(exists);
+
+                // If it exists, check the serialized form matches
+                if (exists)
+                {
+                    auto loadedSle = loadedLedger->read(keylet::unchecked(key));
+                    Serializer s1, s2;
+                    sle->add(s1);
+                    loadedSle->add(s2);
+                    bool serializedEqual = (s1.peekData() == s2.peekData());
+                    if (!serializedEqual)
+                    {
+                        std::cout << "Serialized data mismatch for key: "
+                                  << to_string(key) << "\n";
+                    }
+                    BEAST_EXPECT(serializedEqual);
+                }
+            }
+
+            // Check for extra keys in loaded ledger that aren't in source
+            for (auto const& sle : loadedLedger->sles)
+            {
+                auto const key = sle->key();
+                bool exists = sourceLedger->exists(keylet::unchecked(key));
+                if (!exists)
+                {
+                    std::cout
+                        << "Extra key in loaded ledger: " << to_string(key)
+                        << "\n";
+                }
+                BEAST_EXPECT(exists);
+            }
+
+            if (0)
+            {
+                std::cout
+                    << "\n=== Original Ledger " << seq << " Information ===\n"
+                    << "Sequence: " << to_string(sourceLedger->info().seq)
+                    << "\n"
+                    << "Hash: " << to_string(sourceLedger->info().hash) << "\n"
+                    << "Parent Close Time: "
+                    << to_string(sourceLedger->info()
+                                     .parentCloseTime.time_since_epoch()
+                                     .count())
+                    << "\n"
+                    << "Transaction Hash: "
+                    << to_string(sourceLedger->info().txHash) << "\n"
+                    << "Account Hash: "
+                    << to_string(sourceLedger->info().accountHash) << "\n"
+                    << "Parent Hash: "
+                    << to_string(sourceLedger->info().parentHash) << "\n"
+                    << "Drops: " << to_string(sourceLedger->info().drops)
+                    << "\n"
+                    << "Validated: "
+                    << (sourceLedger->info().validated ? "true" : "false")
+                    << "\n"
+                    << "Accepted: "
+                    << (sourceLedger->info().accepted ? "true" : "false")
+                    << "\n"
+                    << "Close Flags: " << sourceLedger->info().closeFlags
+                    << "\n"
+                    << "Close Time Resolution: "
+                    << to_string(
+                           sourceLedger->info().closeTimeResolution.count())
+                    << "\n"
+                    << "Close Time: "
+                    << to_string(sourceLedger->info()
+                                     .closeTime.time_since_epoch()
+                                     .count())
+                    << "\n";
+
+                std::cout
+                    << "\n=== Loaded Ledger " << seq << " Information ===\n"
+                    << "Sequence: " << to_string(loadedLedger->info().seq)
+                    << "\n"
+                    << "Hash: " << to_string(loadedLedger->info().hash) << "\n"
+                    << "Parent Close Time: "
+                    << to_string(loadedLedger->info()
+                                     .parentCloseTime.time_since_epoch()
+                                     .count())
+                    << "\n"
+                    << "Transaction Hash: "
+                    << to_string(loadedLedger->info().txHash) << "\n"
+                    << "Account Hash: "
+                    << to_string(loadedLedger->info().accountHash) << "\n"
+                    << "Parent Hash: "
+                    << to_string(loadedLedger->info().parentHash) << "\n"
+                    << "Drops: " << to_string(loadedLedger->info().drops)
+                    << "\n"
+                    << "Validated: "
+                    << (loadedLedger->info().validated ? "true" : "false")
+                    << "\n"
+                    << "Accepted: "
+                    << (loadedLedger->info().accepted ? "true" : "false")
+                    << "\n"
+                    << "Close Flags: " << loadedLedger->info().closeFlags
+                    << "\n"
+                    << "Close Time Resolution: "
+                    << to_string(
+                           loadedLedger->info().closeTimeResolution.count())
+                    << "\n"
+                    << "Close Time: "
+                    << to_string(loadedLedger->info()
+                                     .closeTime.time_since_epoch()
+                                     .count())
+                    << "\n"
+                    << std::endl;
+
+                // Print all SLEs in the source ledger
+                std::cout << "\n=== SLEs in Source Ledger " << seq << " ===\n";
+                for (auto const& sle : sourceLedger->sles)
+                {
+                    std::cout << "sourceledger key (" << seq
+                              << "): " << to_string(sle->key()) << "\n";
+                }
+
+                // Print all SLEs in the loaded ledger
+                std::cout << "\n=== SLEs in Loaded Ledger " << seq << " ===\n";
+                for (auto const& sle : loadedLedger->sles)
+                {
+                    std::cout << "loadedledger key (" << seq
+                              << "): " << to_string(sle->key()) << "\n";
+                }
             }
         }
 
@@ -486,9 +610,9 @@ class Catalogue_test : public beast::unit_test::suite
         BEAST_EXPECT(
             loaded &&
             loadedEurTrust->getFieldAmount(sfLowLimit).mantissa() ==
-                2000000000);
+                2000000000000000ULL);
 
-        // boost::filesystem::remove_all(tempDir);
+        boost::filesystem::remove_all(tempDir);
     }
 
     void
@@ -497,18 +621,6 @@ class Catalogue_test : public beast::unit_test::suite
         testcase("catalogue_load: Network ID mismatch");
         using namespace test::jtx;
 
-        // Create environment with different network IDs
-        Env env1{
-            *this,
-            envconfig([](std::unique_ptr<Config> cfg) {
-                cfg->NETWORK_ID = 123;
-                return cfg;
-            }),
-            features,
-            nullptr,
-            beast::severities::kInfo};
-        prepareLedgerData(env1, 5);
-
         boost::filesystem::path tempDir =
             boost::filesystem::temp_directory_path() /
             boost::filesystem::unique_path();
@@ -516,40 +628,55 @@ class Catalogue_test : public beast::unit_test::suite
 
         auto cataloguePath = (tempDir / "test.catl").string();
 
-        // Create catalogue with network ID 123
+        // Create environment with different network IDs
         {
-            Json::Value params{Json::objectValue};
-            params[jss::min_ledger] = 3;
-            params[jss::max_ledger] = 5;
-            params[jss::output_file] = cataloguePath;
+            Env env1{
+                *this,
+                envconfig([](std::unique_ptr<Config> cfg) {
+                    cfg->NETWORK_ID = 123;
+                    return cfg;
+                }),
+                features,
+                nullptr,
+                beast::severities::kInfo};
+            prepareLedgerData(env1, 5);
 
-            auto const result =
-                env1.client().invoke("catalogue_create", params)[jss::result];
-            BEAST_EXPECT(result[jss::status] == jss::success);
+            // Create catalogue with network ID 123
+            {
+                Json::Value params{Json::objectValue};
+                params[jss::min_ledger] = 3;
+                params[jss::max_ledger] = 5;
+                params[jss::output_file] = cataloguePath;
+
+                auto const result = env1.client().invoke(
+                    "catalogue_create", params)[jss::result];
+                BEAST_EXPECT(result[jss::status] == jss::success);
+            }
         }
 
-        // Try to load catalogue in environment with different network ID
-        Env env2{
-            *this,
-            envconfig([](std::unique_ptr<Config> cfg) {
-                cfg->NETWORK_ID = 456;
-                return cfg;
-            }),
-            features,
-            nullptr,
-            beast::severities::kInfo};
-
         {
-            Json::Value params{Json::objectValue};
-            params[jss::input_file] = cataloguePath;
+            // Try to load catalogue in environment with different network ID
+            Env env2{
+                *this,
+                envconfig([](std::unique_ptr<Config> cfg) {
+                    cfg->NETWORK_ID = 456;
+                    return cfg;
+                }),
+                features,
+                nullptr,
+                beast::severities::kInfo};
 
-            auto const result =
-                env2.client().invoke("catalogue_load", params)[jss::result];
+            {
+                Json::Value params{Json::objectValue};
+                params[jss::input_file] = cataloguePath;
 
-            BEAST_EXPECT(result[jss::error] == "invalidParams");
-            BEAST_EXPECT(result[jss::status] == "error");
+                auto const result =
+                    env2.client().invoke("catalogue_load", params)[jss::result];
+
+                BEAST_EXPECT(result[jss::error] == "invalidParams");
+                BEAST_EXPECT(result[jss::status] == "error");
+            }
         }
-
         boost::filesystem::remove_all(tempDir);
     }
 
