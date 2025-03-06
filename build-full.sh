@@ -154,9 +154,6 @@ export PATH=`echo $PATH | sed -E "s/devtoolset-9/devtoolset-10/g"` &&
 cp -r include/api/wasmedge /usr/include/ &&
 cd /io/ &&
 echo "-- Build Rippled --" &&
-pwd &&
-cp Builds/CMake/deps/Rocksdb.cmake Builds/CMake/deps/Rocksdb.cmake.old &&
-
 echo "MOVING TO [ build-core.sh ]"
 cd /io;
 
