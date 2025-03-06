@@ -326,7 +326,8 @@ JSS(first);                 // out: rpc/Version
 JSS(firstSequence);         // out: NodeToShardStatus
 JSS(firstShardIndex);       // out: NodeToShardStatus
 JSS(finished);
-JSS(fix_txns);              // in: LedgerCleaner
+JSS(fix_txns);  // in: LedgerCleaner
+JSS(file_size);
 JSS(flags);                 // out: AccountOffers,
                             //      NetworkOPs
 JSS(force);                 // in: catalogue
@@ -397,6 +398,8 @@ JSS(ledger);                // in: NetworkOPs, LedgerCleaner,
                             //     RPCHelpers
                             // out: NetworkOPs, PeerImp
 JSS(ledger_count);
+JSS(ledgers_loaded);
+JSS(ledgers_written);
 JSS(ledger_current_index);        // out: NetworkOPs, RPCHelpers,
                                   //      LedgerCurrent, LedgerAccept,
                                   //      AccountLines
