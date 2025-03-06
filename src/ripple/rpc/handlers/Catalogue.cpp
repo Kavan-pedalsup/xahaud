@@ -57,7 +57,7 @@ static constexpr uint16_t CATALOGUE_VERSION = 1;
 #pragma pack(push, 1)  // pack the struct tightly
 struct CATLHeader
 {
-    uint32_t magic = 0x4C544143UL;  // "CATL" in LE
+    uint32_t magic = CATL;
     uint32_t min_ledger;
     uint32_t max_ledger;
     uint16_t version;

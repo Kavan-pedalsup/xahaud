@@ -565,12 +565,6 @@ class Catalogue_test : public beast::unit_test::suite
 
         auto const& ll = *loadedLedger;
 
-        std::cout << "bob exists: " << (ll.exists(bobKeylet) ? "t" : "f")
-                  << "\n";
-        std::cout << "chl exists: " << (ll.exists(charlieKeylet) ? "t" : "f")
-                  << "\n";
-        std::cout << "eur exists: " << (ll.exists(eurTrustKeylet) ? "t" : "f")
-                  << "\n";
         BEAST_EXPECT(!!loadedBobAcct);
         BEAST_EXPECT(!!loadedCharlieAcct);
         BEAST_EXPECT(!!loadedEurTrust);
