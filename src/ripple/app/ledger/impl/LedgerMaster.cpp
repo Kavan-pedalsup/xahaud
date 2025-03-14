@@ -595,6 +595,15 @@ void
 LedgerMaster::clearLedger(std::uint32_t seq)
 {
     std::lock_guard sl(mCompleteLock);
+
+    // Don't clear pinned ledgers
+    if (boost::icl::contains(mPinnedLedgers, seq))
+    {
+        JLOG(m_journal.trace())
+            << "Ledger " << seq << " is pinned, not clearing";
+        return;
+    }
+
     mCompleteLedgers.erase(seq);
 }
 
@@ -1714,6 +1723,13 @@ LedgerMaster::getCompleteLedgers()
     return to_string(mCompleteLedgers);
 }
 
+std::string
+LedgerMaster::getPinnedLedgers()
+{
+    std::lock_guard sl(mCompleteLock);
+    return to_string(mPinnedLedgers);
+}
+
 RangeSet<std::uint32_t>
 LedgerMaster::getCompleteLedgersRangeSet()
 {
@@ -1876,15 +1892,28 @@ LedgerMaster::getLedgerByHash(uint256 const& hash)
 }
 
 void
-LedgerMaster::setLedgerRangePresent(std::uint32_t minV, std::uint32_t maxV)
+LedgerMaster::setLedgerRangePresent(
+    std::uint32_t minV,
+    std::uint32_t maxV,
+    bool pin)
 {
     std::lock_guard sl(mCompleteLock);
     mCompleteLedgers.insert(range(minV, maxV));
+
+    if (pin)
+    {
+        mPinnedLedgers.insert(range(minV, maxV));
+        JLOG(m_journal.info())
+            << "Pinned ledger range: " << minV << " - " << maxV;
+
+        mLedgerHistory.pin(minV, maxV);
+    }
 }
 
 void
 LedgerMaster::sweep()
 {
+    std::lock_guard sl(mCompleteLock);
     mLedgerHistory.sweep();
     fetch_packs_.sweep();
 }
@@ -1900,7 +1929,19 @@ LedgerMaster::clearPriorLedgers(LedgerIndex seq)
 {
     std::lock_guard sl(mCompleteLock);
     if (seq > 0)
-        mCompleteLedgers.erase(range(0u, seq - 1));
+    {
+        // Create temporary sets for the operation
+        RangeSet<std::uint32_t> toClear;
+        toClear.insert(range(0u, seq - 1));
+
+        // Remove pinned ranges from what we'll clear
+        RangeSet<std::uint32_t> toKeep = toClear & mPinnedLedgers;
+        toClear -= toKeep;
+
+        // Remove the unpinned ranges from mCompleteLedgers
+        for (auto const& interval : toClear)
+            mCompleteLedgers.erase(interval);
+    }
 }
 
 void

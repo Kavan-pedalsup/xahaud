@@ -27,9 +27,11 @@
 #include <ripple/beast/insight/Insight.h>
 #include <atomic>
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <thread>
 #include <type_traits>
+#include <typeinfo>
 #include <vector>
 
 namespace ripple {
@@ -179,6 +181,7 @@ public:
 
     /** Refresh the last access time on a key if present.
         @return `true` If the key was found.
+
     */
     template <class KeyComparable>
     bool
@@ -199,6 +202,23 @@ public:
     using SweptPointersVector = std::pair<
         std::vector<std::shared_ptr<mapped_type>>,
         std::vector<std::weak_ptr<mapped_type>>>;
+
+    /*
+     * Mark entries as pinned, do not remove when sweeping
+     */
+    void
+    pin(key_type min, key_type max)
+    {
+        std::lock_guard lock(m_mutex);
+        for (key_type k = min; k <= max; ++k)
+        {
+            auto const iter(m_cache.find(k));
+            if (iter == m_cache.end())
+                continue;
+
+            iter->second.pinned = true;
+        }
+    }
 
     void
     sweep()
@@ -584,6 +604,8 @@ private:
     public:
         clock_type::time_point last_access;
 
+        bool pinned = false;
+
         explicit KeyOnlyEntry(clock_type::time_point const& last_access_)
             : last_access(last_access_)
         {
@@ -602,6 +624,8 @@ private:
         std::shared_ptr<mapped_type> ptr;
         std::weak_ptr<mapped_type> weak_ptr;
         clock_type::time_point last_access;
+
+        bool pinned = false;
 
         ValueEntry(
             clock_type::time_point const& last_access_,
@@ -671,7 +695,11 @@ private:
                 auto cit = partition.begin();
                 while (cit != partition.end())
                 {
-                    if (cit->second.isWeak())
+                    if (cit->second.pinned)
+                    {
+                        ++cit;
+                    }
+                    else if (cit->second.isWeak())
                     {
                         // weak
                         if (cit->second.isExpired())
@@ -733,7 +761,11 @@ private:
         std::atomic<int>& allRemovals,
         std::lock_guard<std::recursive_mutex> const&)
     {
+        // Debug the original shouldSweep before moving it
+
         return std::thread([&, this]() {
+            // Debug the moved shouldSweep_ inside the thread
+
             int cacheRemovals = 0;
             int mapRemovals = 0;
 
@@ -743,7 +775,11 @@ private:
                 auto cit = partition.begin();
                 while (cit != partition.end())
                 {
-                    if (cit->second.last_access > now)
+                    if (cit->second.pinned)
+                    {
+                        ++cit;
+                    }
+                    else if (cit->second.last_access > now)
                     {
                         cit->second.last_access = now;
                         ++cit;

@@ -152,6 +152,9 @@ public:
     std::string
     getCompleteLedgers();
 
+    std::string
+    getPinnedLedgers();
+
     RangeSet<std::uint32_t>
     getCompleteLedgersRangeSet();
 
@@ -200,7 +203,10 @@ public:
     getLedgerByHash(uint256 const& hash);
 
     void
-    setLedgerRangePresent(std::uint32_t minV, std::uint32_t maxV);
+    setLedgerRangePresent(
+        std::uint32_t minV,
+        std::uint32_t maxV,
+        bool pin = false /* if true, do not let these leaders be removed */);
 
     std::optional<NetClock::time_point>
     getCloseTimeBySeq(LedgerIndex ledgerIndex);
@@ -373,6 +379,7 @@ private:
 
     std::recursive_mutex mCompleteLock;
     RangeSet<std::uint32_t> mCompleteLedgers;
+    RangeSet<std::uint32_t> mPinnedLedgers;  // Track pinned ledger ranges
 
     // Publish thread is running.
     bool mAdvanceThread{false};

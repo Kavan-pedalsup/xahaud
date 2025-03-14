@@ -40,6 +40,12 @@ public:
         beast::insight::Collector::ptr const& collector,
         Application& app);
 
+    void
+    pin(uint32_t min, uint32_t max)
+    {
+        m_consensus_validated.pin(max, max);
+    }
+
     /** Track a ledger
         @return `true` if the ledger was already tracked
     */
@@ -70,8 +76,6 @@ public:
     LedgerHash
     getLedgerHash(LedgerIndex ledgerIndex);
 
-    /** Remove stale cache entries
-     */
     void
     sweep()
     {

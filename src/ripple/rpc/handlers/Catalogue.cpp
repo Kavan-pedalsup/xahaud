@@ -477,7 +477,7 @@ doCatalogueLoad(RPC::JsonContext& context)
 
     // Update ledger range in ledger master
     context.app.getLedgerMaster().setLedgerRangePresent(
-        header.min_ledger, header.max_ledger);
+        header.min_ledger, header.max_ledger, true);
 
     JLOG(context.j.info()) << "Catalogue load complete! Loaded "
                            << ledgersLoaded << " ledgers from file size "
