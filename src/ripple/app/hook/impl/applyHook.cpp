@@ -1739,12 +1739,21 @@ DEFINE_JS_FUNCTION(int64_t, trace, JSValue msg, JSValue data, JSValue as_hex)
         JSValue sdata = JS_JSONStringify(ctx, data, replacer, JS_UNDEFINED);
         JS_FreeValue(ctx, replacer);
 
-        size_t len;
-        const char* cstr = JS_ToCStringLen(ctx, &len, sdata);
-        if (len > 1023)
-            len = 1023;
-        out += std::string(cstr, len);
-        JS_FreeCString(ctx, cstr);
+        if (JS_IsString(sdata))
+        {
+            assert(JS_IsString(sdata));
+            size_t len;
+            const char* cstr = JS_ToCStringLen(ctx, &len, sdata);
+            if (len > 1023)
+                len = 1023;
+            out += std::string(cstr, len);
+            JS_FreeCString(ctx, cstr);
+            JS_FreeValue(ctx, sdata);
+        }
+        else
+        {
+            out += "<could not display data>";
+        }
     }
 
     if (out.size() > 0)
@@ -5114,15 +5123,20 @@ DEFINE_JS_FUNCTION(JSValue, emit, JSValue raw_tx)
         // stringify it
         JSValue sdata =
             JS_JSONStringify(ctx, raw_tx, JS_UNDEFINED, JS_UNDEFINED);
-        if (JS_IsException(sdata))
+        if (!JS_IsString(sdata))
             returnJS(INVALID_ARGUMENT);
 
         size_t len;
         const char* cstr = JS_ToCStringLen(ctx, &len, sdata);
         if (len > 1024 * 1024)
+        {
+            JS_FreeCString(ctx, cstr);
+            JS_FreeValue(ctx, sdata);
             returnJS(TOO_BIG);
+        }
         std::string const tmpl(cstr, len);
         JS_FreeCString(ctx, cstr);
+        JS_FreeValue(ctx, sdata);
 
         // parse it on rippled side
         Json::Value json;
@@ -5180,14 +5194,19 @@ DEFINE_JS_FUNCTION(JSValue, prepare, JSValue raw_tmpl)
 
     // stringify it
     JSValue sdata = JS_JSONStringify(ctx, raw_tmpl, JS_UNDEFINED, JS_UNDEFINED);
-    if (JS_IsException(sdata))
+    if (!JS_IsString(sdata))
         returnJS(INVALID_ARGUMENT);
     size_t len;
     const char* cstr = JS_ToCStringLen(ctx, &len, sdata);
     if (len > 1024 * 1024)
+    {
+        JS_FreeCString(ctx, cstr);
+        JS_FreeValue(ctx, sdata);
         returnJS(TOO_BIG);
+    }
     std::string tmpl(cstr, len);
     JS_FreeCString(ctx, cstr);
+    JS_FreeValue(ctx, sdata);
 
     // parse it on rippled side
     Json::Value json;
@@ -5378,15 +5397,20 @@ DEFINE_JS_FUNCTION(JSValue, sto_from_json, JSValue raw_json_in)
         // stringify it
         JSValue sdata =
             JS_JSONStringify(ctx, raw_json_in, JS_UNDEFINED, JS_UNDEFINED);
-        if (JS_IsException(sdata))
+        if (!JS_IsString(sdata))
             returnJS(INVALID_ARGUMENT);
 
         const char* cstr = JS_ToCStringLen(ctx, &len, sdata);
         if (len > 64 * 1024)
+        {
+            JS_FreeCString(ctx, cstr);
+            JS_FreeValue(ctx, sdata);
             returnJS(TOO_BIG);
+        }
 
         in = std::string(cstr, len);
         JS_FreeCString(ctx, cstr);
+        JS_FreeValue(ctx, sdata);
     }
 
     if (!in.has_value() || len <= 0 || in->empty())
