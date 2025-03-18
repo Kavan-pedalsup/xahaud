@@ -18,6 +18,16 @@
 #   add path: PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
 
 set -e
+
+# Adds MacOS Homebrew directories to the PATH so that the script
+# doesn't use BSD versions of sed and grep
+for dir in /opt/homebrew/opt/gnu-sed/libexec/gnubin \
+           /opt/homebrew/opt/grep/libexec/gnubin; do
+  if [[ -d "$dir" && ":$PATH:" != *":$dir:"* ]]; then
+    PATH="$dir:$PATH"
+  fi
+done
+
 # Get the script directory (retrieving the correct path regardless of where it's executed from)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
