@@ -5027,6 +5027,7 @@ public:
         TestHook hook = jswasm[R"[test.hook](
             const ttIMPORT = 97
             const DOESNT_EXIST = -5
+            const NO_FREE_SLOTS = -6
             const INVALID_ARGUMENT = -7
             const ALREADY_SET = -8
             const PREREQUISITE_NOT_MET = -9
@@ -5063,6 +5064,10 @@ public:
                 ASSERT(slot_subfield(11, sfAffectedNodes, 13) === 13);
                 ASSERT(slot_subfield(11, sfTransactionResult, 14) === 14);
 
+                for(let i = 1; i <= 255; ++i) {
+                    otxn_slot(i);
+                }
+                ASSERT(xpop_slot(0, 0) === NO_FREE_SLOTS)
                 return accept("",2);
             }
         )[test.hook]"];
