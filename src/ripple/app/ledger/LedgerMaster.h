@@ -128,7 +128,7 @@ public:
     getEarliestFetch();
 
     bool
-    storeLedger(std::shared_ptr<Ledger const> ledger);
+    storeLedger(std::shared_ptr<Ledger const> ledger, bool pin = false);
 
     void
     setFullLedger(
@@ -157,6 +157,9 @@ public:
 
     RangeSet<std::uint32_t>
     getCompleteLedgersRangeSet();
+
+    RangeSet<std::uint32_t>
+    getPinnedLedgersRangeSet();
 
     /** Apply held transactions to the open ledger
         This is normally called as we close the ledger.

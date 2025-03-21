@@ -533,11 +533,20 @@ LedgerMaster::fixIndex(LedgerIndex ledgerIndex, LedgerHash const& ledgerHash)
 }
 
 bool
-LedgerMaster::storeLedger(std::shared_ptr<Ledger const> ledger)
+LedgerMaster::storeLedger(std::shared_ptr<Ledger const> ledger, bool pin)
 {
     bool validated = ledger->info().validated;
     // Returns true if we already had the ledger
-    return mLedgerHistory.insert(std::move(ledger), validated);
+    if (!mLedgerHistory.insert(std::move(ledger), validated))
+        return false;
+
+    if (pin)
+    {
+        uint32_t seq = ledger->info().seq;
+        mPinnedLedgers.insert(range(seq, seq));
+        JLOG(m_journal.info()) << "Pinned ledger : " << seq;
+    }
+    return true;
 }
 
 /** Apply held transactions to the open ledger
@@ -1737,6 +1746,13 @@ LedgerMaster::getCompleteLedgersRangeSet()
     return mCompleteLedgers;
 }
 
+RangeSet<std::uint32_t>
+LedgerMaster::getPinnedLedgersRangeSet()
+{
+    std::lock_guard sl(mCompleteLock);
+    return mPinnedLedgers;
+}
+
 std::optional<NetClock::time_point>
 LedgerMaster::getCloseTimeBySeq(LedgerIndex ledgerIndex)
 {
@@ -1905,8 +1921,6 @@ LedgerMaster::setLedgerRangePresent(
         mPinnedLedgers.insert(range(minV, maxV));
         JLOG(m_journal.info())
             << "Pinned ledger range: " << minV << " - " << maxV;
-
-        mLedgerHistory.pin(minV, maxV);
     }
 }
 
@@ -1928,20 +1942,24 @@ void
 LedgerMaster::clearPriorLedgers(LedgerIndex seq)
 {
     std::lock_guard sl(mCompleteLock);
-    if (seq > 0)
-    {
-        // Create temporary sets for the operation
-        RangeSet<std::uint32_t> toClear;
-        toClear.insert(range(0u, seq - 1));
+    if (seq <= 0)
+        return;
 
-        // Remove pinned ranges from what we'll clear
-        RangeSet<std::uint32_t> toKeep = toClear & mPinnedLedgers;
-        toClear -= toKeep;
+    // First, save a copy of the pinned ledgers
+    auto pinnedCopy = mPinnedLedgers;
 
-        // Remove the unpinned ranges from mCompleteLedgers
-        for (auto const& interval : toClear)
-            mCompleteLedgers.erase(interval);
-    }
+    // Clear everything before seq
+    RangeSet<std::uint32_t> toClear;
+    toClear.insert(range(0u, seq - 1));
+    for (auto const& interval : toClear)
+        mCompleteLedgers.erase(interval);
+
+    // Re-add the pinned ledgers to ensure they're preserved
+    for (auto const& interval : pinnedCopy)
+        mCompleteLedgers.insert(interval);
+
+    JLOG(m_journal.debug()) << "clearPriorLedgers: after restoration, pinned="
+                            << to_string(mPinnedLedgers);
 }
 
 void

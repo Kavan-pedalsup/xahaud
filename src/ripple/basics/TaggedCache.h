@@ -21,6 +21,7 @@
 #define RIPPLE_BASICS_TAGGEDCACHE_H_INCLUDED
 
 #include <ripple/basics/Log.h>
+#include <ripple/basics/ToString.h>
 #include <ripple/basics/UnorderedContainers.h>
 #include <ripple/basics/hardened_hash.h>
 #include <ripple/beast/clock/abstract_clock.h>
@@ -202,23 +203,6 @@ public:
     using SweptPointersVector = std::pair<
         std::vector<std::shared_ptr<mapped_type>>,
         std::vector<std::weak_ptr<mapped_type>>>;
-
-    /*
-     * Mark entries as pinned, do not remove when sweeping
-     */
-    void
-    pin(key_type min, key_type max)
-    {
-        std::lock_guard lock(m_mutex);
-        for (key_type k = min; k <= max; ++k)
-        {
-            auto const iter(m_cache.find(k));
-            if (iter == m_cache.end())
-                continue;
-
-            iter->second.pinned = true;
-        }
-    }
 
     void
     sweep()
@@ -604,8 +588,6 @@ private:
     public:
         clock_type::time_point last_access;
 
-        bool pinned = false;
-
         explicit KeyOnlyEntry(clock_type::time_point const& last_access_)
             : last_access(last_access_)
         {
@@ -624,8 +606,6 @@ private:
         std::shared_ptr<mapped_type> ptr;
         std::weak_ptr<mapped_type> weak_ptr;
         clock_type::time_point last_access;
-
-        bool pinned = false;
 
         ValueEntry(
             clock_type::time_point const& last_access_,
@@ -695,11 +675,7 @@ private:
                 auto cit = partition.begin();
                 while (cit != partition.end())
                 {
-                    if (cit->second.pinned)
-                    {
-                        ++cit;
-                    }
-                    else if (cit->second.isWeak())
+                    if (cit->second.isWeak())
                     {
                         // weak
                         if (cit->second.isExpired())
@@ -775,11 +751,7 @@ private:
                 auto cit = partition.begin();
                 while (cit != partition.end())
                 {
-                    if (cit->second.pinned)
-                    {
-                        ++cit;
-                    }
-                    else if (cit->second.last_access > now)
+                    if (cit->second.last_access > now)
                     {
                         cit->second.last_access = now;
                         ++cit;

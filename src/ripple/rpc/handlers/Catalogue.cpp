@@ -456,8 +456,12 @@ doCatalogueLoad(RPC::JsonContext& context)
         ledger->setCloseFlags(info.closeFlags);
         ledger->setImmutable(true);
 
+        // Save in database
+        std::cout << "pendSaveValidated\n";
+        pendSaveValidated(context.app, ledger, true, false);
+
         // Store in ledger master
-        context.app.getLedgerMaster().storeLedger(ledger);
+        context.app.getLedgerMaster().storeLedger(ledger, true);
 
         if (info.seq == header.max_ledger &&
             context.app.getLedgerMaster().getClosedLedger()->info().seq <
