@@ -46,13 +46,58 @@
 #include <unordered_set>
 #include <vector>
 
+#include <boost/iostreams/filter/zlib.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+
 namespace ripple {
 
 using time_point = NetClock::time_point;
 using duration = NetClock::duration;
 
-static constexpr uint16_t CATALOGUE_VERSION = 1;
 #define CATL 0x4C544143UL /*"CATL" in LE*/
+
+// Replace the current version constant
+static constexpr uint16_t CATALOGUE_VERSION = 1;
+
+// Instead use these definitions
+static constexpr uint16_t CATALOGUE_VERSION_MASK =
+    0x00FF;  // Lower 8 bits for version
+static constexpr uint16_t CATALOGUE_COMPRESS_LEVEL_MASK =
+    0x0F00;  // Bits 8-11: compression level
+static constexpr uint16_t CATALOGUE_RESERVED_MASK =
+    0xF000;  // Bits 12-15: reserved
+
+// Helper functions for version field manipulation
+inline uint8_t
+getCatalogueVersion(uint16_t versionField)
+{
+    return versionField & CATALOGUE_VERSION_MASK;
+}
+
+inline uint8_t
+getCompressionLevel(uint16_t versionField)
+{
+    return (versionField & CATALOGUE_COMPRESS_LEVEL_MASK) >> 8;
+}
+
+inline bool
+isCompressed(uint16_t versionField)
+{
+    return getCompressionLevel(versionField) > 0;
+}
+
+inline uint16_t
+makeCatalogueVersionField(uint8_t version, uint8_t compressionLevel = 0)
+{  // 0 = no compression
+
+    // Ensure compression level is within valid range (0-9)
+    if (compressionLevel > 9)
+        compressionLevel = 9;
+
+    uint16_t result = version & CATALOGUE_VERSION_MASK;
+    result |= (compressionLevel << 8);  // Store level in bits 8-11
+    return result;
+}
 
 #pragma pack(push, 1)  // pack the struct tightly
 struct CATLHeader
@@ -81,6 +126,32 @@ doCatalogueCreate(RPC::JsonContext& context)
         return rpcError(
             rpcINVALID_PARAMS,
             "expected output_file: <absolute writeable filepath>");
+
+    uint8_t compressionLevel = 0;  // Default: no compression
+
+    if (context.params.isMember(jss::compression_level))
+    {
+        if (context.params[jss::compression_level].isObject())
+        {
+            auto const& comp = context.params[jss::compression_level];
+
+            if (comp.isMember(jss::level))
+            {
+                compressionLevel = comp[jss::level].asUInt();
+                if (compressionLevel > 9)
+                    compressionLevel = 9;
+            }
+            else
+            {
+                compressionLevel =
+                    6;  // Default level if compression is enabled
+            }
+        }
+        else if (context.params[jss::compression_level].asBool())
+        {
+            compressionLevel = 6;  // Default level if compression is enabled
+        }
+    }
 
     // Check output file isn't already populated and can be written to
     {
@@ -137,7 +208,8 @@ doCatalogueCreate(RPC::JsonContext& context)
     CATLHeader header;
     header.min_ledger = min_ledger;
     header.max_ledger = max_ledger;
-    header.version = CATALOGUE_VERSION;
+    header.version =
+        makeCatalogueVersionField(CATALOGUE_VERSION, compressionLevel);
     header.network_id = context.app.config().NETWORK_ID;
 
     outfile.write(reinterpret_cast<const char*>(&header), sizeof(CATLHeader));
@@ -146,10 +218,15 @@ doCatalogueCreate(RPC::JsonContext& context)
             rpcINTERNAL,
             "failed to write header: " + std::string(strerror(errno)));
 
+    auto compStream = std::make_unique<boost::iostreams::filtering_ostream>();
+    compStream->push(boost::iostreams::zlib_compressor(
+        boost::iostreams::zlib_params(compressionLevel)));
+    compStream->push(boost::ref(outfile));
+
     // Process ledgers with local processor implementation
-    auto writeToFile = [&outfile, &context](const void* data, size_t size) {
-        outfile.write(reinterpret_cast<const char*>(data), size);
-        if (outfile.fail())
+    auto writeToFile = [&compStream, &context](const void* data, size_t size) {
+        compStream->write(reinterpret_cast<const char*>(data), size);
+        if (compStream->fail())
         {
             JLOG(context.j.error())
                 << "Failed to write to output file: " << std::strerror(errno);
@@ -159,7 +236,7 @@ doCatalogueCreate(RPC::JsonContext& context)
     };
 
     auto outputLedger =
-        [&writeToFile, &ledgers, &context, &outfile](
+        [&writeToFile, &ledgers, &context, &compStream](
             uint32_t seq,
             std::optional<std::reference_wrapper<const SHAMap>> prevStateMap =
                 std::nullopt) -> bool {
@@ -203,8 +280,9 @@ doCatalogueCreate(RPC::JsonContext& context)
             }
 
             size_t stateNodesWritten =
-                ledger->stateMap().serializeToStream(outfile, prevStateMap);
-            size_t txNodesWritten = ledger->txMap().serializeToStream(outfile);
+                ledger->stateMap().serializeToStream(*compStream, prevStateMap);
+            size_t txNodesWritten =
+                ledger->txMap().serializeToStream(*compStream);
 
             JLOG(context.j.info()) << "Ledger " << seq << ": Wrote "
                                    << stateNodesWritten << " state nodes, "
@@ -242,8 +320,13 @@ doCatalogueCreate(RPC::JsonContext& context)
                 rpcINTERNAL, "Error occurred while processing ledgers");
     }
 
-    // Get the final file size
+    // flush and finish
+    compStream->flush();
+    compStream->reset();
     outfile.flush();
+    outfile.close();
+
+    // Get the final file size
     struct stat st;
     if (stat(filepath.c_str(), &st) != 0)
     {
@@ -261,6 +344,7 @@ doCatalogueCreate(RPC::JsonContext& context)
     jvResult[jss::file_size] = (Json::UInt)(file_size);
     jvResult[jss::ledgers_written] = static_cast<Json::UInt>(ledgers_written);
     jvResult[jss::status] = jss::success;
+    jvResult[jss::compression_level] = compressionLevel;
 
     return jvResult;
 }
@@ -316,15 +400,18 @@ doCatalogueLoad(RPC::JsonContext& context)
     if (header.magic != CATL)
         return rpcError(rpcINVALID_PARAMS, "invalid catalogue file magic");
 
-    JLOG(context.j.info()) << "Catalogue version: " << header.version;
-    JLOG(context.j.info()) << "Ledger range: " << header.min_ledger << " - "
-                           << header.max_ledger;
-    JLOG(context.j.info()) << "Network ID: " << header.network_id;
+    // Extract version information
+    uint8_t version = getCatalogueVersion(header.version);
+    uint8_t compressionLevel = getCompressionLevel(header.version);
 
-    if (header.version != CATALOGUE_VERSION)
+    JLOG(context.j.info()) << "Catalogue version: " << (int)version;
+    JLOG(context.j.info()) << "Compression level: " << (int)compressionLevel;
+
+    // Check version compatibility
+    if (version > 1)  // Only checking base version number
         return rpcError(
             rpcINVALID_PARAMS,
-            "unsupported catalogue version: " + std::to_string(header.version));
+            "unsupported catalogue version: " + std::to_string(version));
 
     if (header.network_id != context.app.config().NETWORK_ID)
         return rpcError(
@@ -332,12 +419,17 @@ doCatalogueLoad(RPC::JsonContext& context)
             "catalogue network ID mismatch: " +
                 std::to_string(header.network_id));
 
+    // Set up decompression if needed
+    auto decompStream = std::make_unique<boost::iostreams::filtering_istream>();
+    decompStream->push(boost::iostreams::zlib_decompressor());
+    decompStream->push(boost::ref(infile));
+
     uint32_t ledgersLoaded = 0;
     std::shared_ptr<Ledger> prevLedger;
     uint32_t expected_seq = header.min_ledger;
 
     // Process each ledger sequentially
-    while (!infile.eof() && expected_seq <= header.max_ledger)
+    while (!decompStream->eof() && expected_seq <= header.max_ledger)
     {
         LedgerInfo info;
         uint64_t closeTime = -1;
@@ -345,23 +437,27 @@ doCatalogueLoad(RPC::JsonContext& context)
         uint32_t closeTimeResolution = -1;
         uint64_t drops = -1;
 
-        if (!infile.read(
+        if (!decompStream->read(
                 reinterpret_cast<char*>(&info.seq), sizeof(info.seq)) ||
-            !infile.read(reinterpret_cast<char*>(info.hash.data()), 32) ||
-            !infile.read(reinterpret_cast<char*>(info.txHash.data()), 32) ||
-            !infile.read(
+            !decompStream->read(
+                reinterpret_cast<char*>(info.hash.data()), 32) ||
+            !decompStream->read(
+                reinterpret_cast<char*>(info.txHash.data()), 32) ||
+            !decompStream->read(
                 reinterpret_cast<char*>(info.accountHash.data()), 32) ||
-            !infile.read(reinterpret_cast<char*>(info.parentHash.data()), 32) ||
-            !infile.read(reinterpret_cast<char*>(&drops), sizeof(drops)) ||
-            !infile.read(
+            !decompStream->read(
+                reinterpret_cast<char*>(info.parentHash.data()), 32) ||
+            !decompStream->read(
+                reinterpret_cast<char*>(&drops), sizeof(drops)) ||
+            !decompStream->read(
                 reinterpret_cast<char*>(&info.closeFlags),
                 sizeof(info.closeFlags)) ||
-            !infile.read(
+            !decompStream->read(
                 reinterpret_cast<char*>(&closeTimeResolution),
                 sizeof(closeTimeResolution)) ||
-            !infile.read(
+            !decompStream->read(
                 reinterpret_cast<char*>(&closeTime), sizeof(closeTime)) ||
-            !infile.read(
+            !decompStream->read(
                 reinterpret_cast<char*>(&parentCloseTime),
                 sizeof(parentCloseTime)))
         {
@@ -401,7 +497,7 @@ doCatalogueLoad(RPC::JsonContext& context)
             ledger->setLedgerInfo(info);
 
             // Deserialize the complete state map from leaf nodes
-            if (!ledger->stateMap().deserializeFromStream(infile))
+            if (!ledger->stateMap().deserializeFromStream(*decompStream))
             {
                 JLOG(context.j.error())
                     << "Failed to deserialize base ledger state";
@@ -427,7 +523,7 @@ doCatalogueLoad(RPC::JsonContext& context)
                 *snapshot);
 
             // Apply delta (only leaf-node changes)
-            if (!ledger->stateMap().deserializeFromStream(infile))
+            if (!ledger->stateMap().deserializeFromStream(*decompStream))
             {
                 JLOG(context.j.error())
                     << "Failed to apply delta to ledger " << info.seq;
@@ -436,7 +532,7 @@ doCatalogueLoad(RPC::JsonContext& context)
         }
 
         // pull in the tx map
-        if (!ledger->txMap().deserializeFromStream(infile))
+        if (!ledger->txMap().deserializeFromStream(*decompStream))
         {
             JLOG(context.j.error())
                 << "Failed to apply delta to ledger " << info.seq;
@@ -457,8 +553,7 @@ doCatalogueLoad(RPC::JsonContext& context)
         ledger->setImmutable(true);
 
         // Save in database
-        std::cout << "pendSaveValidated\n";
-        pendSaveValidated(context.app, ledger, true, false);
+        pendSaveValidated(context.app, ledger, false, false);
 
         // Store in ledger master
         context.app.getLedgerMaster().storeLedger(ledger, true);
@@ -476,7 +571,7 @@ doCatalogueLoad(RPC::JsonContext& context)
         ledgersLoaded++;
     }
 
-    // Close the file as we've read all the data
+    decompStream->reset();
     infile.close();
 
     // Update ledger range in ledger master
@@ -495,6 +590,7 @@ doCatalogueLoad(RPC::JsonContext& context)
     jvResult[jss::ledgers_loaded] = static_cast<Json::UInt>(ledgersLoaded);
     jvResult[jss::file_size] = (Json::UInt)(file_size);
     jvResult[jss::status] = jss::success;
+    jvResult[jss::compression_level] = compressionLevel;
 
     return jvResult;
 }

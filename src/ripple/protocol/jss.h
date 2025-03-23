@@ -240,6 +240,7 @@ JSS(complete);               // out: NetworkOPs, InboundLedger
 JSS(complete_ledgers);       // out: NetworkOPs, PeerImp
 JSS(complete_ledgers_pinned);
 JSS(complete_shards);  // out: OverlayImpl, PeerImp
+JSS(compression_level);
 JSS(consensus);        // out: NetworkOPs, LedgerConsensus
 JSS(converge_time);    // out: NetworkOPs
 JSS(converge_time_s);  // out: NetworkOPs
@@ -401,25 +402,26 @@ JSS(ledger);                // in: NetworkOPs, LedgerCleaner,
 JSS(ledger_count);
 JSS(ledgers_loaded);
 JSS(ledgers_written);
-JSS(ledger_current_index);        // out: NetworkOPs, RPCHelpers,
-                                  //      LedgerCurrent, LedgerAccept,
-                                  //      AccountLines
-JSS(ledger_data);                 // out: LedgerHeader
-JSS(ledger_hash);                 // in: RPCHelpers, LedgerRequest,
-                                  //     RipplePathFind, TransactionEntry,
-                                  //     handlers/Ledger
-                                  // out: NetworkOPs, RPCHelpers,
-                                  //      LedgerClosed, LedgerData,
-                                  //      AccountLines
-JSS(ledger_hit_rate);             // out: GetCounts
-JSS(ledger_index);                // in/out: many
-JSS(ledger_index_max);            // in, out: AccountTx*
-JSS(ledger_index_min);            // in, out: AccountTx*
-JSS(ledger_max);                  // in, out: AccountTx*
-JSS(ledger_min);                  // in, out: AccountTx*
-JSS(ledger_time);                 // out: NetworkOPs
-JSS(LEDGER_ENTRY_TYPES);          // out: RPC server_definitions
-JSS(levels);                      // LogLevels
+JSS(ledger_current_index);  // out: NetworkOPs, RPCHelpers,
+                            //      LedgerCurrent, LedgerAccept,
+                            //      AccountLines
+JSS(ledger_data);           // out: LedgerHeader
+JSS(ledger_hash);           // in: RPCHelpers, LedgerRequest,
+                            //     RipplePathFind, TransactionEntry,
+                            //     handlers/Ledger
+                            // out: NetworkOPs, RPCHelpers,
+                            //      LedgerClosed, LedgerData,
+                            //      AccountLines
+JSS(ledger_hit_rate);       // out: GetCounts
+JSS(ledger_index);          // in/out: many
+JSS(ledger_index_max);      // in, out: AccountTx*
+JSS(ledger_index_min);      // in, out: AccountTx*
+JSS(ledger_max);            // in, out: AccountTx*
+JSS(ledger_min);            // in, out: AccountTx*
+JSS(ledger_time);           // out: NetworkOPs
+JSS(LEDGER_ENTRY_TYPES);    // out: RPC server_definitions
+JSS(levels);                // LogLevels
+JSS(level);
 JSS(limit);                       // in/out: AccountTx*, AccountOffers,
                                   //         AccountLines, AccountObjects
                                   // in: LedgerData, BookOffers
