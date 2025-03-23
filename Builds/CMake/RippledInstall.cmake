@@ -4,7 +4,6 @@
 
 install (
   TARGETS
-    ed25519-donna
     quickjs
     common
     opts
@@ -16,17 +15,6 @@ install (
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
   INCLUDES DESTINATION include)
-
-if(${INSTALL_SECP256K1})
-install (
-  TARGETS
-    secp256k1
-  EXPORT RippleExports
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-  RUNTIME DESTINATION bin
-  INCLUDES DESTINATION include)
-endif()
 
 install (EXPORT RippleExports
   FILE RippleTargets.cmake
