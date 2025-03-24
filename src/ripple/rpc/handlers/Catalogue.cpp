@@ -311,25 +311,19 @@ doCatalogueCreate(RPC::JsonContext& context)
 
     if (context.params.isMember(jss::compression_level))
     {
-        if (context.params[jss::compression_level].isObject())
+        if (context.params[jss::compression_level].isInt() ||
+            context.params[jss::compression_level].isUInt())
         {
-            auto const& comp = context.params[jss::compression_level];
-
-            if (comp.isMember(jss::level))
-            {
-                compressionLevel = comp[jss::level].asUInt();
-                if (compressionLevel > 9)
-                    compressionLevel = 9;
-            }
-            else
-            {
-                compressionLevel =
-                    6;  // Default level if compression is enabled
-            }
+            // Handle numeric value between 0 and 9
+            compressionLevel = context.params[jss::compression_level].asUInt();
+            if (compressionLevel > 9)
+                compressionLevel = 9;
         }
-        else if (context.params[jss::compression_level].asBool())
+        else if (context.params[jss::compression_level].isBool())
         {
-            compressionLevel = 6;  // Default level if compression is enabled
+            // Handle boolean: true means 6, false means 0
+            compressionLevel =
+                context.params[jss::compression_level].asBool() ? 6 : 0;
         }
     }
 
