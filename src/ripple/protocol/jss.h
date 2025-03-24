@@ -302,10 +302,11 @@ JSS(ephemeral_key);          // out: ValidatorInfo
                              // in/out: Manifest
 JSS(error);                  // out: error
 JSS(errored);
-JSS(error_code);            // out: error
-JSS(error_exception);       // out: Submit
-JSS(error_message);         // out: error
-JSS(escrow);                // in: LedgerEntry
+JSS(error_code);       // out: error
+JSS(error_exception);  // out: Submit
+JSS(error_message);    // out: error
+JSS(escrow);           // in: LedgerEntry
+JSS(estimated_time_remaining);
 JSS(emitted_txn);           // in: LedgerEntry
 JSS(expand);                // in: handler/Ledger
 JSS(expected_date);         // out: any (warnings)

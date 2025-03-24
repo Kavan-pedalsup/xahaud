@@ -194,6 +194,62 @@ generateStatusJson(bool includeErrorInfo = false)
                            .count();
         jvResult[jss::elapsed_seconds] = static_cast<Json::UInt>(elapsed);
 
+        // Calculate estimated time remaining
+        if (processed_ledgers > 0 && total_ledgers > processed_ledgers)
+        {
+            // Calculate rate: ledgers per second
+            double ledgers_per_second =
+                static_cast<double>(processed_ledgers) / elapsed;
+
+            if (ledgers_per_second > 0)
+            {
+                // Calculate remaining time in seconds
+                uint32_t remaining_ledgers = total_ledgers - processed_ledgers;
+                uint64_t estimated_seconds_remaining = static_cast<uint64_t>(
+                    remaining_ledgers / ledgers_per_second);
+
+                // Format the time remaining in human-readable form
+                std::string time_remaining;
+                if (estimated_seconds_remaining > 3600)
+                {
+                    // Hours and minutes
+                    uint64_t hours = estimated_seconds_remaining / 3600;
+                    uint64_t minutes =
+                        (estimated_seconds_remaining % 3600) / 60;
+                    time_remaining = std::to_string(hours) + " hour" +
+                        (hours > 1 ? "s" : "") + " " + std::to_string(minutes) +
+                        " minute" + (minutes > 1 ? "s" : "");
+                }
+                else if (estimated_seconds_remaining > 60)
+                {
+                    // Minutes and seconds
+                    uint64_t minutes = estimated_seconds_remaining / 60;
+                    uint64_t seconds = estimated_seconds_remaining % 60;
+                    time_remaining = std::to_string(minutes) + " minute" +
+                        (minutes > 1 ? "s" : "") + " " +
+                        std::to_string(seconds) + " second" +
+                        (seconds > 1 ? "s" : "");
+                }
+                else
+                {
+                    // Just seconds
+                    time_remaining =
+                        std::to_string(estimated_seconds_remaining) +
+                        " second" +
+                        (estimated_seconds_remaining > 1 ? "s" : "");
+                }
+                jvResult[jss::estimated_time_remaining] = time_remaining;
+            }
+            else
+            {
+                jvResult[jss::estimated_time_remaining] = "unknown";
+            }
+        }
+        else
+        {
+            jvResult[jss::estimated_time_remaining] = "unknown";
+        }
+
         // Add start time as ISO 8601 string
         auto time_t_started =
             std::chrono::system_clock::to_time_t(catalogueRunStatus.started);
@@ -381,10 +437,11 @@ doCatalogueCreate(RPC::JsonContext& context)
     ledgers.reserve(max_ledger - min_ledger + 1);
 
     // Grab all ledgers of interest
+    UPDATE_CATALOGUE_STATUS(ledgerUpto, 0);
     for (auto i = min_ledger; i <= max_ledger; ++i)
     {
-        // Update current ledger
-        UPDATE_CATALOGUE_STATUS(ledgerUpto, i);
+        if (context.app.isStopping())
+            return {};
 
         std::shared_ptr<Ledger const> ptr;
         auto status = RPC::getLedger(ptr, i, context);
@@ -507,6 +564,9 @@ doCatalogueCreate(RPC::JsonContext& context)
     // Process remaining ledgers with diffs
     for (size_t i = 1; i < ledgers.size(); ++i)
     {
+        if (context.app.isStopping())
+            return {};
+
         // Update current ledger
         UPDATE_CATALOGUE_STATUS(ledgerUpto, ledgers[i]->info().seq);
 
@@ -803,6 +863,9 @@ doCatalogueLoad(RPC::JsonContext& context)
         std::vector<char> buffer(64 * 1024);  // 64K buffer
         while (hashFile)
         {
+            if (context.app.isStopping())
+                return {};
+
             hashFile.read(buffer.data(), buffer.size());
             std::streamsize bytes_read = hashFile.gcount();
             if (bytes_read > 0)
@@ -854,6 +917,9 @@ doCatalogueLoad(RPC::JsonContext& context)
     // Process each ledger sequentially
     while (!decompStream->eof() && expected_seq <= header.max_ledger)
     {
+        if (context.app.isStopping())
+            return {};
+
         // Update current ledger
         UPDATE_CATALOGUE_STATUS(ledgerUpto, expected_seq);
 
