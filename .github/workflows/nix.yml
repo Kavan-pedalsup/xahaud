@@ -10,10 +10,10 @@ jobs:
           - linux
         compiler:
           - gcc
-          - clang
+#          - clang   TODO:CONAN
         configuration:
           - Debug
-          - Release
+#          - Release  TODO:CONAN
         include:
           - compiler: gcc
             profile:
