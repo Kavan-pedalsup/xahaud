@@ -260,7 +260,8 @@ JSS(currency);           // in: paths/PathRequest, STAmount
                          //      AccountLines
 JSS(current);            // out: OwnerInfo
 JSS(current_activities);
-JSS(current_ledger_size);     // out: TxQ
+JSS(current_ledger_size);  // out: TxQ
+JSS(current_ledger);
 JSS(current_queue_size);      // out: TxQ
 JSS(data);                    // out: LedgerData
 JSS(date);                    // out: tx/Transaction, NetworkOPs
@@ -292,13 +293,14 @@ JSS(drops);                   // out: TxQ
 JSS(duration_us);             // out: NetworkOPs
 JSS(effective);               // out: ValidatorList
                               // in: UNL
-JSS(enabled);                 // out: AmendmentTable
-JSS(engine_result);           // out: NetworkOPs, TransactionSign, Submit
-JSS(engine_result_code);      // out: NetworkOPs, TransactionSign, Submit
-JSS(engine_result_message);   // out: NetworkOPs, TransactionSign, Submit
-JSS(ephemeral_key);           // out: ValidatorInfo
-                              // in/out: Manifest
-JSS(error);                   // out: error
+JSS(elapsed_seconds);
+JSS(enabled);                // out: AmendmentTable
+JSS(engine_result);          // out: NetworkOPs, TransactionSign, Submit
+JSS(engine_result_code);     // out: NetworkOPs, TransactionSign, Submit
+JSS(engine_result_message);  // out: NetworkOPs, TransactionSign, Submit
+JSS(ephemeral_key);          // out: ValidatorInfo
+                             // in/out: Manifest
+JSS(error);                  // out: error
 JSS(errored);
 JSS(error_code);            // out: error
 JSS(error_exception);       // out: Submit
@@ -329,6 +331,7 @@ JSS(firstSequence);         // out: NodeToShardStatus
 JSS(firstShardIndex);       // out: NodeToShardStatus
 JSS(finished);
 JSS(fix_txns);  // in: LedgerCleaner
+JSS(file);
 JSS(file_size);
 JSS(flags);                 // out: AccountOffers,
                             //      NetworkOPs
@@ -361,9 +364,10 @@ JSS(id);                    // websocket.
 JSS(ident);                 // in: AccountCurrencies, AccountInfo,
                             //     OwnerInfo
 JSS(ignore_default);        // in: AccountLines
-JSS(import_vlseq);          // in: LedgerEntry
-JSS(imported);              // out: catalogue
-JSS(inLedger);              // out: tx/Transaction
+JSS(ignore_hash);
+JSS(import_vlseq);  // in: LedgerEntry
+JSS(imported);      // out: catalogue
+JSS(inLedger);      // out: tx/Transaction
 JSS(in_queue);
 JSS(inbound);  // out: PeerImp
 JSS(index);    // in: LedgerEntry, DownloadShard
@@ -382,6 +386,7 @@ JSS(issuer);               // in: RipplePathFind, Subscribe,
                            // out: STPathSet, STAmount
 JSS(job);
 JSS(job_queue);
+JSS(job_type);
 JSS(jobs);
 JSS(jsonrpc);               // json version
 JSS(jq_trans_overflow);     // JobQueue transaction limit overflow.
@@ -550,6 +555,7 @@ JSS(peers);                       // out: InboundLedger, handlers/Peers, Overlay
 JSS(peer_disconnects);            // Severed peer connection counter.
 JSS(peer_disconnects_resources);  // Severed peer connections because of
                                   // excess resource consumption.
+JSS(percent_complete);
 JSS(phash);
 JSS(port);              // in: Connect
 JSS(previous);          // out: Reservations
@@ -640,6 +646,7 @@ JSS(source_currencies);         // in: PathRequest, RipplePathFind
 JSS(source_tag);                // out: AccountChannels
 JSS(stand_alone);               // out: NetworkOPs
 JSS(start);                     // in: TxHistory
+JSS(start_time);
 JSS(started);
 JSS(state);                 // out: Logic.h, ServerState, LedgerData
 JSS(state_accounting);      // out: NetworkOPs
