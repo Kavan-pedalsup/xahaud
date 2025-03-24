@@ -13,7 +13,6 @@ jobs:
         configuration:
           - Release
     runs-on: [self-hosted, macOS, ARM64]
-    # TODO:CONAN runs-on: macos-15
     env:
       # The `build` action requires these variables.
       build_dir: .build
@@ -55,12 +54,8 @@ jobs:
         run : |
           conan profile new default --detect || true
           conan profile update settings.compiler.cppstd=20 default
-          conan profile show default  # Check before
-          conan profile update 'conf.tools.build:cxxflags=[]' default  # Reset cxxflags in default profile
+          conan profile update 'conf.tools.build:cxxflags=[]' default TODO:CONAN
           conan profile show default  # Check after
-          # TODO: CONAN
-          # conan profile update 'conf.tools.build:cxxflags+=["-DBOOST_ASIO_DISABLE_CONCEPTS"]' default
-          conan remove boost/1.86.0 --force
       - name: build
         uses: ./.github/actions/build
         with:

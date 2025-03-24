@@ -99,7 +99,6 @@ class Xrpl(ConanFile):
     def configure(self):
         if self.settings.compiler == 'apple-clang':
             self.options['boost'].visibility = 'global'
-            self.options['boost'].without_cobalt = True
 
     def requirements(self):
         if self.options.jemalloc:
