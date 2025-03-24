@@ -54,7 +54,7 @@ jobs:
         run : |
           conan profile new default --detect || true
           conan profile update settings.compiler.cppstd=20 default
-          conan profile update 'conf.tools.build:cxxflags=[]' default TODO:CONAN
+          conan profile update 'conf.tools.build:cxxflags=[]' default # TODO:CONAN
           conan profile show default  # Check after
       - name: build
         uses: ./.github/actions/build
