@@ -141,6 +141,12 @@ jobs:
             ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-
             ${{ runner.os }}-ccache-
 
+      - name: Prime OS page cache (tar method)
+        run: |
+          if [ -d ~/.ccache ]; then
+            tar -cf - ~/.ccache > /dev/null
+          fi
+
       # Build still calls the install dependency installation every time
       # but it should be fast if the ~/.conan folder is primed with pre-build deps
       - name: Build

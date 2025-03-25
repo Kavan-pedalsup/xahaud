@@ -137,6 +137,12 @@ jobs:
             ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-
             ${{ runner.os }}-ccache-
 
+      - name: Prime OS page cache (tar method)
+        run: |
+          if [ -d ~/.ccache ]; then
+            tar -cf - ~/.ccache > /dev/null
+          fi
+
       - name: Build
         uses: ./.github/actions/build
         with:
