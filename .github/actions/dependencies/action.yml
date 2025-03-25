@@ -20,7 +20,8 @@ runs:
         path: ~/.conan/data
         key: ${{ inputs.cache-key }}-${{ inputs.configuration }}-conan-${{ hashFiles('conanfile.py') }}
         restore-keys: |
-          ${{ runner.os }}-conan-
+          ${{ inputs.cache-key }}-${{ inputs.configuration }}-conan-
+          ${{ inputs.cache-key }}-conan-
 
     - name: install dependencies
       if: steps.cache-restore.outputs.cache-hit != 'true'
@@ -39,4 +40,4 @@ runs:
       uses: actions/cache/save@v4
       with:
         path: ~/.conan/data
-        key: ${{ steps.cache-restore.outputs.cache-primary-key }}
+        key: ${{ inputs.cache-key }}-${{ inputs.configuration }}-conan-${{ hashFiles('conanfile.py') }}
