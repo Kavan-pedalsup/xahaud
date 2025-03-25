@@ -165,14 +165,15 @@ jobs:
       - name: Debug build directory
         run: |
           echo "Checking build directory contents..."
-          ls -la ${{ github.workspace }}/${{ env.build_dir }} || echo "Build directory not found"
+          ls -la ${{ env.build_dir }} || echo "Build directory not found"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.set-artifact-name.outputs.artifact_name }}
-          path: ${{ github.workspace }}/${{ env.build_dir }}/**
+          path: ${{ env.build_dir }}
           retention-days: 1
+          include-hidden-files: true
 
   tests:
     runs-on: ubuntu-latest
