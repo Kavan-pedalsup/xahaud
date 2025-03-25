@@ -46,6 +46,7 @@ jobs:
     env:
       build_dir: .build
       deps_dir: .build-deps
+      CACHE_VERSION: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,8 +54,18 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build ${{ matrix.cc }} ${{ matrix.cxx }}
+          sudo apt-get install -y ninja-build ${{ matrix.cc }} ${{ matrix.cxx }} ccache
           pip install --upgrade "conan<2"
+          
+      - name: Configure CCache
+        run: |
+          mkdir -p ~/.ccache # this will be used if it's there rather than ~/Library
+          export CONF_PATH="${CCACHE_CONFIGPATH:-${CCACHE_DIR:-$HOME/.ccache}/ccache.conf}"
+          mkdir -p $(dirname $CONF_PATH)
+          echo "max_size = 2G" > $CONF_PATH
+          echo "hash_dir = true" >> $CONF_PATH
+          echo "compiler_check = content" >> $CONF_PATH
+          ccache -p  # Print config for verification
 
       # Manual cache restore
       - name: Restore Conan cache
@@ -114,17 +125,17 @@ jobs:
         run: |
           # Replace characters that aren't allowed in cache keys
           SAFE_BRANCH=$(echo "${{ github.ref_name }}" | tr -c 'a-zA-Z0-9_.-' '-')
-          echo "name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
+          echo "safe_branch_name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
 
-      - name: Restore build directory cache
-        id: build-cache-restore
+      - name: Restore ccache directory
+        id: ccache-restore
         uses: actions/cache/restore@v4
         with:
-          path: ${{ env.build_dir }}
-          key: ${{ runner.os }}-build-${{ matrix.compiler }}-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-${{ steps.safe-branch.outputs.safe_branch_name }}
           restore-keys: |
-            ${{ runner.os }}-build-${{ matrix.compiler }}-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}-
-            ${{ runner.os }}-build-${{ matrix.compiler }}-${{ matrix.configuration }}-
+            ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-
+            ${{ runner.os }}-ccache-
 
       - name: Build
         uses: ./.github/actions/build
@@ -135,15 +146,14 @@ jobs:
           # Make sure the build action receives the build_dir explicitly
           build_dir: ${{ env.build_dir }}
 
-      # After your build step but before tests or artifact uploads
-      - name: Save build directory cache
+      # After your build step
+      - name: Save ccache directory
         if: success()
         uses: actions/cache/save@v4
         with:
-          path: ${{ env.build_dir }}
+          path: ~/.ccache
           # Reference the primary key from the restore step
-          key: ${{ steps.build-cache-restore.outputs.cache-primary-key }}
-
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
       - name: Set artifact name
         id: set-artifact-name
@@ -161,7 +171,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.set-artifact-name.outputs.artifact_name }}
-          path: ${{ env.build_dir }}/**
+          path: ${{ github.workspace }}/${{ env.build_dir }}/**
           retention-days: 1
 
   tests:
