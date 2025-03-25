@@ -163,8 +163,8 @@ jobs:
           # Reference the primary key from the restore step
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
-      - name: Save ccache with run_id fallback in case of lock contention
-        if: steps.save-ccache.conclusion != 'success'
+      - name: Save ccache with fallback in case of lock contention
+        if: always() && steps.save-ccache.outcome != 'success'
         uses: actions/cache/save@v4
         with:
           path: ~/.ccache
