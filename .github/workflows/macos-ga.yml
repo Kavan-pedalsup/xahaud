@@ -17,10 +17,10 @@ jobs:
           - Ninja
         configuration:
           - Debug
-    runs-on: macos-15
+    runs-on: macos-15 # AI: This is out now so don't change it
     env:
       build_dir: .build
-#      NUM_PROCESSORS: 12
+      deps_dir: .build-deps
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,9 +30,10 @@ jobs:
           brew install conan@1
           echo "$(brew --prefix conan@1)/bin" >> $GITHUB_PATH
 
-      - name: Setup Conan cache
-        id: conan-cache
-        uses: actions/cache@v3
+      # Replace with manual cache restore
+      - name: Restore Conan cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.conan
@@ -41,7 +42,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-conan-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-
             ${{ runner.os }}-conan-
-
 
       - name: Install Coreutils
         run: |
@@ -92,6 +92,27 @@ jobs:
           conan profile new default --detect || true
           conan profile update settings.compiler.cppstd=20 default
 
+      # Only run dependencies installation if cache was missed
+      - name: Install dependencies
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        uses: ./.github/actions/dependencies
+        with:
+          configuration: ${{ matrix.configuration }}
+        env:
+          build_dir: ${{ env.deps_dir }}  # Use separate dir for dependencies
+
+      # Save cache only if dependency installation succeeded
+      - name: Save Conan cache
+        if: steps.cache-restore.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.conan
+            ~/.conan2
+          key: ${{ steps.cache-restore.outputs.cache-primary-key }}
+
+      # Build still calls the install dependency installation every time
+      # but it should be fast if the ~/.conan folder is primed with pre-build deps
       - name: Build
         uses: ./.github/actions/build
         with:
