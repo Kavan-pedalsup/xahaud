@@ -306,6 +306,7 @@ struct JSRuntime {
     void *user_opaque;
     int64_t instruction_count;
     int64_t instruction_limit;
+    uint64_t date_now;
 };
 
 struct JSClass {
@@ -1618,7 +1619,7 @@ static inline BOOL js_check_stack_overflow(JSRuntime *rt, size_t alloca_size)
 }
 #endif
 
-JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque, uint32_t instructionLimit)
+JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque, uint32_t instructionLimit, uint64_t dateNow)
 {
     JSRuntime *rt;
     JSMallocState ms;
@@ -1640,6 +1641,7 @@ JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque, uint32_t in
     rt->malloc_gc_threshold = 256 * 1024;
     rt->instruction_count = 0;
     rt->instruction_limit = instructionLimit;
+    rt->date_now = dateNow;
 
     bf_context_init(&rt->bf_ctx, js_bf_realloc, rt);
     set_dummy_numeric_ops(&rt->bigint_ops);
@@ -1777,9 +1779,9 @@ static const JSMallocFunctions def_malloc_funcs = {
     js_def_malloc_usable_size,
 };
 
-JSRuntime *JS_NewRuntime(uint32_t instructionLimit)
+JSRuntime *JS_NewRuntime(uint32_t instructionLimit, uint64_t dateNow)
 {
-    return JS_NewRuntime2(&def_malloc_funcs, NULL, instructionLimit);
+    return JS_NewRuntime2(&def_malloc_funcs, NULL, instructionLimit, dateNow);
 }
 
 void JS_SetMemoryLimit(JSRuntime *rt, size_t limit)
@@ -49841,10 +49843,8 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
 }
 
 /* OS dependent: return the UTC time in ms since 1970. */
-static int64_t date_now(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (int64_t)tv.tv_sec * 1000 + (tv.tv_usec / 1000);
+static int64_t date_now(JSContext *ctx) {
+  return ctx->rt->date_now;
 }
 
 static JSValue js_date_constructor(JSContext *ctx, JSValueConst new_target,
@@ -49861,7 +49861,7 @@ static JSValue js_date_constructor(JSContext *ctx, JSValueConst new_target,
     }
     n = argc;
     if (n == 0) {
-        val = date_now();
+        val = date_now(ctx);
     } else if (n == 1) {
         JSValue v, dv;
         if (JS_VALUE_GET_TAG(argv[0]) == JS_TAG_OBJECT) {
@@ -50399,7 +50399,7 @@ static JSValue js_Date_now(JSContext *ctx, JSValueConst this_val,
                            int argc, JSValueConst *argv)
 {
     // now()
-    return JS_NewInt64(ctx, date_now());
+    return JS_NewInt64(ctx, date_now(ctx));
 }
 
 static JSValue js_date_Symbol_toPrimitive(JSContext *ctx, JSValueConst this_val,

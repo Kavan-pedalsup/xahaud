@@ -1146,11 +1146,12 @@ public:
         JSRuntime* rt = NULL;
         JSContext* ctx = NULL;
 
-        QuickJSVM(void* hookCtx, uint32_t instructionLimit)
+        QuickJSVM(void* hookCtx, uint32_t instructionLimit, uint64_t dateNow)
         {
-            rt = JS_NewRuntime(instructionLimit);
+            rt = JS_NewRuntime(instructionLimit, dateNow);
             ctx = JS_NewContextRaw(rt);
             JS_AddIntrinsicBaseObjects(ctx);
+            JS_AddIntrinsicDate(ctx);
             JS_AddIntrinsicEval(ctx);
             JS_AddIntrinsicStringNormalize(ctx);
             JS_AddIntrinsicRegExp(ctx);
@@ -1323,7 +1324,7 @@ public:
 
         // RHNOTE: hard instrction (internal program counter loop) limit of 1MM,
         // like wasm.
-        QuickJSVM vm{NULL, 1000000};
+        QuickJSVM vm{NULL, 1000000, 0};
         JSContext* ctx = vm.ctx;
 
         if (!vm.sane())
@@ -1390,7 +1391,15 @@ public:
         JLOG(j.trace()) << "HookInfo[" << HC_ACC()
                         << "]: creating quickjs instance";
 
-        QuickJSVM vm{reinterpret_cast<void*>(&hookCtx), instructionLimit};
+        uint64_t dateNow =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                hookCtx.applyCtx.view()
+                    .info()
+                    .parentCloseTime.time_since_epoch())
+                .count() +
+            946684800000;
+        QuickJSVM vm{
+            reinterpret_cast<void*>(&hookCtx), instructionLimit, dateNow};
         JSContext* ctx = vm.ctx;
 
         if (!vm.sane())

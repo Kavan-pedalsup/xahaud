@@ -10920,6 +10920,42 @@ public:
     }
 
     void
+    test_js_date(FeatureBitset features)
+    {
+        testcase("Test JS Date");
+        using namespace jtx;
+
+        Env env{*this, features};
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = jswasm[R"[test.hook](
+            const ASSERT = (x) => {
+                if (!x) rollback(x.toString(), -1)
+            }
+
+            const Hook = (reserve) => {
+                const data = new Date()
+                ASSERT(data.getTime() === (ledger_last_time() + 946684800) * 1000)
+                ASSERT(Date.now() === (ledger_last_time() + 946684800) * 1000)
+                accept('', 0)
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(
+                alice, {{hsov1(hook, 1, HSDROPS, overrideFlag)}}, 0),
+            M("set js Date"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test js Date"), fee(XRP(1)));
+    }
+
+    void
     testWithFeatures(FeatureBitset features)
     {
         testHooksOwnerDir(features);
@@ -11031,6 +11067,8 @@ public:
         test_util_raddr(features);    //
         test_util_sha512h(features);  //
         test_util_verify(features);   //
+
+        test_js_date(features);  //
     }
 
     void

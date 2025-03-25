@@ -3340,7 +3340,7 @@ static void *worker_func(void *opaque)
     JSContext *ctx;
     JSValue val;
 
-    rt = JS_NewRuntime(-1);
+    rt = JS_NewRuntime(-1, 0);
     if (rt == NULL) {
         fprintf(stderr, "JS_NewRuntime failure");
         exit(1);
