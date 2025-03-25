@@ -12,7 +12,7 @@ jobs:
           - Ninja
         configuration:
           - Release
-    runs-on: macos-latest
+    runs-on: macos-15
     env:
       # The `build` action requires these variables.
       build_dir: .build
