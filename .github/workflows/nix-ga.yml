@@ -1,0 +1,83 @@
+name: Nix Development - GA Runner
+on:
+  push:
+    branches: [jshooks]
+  pull_request:
+    branches: [jshooks]
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc] # [gcc, clang]
+        configuration: [Debug]
+        include:
+          - compiler: gcc
+            cc: gcc-11
+            cxx: g++-11
+#          - compiler: clang
+#            cc: clang-14
+#            cxx: clang++-14
+    runs-on: ubuntu-latest
+    env:
+      build_dir: .build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ${{ matrix.cc }} ${{ matrix.cxx }}
+          pip install --upgrade "conan<2"
+
+      - name: Setup Conan cache
+        id: conan-cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.conan
+          key: ${{ runner.os }}-conan-${{ matrix.compiler }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-${{ matrix.configuration }}
+          restore-keys: |
+            ${{ runner.os }}-conan-${{ matrix.compiler }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-
+            ${{ runner.os }}-conan-${{ matrix.compiler }}-
+
+      - name: Configure Conan
+        run: |
+          conan profile new default --detect || true
+          conan profile update settings.compiler.cppstd=20 default
+          conan profile update settings.compiler=${{ matrix.compiler }} default
+          conan profile update settings.compiler.libcxx=libstdc++11 default
+          conan profile update env.CC=/usr/bin/${{ matrix.cc }} default
+          conan profile update env.CXX=/usr/bin/${{ matrix.cxx }} default
+          conan profile update conf.tools.build:compiler_executables='{"c": "/usr/bin/${{ matrix.cc }}", "cpp": "/usr/bin/${{ matrix.cxx }}"}' default
+          
+          # Set correct compiler version based on compiler type
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            conan profile update settings.compiler.version=11 default
+          elif [ "${{ matrix.compiler }}" = "clang" ]; then
+            conan profile update settings.compiler.version=14 default
+          fi
+
+      - name: Check environment
+        run: |
+          echo "PATH: ${PATH}" | tr ':' '\n'
+          conan --version
+          cmake --version
+          ${{ matrix.cc }} --version
+          ${{ matrix.cxx }} --version
+
+      - name: Install dependencies
+        uses: ./.github/actions/dependencies
+        with:
+          configuration: ${{ matrix.configuration }}
+
+      - name: Build
+        uses: ./.github/actions/build
+        with:
+          generator: Ninja
+          configuration: ${{ matrix.configuration }}
+
+      - name: Test
+        run: |
+          ${build_dir}/rippled --unittest --unittest-jobs $(nproc)

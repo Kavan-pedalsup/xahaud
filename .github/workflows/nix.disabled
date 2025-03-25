@@ -10,21 +10,21 @@ jobs:
           - linux
         compiler:
           - gcc
-#          - clang   TODO:CONAN
+          - clang
         configuration:
           - Debug
-#          - Release  TODO:CONAN
+          - Release
         include:
           - compiler: gcc
             profile:
               version: 11
               cc: /usr/bin/gcc
               cxx: /usr/bin/g++
-#          - compiler: clang
-#            profile:
-#              version: 14
-#              cc: /usr/bin/clang-14
-#              cxx: /usr/bin/clang++-14
+          - compiler: clang
+            profile:
+              version: 14
+              cc: /usr/bin/clang-14
+              cxx: /usr/bin/clang++-14
     runs-on: [self-hosted, vanity]
     container: rippleci/rippled-build-ubuntu:aaf5e3e
     env:
