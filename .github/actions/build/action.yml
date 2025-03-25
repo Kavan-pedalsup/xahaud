@@ -6,10 +6,17 @@ inputs:
     required: true
   cmake-args:
     default: null
+  cache-key:
+    required: true
 # An implicit input is the environment variable `build_dir`.
 runs:
   using: composite
   steps:
+    - name: dependencies
+      uses: ./.github/actions/dependencies
+      with:
+        configuration: ${{ inputs.configuration }}
+        cache-key: ${{ inputs.cache-key }}
     - name: configure
       shell: bash
       run: |

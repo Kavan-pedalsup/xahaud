@@ -92,15 +92,15 @@ jobs:
           SAFE_BRANCH=$(echo "${{ github.ref_name }}" | tr -c 'a-zA-Z0-9_.-' '-')
           echo "name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
       
-      # - name: Restore build directory cache
-      #   id: build-cache-restore
-      #   uses: actions/cache/restore@v4
-      #   with:
-      #     path: ${{ env.build_dir }}
-      #     key: ${{ runner.os }}-build-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-build-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}-
-      #       ${{ runner.os }}-build-${{ matrix.configuration }}-
+      - name: Restore build directory cache
+        id: build-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.build_dir }}
+          key: macos-build-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}-${{ hashFiles('conanfile.py') }}
+          restore-keys: |
+            macos-build-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}-
+            macos-build-${{ matrix.configuration }}-
       
       - name: Build
         uses: ./.github/actions/build
@@ -108,12 +108,12 @@ jobs:
           generator: ${{ matrix.generator }}
           configuration: ${{ matrix.configuration }}
 
-      # - name: Save build directory cache
-      #   if: success()
-      #   uses: actions/cache/save@v4
-      #   with:
-      #     path: ${{ env.build_dir }}
-      #     key: ${{ steps.build-cache-restore.outputs.cache-primary-key }}
+      - name: Save build directory cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.build_dir }}
+          key: ${{ steps.build-cache-restore.outputs.cache-primary-key }}
 
       - name: Test
         run: |

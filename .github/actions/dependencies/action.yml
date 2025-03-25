@@ -40,4 +40,4 @@ runs:
       uses: actions/cache/save@v4
       with:
         path: ~/.conan/data
-        key: ${{ inputs.cache-key }}-${{ inputs.configuration }}-conan-${{ hashFiles('conanfile.py') }}
+        key: ${{ steps.cache-restore.outputs.cache-primary-key }}
