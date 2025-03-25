@@ -138,6 +138,7 @@ jobs:
           path: ~/.ccache
           key: ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-${{ steps.safe-branch.outputs.name }}
           restore-keys: |
+            ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-${{ steps.safe-branch.outputs.safe_branch_name }}-fallback
             ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-
             ${{ runner.os }}-ccache-
 
@@ -170,7 +171,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ~/.ccache
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}-${{ github.run_id }}
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}-fallback
 
       - name: Test
         run: |
