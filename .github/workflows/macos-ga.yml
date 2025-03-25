@@ -154,7 +154,7 @@ jobs:
         if: success()
         uses: actions/cache/save@v4
         with:
-          path: ~/Library/Caches/ccache
+          path: ~/.ccache
           # Reference the primary key from the restore step
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
