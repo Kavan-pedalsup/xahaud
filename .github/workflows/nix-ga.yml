@@ -148,12 +148,20 @@ jobs:
 
       # After your build step
       - name: Save ccache directory
+        id: save-ccache
         if: success()
         uses: actions/cache/save@v4
         with:
           path: ~/.ccache
           # Reference the primary key from the restore step
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+
+      - name: Save ccache with run_id fallback in case of lock contention
+        if: steps.save-ccache.outcome == 'failure'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}-${{ github.run_id }}
 
       - name: Set artifact name
         id: set-artifact-name

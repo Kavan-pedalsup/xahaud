@@ -1,9 +1,9 @@
 name: MacOS Development - Github Actions Runner
 on:
   push:
-    branches: [jshooks]
+    branches: [ jshooks ]
   pull_request:
-    branches: [jshooks]
+    branches: [ jshooks ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -135,7 +135,7 @@ jobs:
         id: ccache-restore
         uses: actions/cache/restore@v4
         with:
-          path: ~/Library/Caches/ccache
+          path: ~/.ccache
           key: ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-${{ steps.safe-branch.outputs.name }}
           restore-keys: |
             ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-
@@ -151,12 +151,20 @@ jobs:
 
       # After your build step
       - name: Save ccache directory
+        id: save-ccache
         if: success()
         uses: actions/cache/save@v4
         with:
           path: ~/.ccache
           # Reference the primary key from the restore step
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+
+      - name: Save ccache with run_id fallback in case of lock contention
+        if: steps.save-ccache.outcome == 'failure'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}-${{ github.run_id }}
 
       - name: Test
         run: |
