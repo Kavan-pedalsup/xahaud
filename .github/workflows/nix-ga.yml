@@ -109,11 +109,38 @@ jobs:
           ${{ matrix.cc }} --version
           ${{ matrix.cxx }} --version
 
+      # After your Conan cache restore but before the build step
+      - name: Restore build directory cache
+        id: build-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.build_dir }}
+          # Primary key without SHA - much higher hit probability
+          key: ${{ runner.os }}-build-${{ matrix.compiler }}-${{ matrix.configuration }}-${{ github.ref_name }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}
+          restore-keys: |
+            # Same branch, different dependencies
+            ${{ runner.os }}-build-${{ matrix.compiler }}-${{ matrix.configuration }}-${{ github.ref_name }}-
+            # Same compiler/config, any branch
+            ${{ runner.os }}-build-${{ matrix.compiler }}-${{ matrix.configuration }}-
+
       - name: Build
         uses: ./.github/actions/build
         with:
           generator: Ninja
           configuration: ${{ matrix.configuration }}
+        env:
+          # Make sure the build action receives the build_dir explicitly
+          build_dir: ${{ env.build_dir }}
+
+      # After your build step but before tests or artifact uploads
+      - name: Save build directory cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.build_dir }}
+          # Reference the primary key from the restore step
+          key: ${{ steps.build-cache-restore.outputs.cache-primary-key }}
+
 
       - name: Set artifact name
         id: set-artifact-name
@@ -121,6 +148,11 @@ jobs:
           ARTIFACT_NAME="build-output-nix-${{ github.run_id }}-${{ matrix.compiler }}-${{ matrix.configuration }}"
           echo "artifact_name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
           echo "Using artifact name: ${ARTIFACT_NAME}"
+
+      - name: Debug build directory
+        run: |
+          echo "Checking build directory contents..."
+          ls -la ${{ env.build_dir }} || echo "Build directory not found"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
