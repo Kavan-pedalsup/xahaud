@@ -111,18 +111,23 @@ jobs:
             ~/.conan2
           key: ${{ steps.cache-restore.outputs.cache-primary-key }}
 
+      # Add this step to generate a safe branch name
+      - name: Generate safe branch name
+        id: safe-branch
+        run: |
+          # Replace characters that aren't allowed in cache keys
+          SAFE_BRANCH=$(echo "${{ github.ref_name }}" | tr -c 'a-zA-Z0-9_.-' '-')
+          echo "name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
+
       # After your cache restore for Conan but before the build step
       - name: Restore build directory cache
         id: build-cache-restore
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.build_dir }}
-          # Primary key without SHA - much higher hit probability
-          key: ${{ runner.os }}-build-${{ matrix.configuration }}-${{ github.ref_name }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}
+          key: ${{ runner.os }}-build-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}
           restore-keys: |
-            # Same branch, different dependencies
-            ${{ runner.os }}-build-${{ matrix.configuration }}-${{ github.ref_name }}-
-            # Same configuration, any branch
+            ${{ runner.os }}-build-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}-
             ${{ runner.os }}-build-${{ matrix.configuration }}-
 
       # Build still calls the install dependency installation every time
