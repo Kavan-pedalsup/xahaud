@@ -11,7 +11,6 @@ concurrency:
 
 jobs:
   checkpatterns:
-    #runs-on: ubuntu-latest-16-core
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,6 +45,7 @@ jobs:
     #            cxx: clang++-14
     env:
       build_dir: .build
+      deps_dir: .build-deps
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,9 +56,10 @@ jobs:
           sudo apt-get install -y ninja-build ${{ matrix.cc }} ${{ matrix.cxx }}
           pip install --upgrade "conan<2"
 
-      - name: Setup Conan cache
-        id: conan-cache
-        uses: actions/cache@v3
+      # Manual cache restore
+      - name: Restore Conan cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
         with:
           path: ~/.conan
           key: ${{ runner.os }}-conan-${{ matrix.compiler }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-${{ matrix.configuration }}
@@ -82,6 +83,23 @@ jobs:
           elif [ "${{ matrix.compiler }}" = "clang" ]; then
             conan profile update settings.compiler.version=14 default
           fi
+
+      # Only run dependency installation if cache miss
+      - name: Install dependencies
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        uses: ./.github/actions/dependencies
+        with:
+          configuration: ${{ matrix.configuration }}
+        env:
+          build_dir: ${{ env.deps_dir }}  # Use separate dir for dependencies
+
+      # Save cache only if dependencies action succeeded
+      - name: Save Conan cache
+        if: steps.cache-restore.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.conan
+          key: ${{ steps.cache-restore.outputs.cache-primary-key }}
 
       - name: Check environment
         run: |
