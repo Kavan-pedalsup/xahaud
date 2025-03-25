@@ -161,7 +161,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.set-artifact-name.outputs.artifact_name }}
-          path: ${{ env.build_dir }}
+          path: ${{ github.workspace }}/${{ env.build_dir }}
           retention-days: 1
 
   tests:
