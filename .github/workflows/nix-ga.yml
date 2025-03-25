@@ -10,15 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checkout:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
   checkpatterns:
     runs-on: ubuntu-latest
-    needs: checkout
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,9 +40,9 @@ jobs:
           - compiler: gcc
             cc: gcc-11
             cxx: g++-11
-#          - compiler: clang
-#            cc: clang-14
-#            cxx: clang++-14
+    #          - compiler: clang
+    #            cc: clang-14
+    #            cxx: clang++-14
     env:
       build_dir: .build
     steps:
