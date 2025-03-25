@@ -1076,6 +1076,9 @@ doCatalogueLoad(RPC::JsonContext& context)
             context.app.getLedgerMaster().switchLCL(ledger);
         }
 
+        context.app.getLedgerMaster().setLedgerRangePresent(
+            header.min_ledger, info.seq, true);
+
         // Store the ledger
         prevLedger = ledger;
         ledgersLoaded++;
