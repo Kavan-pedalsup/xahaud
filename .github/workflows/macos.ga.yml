@@ -16,7 +16,6 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64]
     env:
       build_dir: .build
-      deps_dir: .build-deps
       NUM_PROCESSORS: 12
     steps:
       - name: Checkout
@@ -81,39 +80,14 @@ jobs:
         uses: ./.github/actions/dependencies
         with:
           configuration: ${{ matrix.configuration }}
-          cache-key: macos-${{ matrix.platform }}-${{ matrix.generator }}
-        env:
-          build_dir: ${{ env.deps_dir }}
+          cache-key: ${{ runner.os }}-${{ matrix.platform }}-${{ matrix.generator }}
 
-      - name: Generate safe branch name
-        id: safe-branch
-        run: |
-          # Replace characters that aren't allowed in cache keys
-          SAFE_BRANCH=$(echo "${{ github.ref_name }}" | tr -c 'a-zA-Z0-9_.-' '-')
-          echo "name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
-      
-      - name: Restore build directory cache
-        id: build-cache-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.build_dir }}
-          key: macos-build-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}-${{ hashFiles('conanfile.py') }}
-          restore-keys: |
-            macos-build-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}-
-            macos-build-${{ matrix.configuration }}-
-      
       - name: Build
         uses: ./.github/actions/build
         with:
           generator: ${{ matrix.generator }}
           configuration: ${{ matrix.configuration }}
-
-      - name: Save build directory cache
-        if: success()
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.build_dir }}
-          key: ${{ steps.build-cache-restore.outputs.cache-primary-key }}
+          cache-key: ${{ runner.os }}-${{ matrix.platform }}-${{ matrix.generator }}
 
       - name: Test
         run: |
