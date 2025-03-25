@@ -42,6 +42,12 @@ jobs:
             ${{ runner.os }}-conan-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-
             ${{ runner.os }}-conan-
 
+
+      - name: Install Coreutils
+        run: |
+          brew install coreutils
+          echo "Num proc: $(nproc)"
+
       - name: Install Ninja
         if: matrix.generator == 'Ninja'
         run: brew install ninja
