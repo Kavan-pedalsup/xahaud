@@ -1,10 +1,15 @@
-name: MacOS Development - Github Actions Runner
+# Original workflow name
+name: MacOS Development - GA Runner
+
 on:
+  # Triggers on pushes and pull requests targeting the 'jshooks' branch
   push:
     branches: [ jshooks ]
   pull_request:
     branches: [ jshooks ]
 
+# Concurrency control: Cancels older in-progress runs for the same branch (github.ref)
+# when a new push occurs. This saves runner minutes on superseded commits.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -12,47 +17,66 @@ concurrency:
 jobs:
   test:
     strategy:
+      # Matrix allows defining variations (e.g., different compilers, configs).
+      # Keys below are structured to support future matrix expansion.
       matrix:
         generator:
           - Ninja
         configuration:
           - Debug
-    runs-on: macos-15 # AI: This is out now so don't change it
+    # Use the specified macOS runner version
+    runs-on: macos-15
     env:
+      # Build directory relative to the workspace root
       build_dir: .build
+      # Separate directory for building dependencies
       deps_dir: .build-deps
+      # Manual cache version control. Bump this number to invalidate all caches globally.
       CACHE_VERSION: 1
+      # Default branch name used for prioritizing ccache restores. Adjust if needed.
+      MAIN_BRANCH_NAME: jshooks
     steps:
+      # 1. Checkout Code
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2. Install Build Dependencies via Homebrew
       - name: Install Conan
         run: |
           brew install conan@1
+          # Add Conan 1 to the PATH for this job
           echo "$(brew --prefix conan@1)/bin" >> $GITHUB_PATH
 
-      # Replace with manual cache restore
+      # 3. Conan Cache Handling
+      # Restores the Conan package cache (~/.conan). Key includes OS, version, dependency file hashes, and build configuration.
       - name: Restore Conan cache
-        id: cache-restore
+        id: cache-restore-conan
         uses: actions/cache/restore@v4
         with:
           path: |
             ~/.conan
             ~/.conan2
-          key: ${{ runner.os }}-conan-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-${{ matrix.configuration }}
+          # Primary key: Requires exact match for OS, version, dependencies, and config.
+          key: ${{ runner.os }}-conan-v${{ env.CACHE_VERSION }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-${{ matrix.configuration }}
+          # Restore keys: Fallback hierarchy if primary key misses.
+          # 1. Match OS, version, dependencies (ignore config).
+          # 2. Match OS, version (broad fallback).
           restore-keys: |
-            ${{ runner.os }}-conan-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-
-            ${{ runner.os }}-conan-
+            ${{ runner.os }}-conan-v${{ env.CACHE_VERSION }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-
+            ${{ runner.os }}-conan-v${{ env.CACHE_VERSION }}-
 
+      # 4. Install Coreutils (for 'nproc')
       - name: Install Coreutils
         run: |
           brew install coreutils
           echo "Num proc: $(nproc)"
 
+      # 5. Install Ninja (if needed by generator)
       - name: Install Ninja
         if: matrix.generator == 'Ninja'
         run: brew install ninja
 
+      # 6. Install Python (if needed)
       - name: Install Python
         run: |
           if which python3 > /dev/null 2>&1; then
@@ -61,11 +85,12 @@ jobs:
           else
               brew install python@3.12
           fi
-          # Create python symlink if needed
+          # Create 'python' symlink if it doesn't exist (for tools expecting 'python')
           if ! which python > /dev/null 2>&1; then
               sudo ln -sf $(which python3) /usr/local/bin/python
           fi
 
+      # 7. Install CMake (if needed)
       - name: Install CMake
         run: |
           if which cmake > /dev/null 2>&1; then
@@ -75,104 +100,117 @@ jobs:
               brew install cmake
           fi
 
+      # 8. Install and Configure ccache
       - name: Install and configure ccache
         run: |
           brew install ccache
-          mkdir -p ~/.ccache # this will be used if it's there rather than ~/Library
+          mkdir -p ~/.ccache
           export CONF_PATH="${CCACHE_CONFIGPATH:-${CCACHE_DIR:-$HOME/.ccache}/ccache.conf}"
-          mkdir -p $(dirname $CONF_PATH)
-          echo "max_size = 2G" > $CONF_PATH
-          echo "hash_dir = true" >> $CONF_PATH
-          echo "compiler_check = content" >> $CONF_PATH
-          ccache -p  # Print config for verification
+          mkdir -p $(dirname "$CONF_PATH")
+          echo "max_size = 2G" > "$CONF_PATH"
+          echo "hash_dir = true" >> "$CONF_PATH"
+          echo "compiler_check = content" >> "$CONF_PATH"
+          ccache -p # Print config for verification
+          ccache -z # Zero statistics before the build
 
+      # 9. Environment Verification (Optional but Recommended)
       - name: Check environment
         run: |
           echo "PATH:"
-          echo ${PATH} | tr ':' '\n'
-          which python
-          python --version
-          which conan
-          conan --version
-          which cmake
-          cmake --version
+          echo "${PATH}" | tr ':' '\n'
+          which python && python --version || echo "Python not found"
+          which conan && conan --version || echo "Conan not found"
+          which cmake && cmake --version || echo "CMake not found"
           clang --version
           ccache --version
+          echo "---- Full Environment ----"
           env
 
+      # 10. Configure Conan Profile
       - name: Configure Conan
         run: |
-          conan profile new default --detect || true
+          conan profile new default --detect || true # Ignore error if profile exists
           conan profile update settings.compiler.cppstd=20 default
 
-      # Only run dependencies installation if cache was missed
+      # 11. Install Conan Dependencies (Conditional)
+      # Skips if the Conan cache was fully restored (exact primary key match).
       - name: Install dependencies
-        if: steps.cache-restore.outputs.cache-hit != 'true'
+        if: steps.cache-restore-conan.outputs.cache-hit != 'true'
         uses: ./.github/actions/dependencies
         with:
           configuration: ${{ matrix.configuration }}
         env:
-          build_dir: ${{ env.deps_dir }}  # Use separate dir for dependencies
+          build_dir: ${{ env.deps_dir }}
 
-      # Save cache only if dependency installation succeeded
+      # 12. Save Conan Cache (Conditional)
+      # Saves only if the cache was modified/created in the 'Install dependencies' step.
       - name: Save Conan cache
-        if: steps.cache-restore.outputs.cache-hit != 'true' && success()
+        if: steps.cache-restore-conan.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             ~/.conan
             ~/.conan2
-          key: ${{ steps.cache-restore.outputs.cache-primary-key }}
+          # Use the exact primary key generated in the restore step.
+          key: ${{ steps.cache-restore-conan.outputs.cache-primary-key }}
 
+      # 13. Prepare Branch Name for Cache Key
       - name: Generate safe branch name
         id: safe-branch
         run: |
-          # Replace characters that aren't allowed in cache keys
+          # Cleans the branch name to be safe for use in cache keys.
           SAFE_BRANCH=$(echo "${{ github.ref_name }}" | tr -c 'a-zA-Z0-9_.-' '-')
           echo "name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
 
+      # 14. ccache Cache Handling
+      # Restores the ccache compilation cache (~/.ccache). Key includes OS, version, config, and branch.
       - name: Restore ccache directory
         id: ccache-restore
         uses: actions/cache/restore@v4
         with:
           path: ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-${{ steps.safe-branch.outputs.name }}
+          # Primary key: Exact match for OS, version, config, specific branch.
+          key: ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}
+          # Restore keys: Fallback hierarchy.
+          # 1. Tries main branch cache (same OS/version/config) - good for PRs.
+          # 2. Tries any branch cache (same OS/version/config).
+          # 3. Tries any config/branch cache (same OS/version).
+          # 4. Tries any OS cache (very broad).
           restore-keys: |
-            ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-${{ steps.safe-branch.outputs.safe_branch_name }}-fallback
-            ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-
+            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.configuration }}-${{ env.MAIN_BRANCH_NAME }}
+            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.configuration }}-
+            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-
             ${{ runner.os }}-ccache-
 
-      - name: Prime OS page cache (tar method)
-        run: |
-          if [ -d ~/.ccache ]; then
-            tar -cf - ~/.ccache > /dev/null
-          fi
-
-      # Build still calls the install dependency installation every time
-      # but it should be fast if the ~/.conan folder is primed with pre-build deps
+      # 15. Build Project
+      # Leverages ccache automatically if it's in the PATH.
       - name: Build
         uses: ./.github/actions/build
         with:
           generator: ${{ matrix.generator }}
           configuration: ${{ matrix.configuration }}
 
-      # After your build step
+      # 16. ccache Statistics
+      # Display hit/miss stats. Essential for confirming cache effectiveness.
+      - name: Show ccache statistics
+        run: ccache -s
+
+      # 17. Save ccache Directory
+      # Saves ~/.ccache using the primary key.
+      # NOTE: If a cache with the exact key + internal version (derived from path, not content)
+      # already exists from a prior run, the action logs a warning and skips the upload,
+      # completing successfully. This is expected; the remote cache blob is not updated.
+      # You can clear caches via api, e.g:
+      #    gh api --method DELETE /repos/Xahau/xahaud/actions/caches\?key='macos-15-ccache-v1-Debug-jshooks'
       - name: Save ccache directory
         id: save-ccache
-        if: success()
         uses: actions/cache/save@v4
         with:
           path: ~/.ccache
-          # Reference the primary key from the restore step
+          # Use the exact primary key from the restore step.
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
-      - name: Save ccache with fallback in case of lock contention
-        if: always() && steps.save-ccache.outcome != 'success'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.ccache
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}-fallback
-
+      # 18. Run Tests
       - name: Test
         run: |
           ${build_dir}/rippled --unittest --unittest-jobs $(nproc)

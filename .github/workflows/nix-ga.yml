@@ -1,15 +1,21 @@
+# Original workflow name
 name: Nix Development - GA Runner
+
 on:
+  # Triggers on pushes and pull requests targeting the 'jshooks' branch
   push:
     branches: [jshooks]
   pull_request:
     branches: [jshooks]
 
+# Concurrency control: Cancels older in-progress runs for the same branch (github.ref)
+# when a new push occurs. This saves runner minutes on superseded commits.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # 1. Initial Check Job (Optional Sanity Check)
   checkpatterns:
     runs-on: ubuntu-latest
     steps:
@@ -22,21 +28,25 @@ jobs:
             bash suspicious_patterns.sh
           else
             echo "Warning: suspicious_patterns.sh not found, skipping check"
-            # Still exit with success since this is just for status check compatibility
+            # Still exit with success for compatibility with dependent jobs
             exit 0
           fi
 
+  # 2. Main Build Job
   build-job:
     runs-on: ubuntu-latest
-    needs: checkpatterns
+    needs: checkpatterns # Depends on the initial check passing
     outputs:
+      # Output artifact name for potential downstream use
       artifact_name: ${{ steps.set-artifact-name.outputs.artifact_name }}
     strategy:
       fail-fast: false
+      # Matrix defines build variations. Keys are structured for this.
       matrix:
-        compiler: [gcc] # [gcc, clang]
-        configuration: [Debug]
+        compiler: [gcc] # Example: Add 'clang' here later
+        configuration: [Debug] # Example: Add 'Release' here later
         include:
+          # Link compiler matrix variable to specific package names/paths
           - compiler: gcc
             cc: gcc-11
             cxx: g++-11
@@ -44,132 +54,172 @@ jobs:
     #            cc: clang-14
     #            cxx: clang++-14
     env:
+      # Build directory relative to the workspace root
       build_dir: .build
+      # Separate directory for building dependencies
       deps_dir: .build-deps
+      # Manual cache version control. Bump this number to invalidate all caches globally.
       CACHE_VERSION: 1
+      # Default branch name used for prioritizing ccache restores. Adjust if needed.
+      MAIN_BRANCH_NAME: jshooks
     steps:
+      # 2.1. Checkout Code
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2.2. Install Build System Dependencies (apt)
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build ${{ matrix.cc }} ${{ matrix.cxx }} ccache
+          # Install specific Conan version needed
           pip install --upgrade "conan<2"
-          
+
+      # 2.3. Configure ccache
       - name: Configure CCache
         run: |
-          mkdir -p ~/.ccache # this will be used if it's there rather than ~/Library
+          mkdir -p ~/.ccache
           export CONF_PATH="${CCACHE_CONFIGPATH:-${CCACHE_DIR:-$HOME/.ccache}/ccache.conf}"
-          mkdir -p $(dirname $CONF_PATH)
-          echo "max_size = 2G" > $CONF_PATH
-          echo "hash_dir = true" >> $CONF_PATH
-          echo "compiler_check = content" >> $CONF_PATH
-          ccache -p  # Print config for verification
+          mkdir -p $(dirname "$CONF_PATH")
+          echo "max_size = 2G" > "$CONF_PATH"
+          echo "hash_dir = true" >> "$CONF_PATH"
+          echo "compiler_check = content" >> "$CONF_PATH"
+          ccache -p # Print config for verification
+          ccache -z # Zero statistics before the build
 
-      # Manual cache restore
+      # 2.4. Conan Cache Handling - Restore
+      # Restores the Conan package cache. Key includes OS, version, compiler, dependency files, and build configuration.
       - name: Restore Conan cache
-        id: cache-restore
+        id: cache-restore-conan
         uses: actions/cache/restore@v4
         with:
-          path: ~/.conan
-          key: ${{ runner.os }}-conan-${{ matrix.compiler }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-${{ matrix.configuration }}
+          path: ~/.conan # Conan 1 path
+          # Primary key: Requires exact match for OS, version, compiler, dependencies, and config.
+          key: ${{ runner.os }}-conan-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-${{ matrix.configuration }}
+          # Restore keys: Fallback hierarchy.
+          # 1. Match OS, version, compiler, dependencies (ignore config).
+          # 2. Match OS, version, compiler (broad fallback for compiler).
           restore-keys: |
-            ${{ runner.os }}-conan-${{ matrix.compiler }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-
-            ${{ runner.os }}-conan-${{ matrix.compiler }}-
+            ${{ runner.os }}-conan-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-
+            ${{ runner.os }}-conan-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-
 
+      # 2.5. Configure Conan Profile
+      # Sets up the Conan profile specifically for the compiler specified in the matrix.
       - name: Configure Conan
         run: |
-          conan profile new default --detect || true
+          conan profile new default --detect || true # Ignore error if profile exists
           conan profile update settings.compiler.cppstd=20 default
           conan profile update settings.compiler=${{ matrix.compiler }} default
           conan profile update settings.compiler.libcxx=libstdc++11 default
           conan profile update env.CC=/usr/bin/${{ matrix.cc }} default
           conan profile update env.CXX=/usr/bin/${{ matrix.cxx }} default
           conan profile update conf.tools.build:compiler_executables='{"c": "/usr/bin/${{ matrix.cc }}", "cpp": "/usr/bin/${{ matrix.cxx }}"}' default
-          
-          # Set correct compiler version based on compiler type
+
+          # Set correct compiler version based on matrix.compiler
           if [ "${{ matrix.compiler }}" = "gcc" ]; then
             conan profile update settings.compiler.version=11 default
           elif [ "${{ matrix.compiler }}" = "clang" ]; then
             conan profile update settings.compiler.version=14 default
           fi
+          # Display profile for verification
+          conan profile show default
 
-      # Only run dependency installation if cache miss
+      # 2.6. Install Conan Dependencies (Conditional)
+      # Skips if the Conan cache was fully restored (exact primary key match).
       - name: Install dependencies
-        if: steps.cache-restore.outputs.cache-hit != 'true'
+        if: steps.cache-restore-conan.outputs.cache-hit != 'true'
         uses: ./.github/actions/dependencies
         with:
           configuration: ${{ matrix.configuration }}
         env:
-          build_dir: ${{ env.deps_dir }}  # Use separate dir for dependencies
+          build_dir: ${{ env.deps_dir }} # Build deps in separate dir
 
-      # Save cache only if dependencies action succeeded
+      # 2.7. Save Conan Cache (Conditional)
+      # Saves only if the cache was modified/created in the 'Install dependencies' step.
       - name: Save Conan cache
-        if: steps.cache-restore.outputs.cache-hit != 'true' && success()
+        if: steps.cache-restore-conan.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/.conan
-          key: ${{ steps.cache-restore.outputs.cache-primary-key }}
+          # Use the exact primary key generated in the restore step.
+          key: ${{ steps.cache-restore-conan.outputs.cache-primary-key }}
 
+      # 2.8. Environment Verification (Optional but Recommended)
       - name: Check environment
         run: |
-          echo "PATH: ${PATH}" | tr ':' '\n'
-          conan --version
-          cmake --version
-          ${{ matrix.cc }} --version
-          ${{ matrix.cxx }} --version
+          echo "PATH:"
+          echo "${PATH}" | tr ':' '\n'
+          which conan && conan --version || echo "Conan not found"
+          which cmake && cmake --version || echo "CMake not found"
+          which ${{ matrix.cc }} && ${{ matrix.cc }} --version || echo "${{ matrix.cc }} not found"
+          which ${{ matrix.cxx }} && ${{ matrix.cxx }} --version || echo "${{ matrix.cxx }} not found"
+          which ccache && ccache --version || echo "ccache not found"
+          echo "---- Full Environment ----"
+          env
 
+      # 2.9. Prepare Branch Name for Cache Key
       - name: Generate safe branch name
         id: safe-branch
         run: |
-          # Replace characters that aren't allowed in cache keys
+          # Cleans the branch name to be safe for use in cache keys.
           SAFE_BRANCH=$(echo "${{ github.ref_name }}" | tr -c 'a-zA-Z0-9_.-' '-')
-          echo "safe_branch_name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
+          # Output name needs to match usage below (outputs.name)
+          echo "name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
 
+      # 2.10. ccache Cache Handling - Restore
+      # Restores the ccache compilation cache. Key includes OS, version, compiler, config, and branch.
       - name: Restore ccache directory
         id: ccache-restore
         uses: actions/cache/restore@v4
         with:
           path: ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-${{ steps.safe-branch.outputs.safe_branch_name }}
+          # Primary key: Exact match for OS, version, compiler, config, specific branch.
+          key: ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}
+          # Restore keys: Fallback hierarchy.
+          # 1. Tries main branch cache (same OS/version/compiler/config) - good for PRs.
+          # 2. Tries any branch cache (same OS/version/compiler/config).
+          # 3. Tries any config/branch cache (same OS/version/compiler).
+          # 4. Tries any compiler/config/branch cache (same OS/version).
+          # 5. Tries any OS cache (very broad).
           restore-keys: |
-            ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-${{ steps.safe-branch.outputs.safe_branch_name }}-fallback
-            ${{ runner.os }}-ccache-${{ env.CACHE_VERSION }}-
+            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ matrix.configuration }}-${{ env.MAIN_BRANCH_NAME }}
+            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ matrix.configuration }}-
+            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-
+            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-
             ${{ runner.os }}-ccache-
 
-      - name: Prime OS page cache (tar method)
-        run: |
-          if [ -d ~/.ccache ]; then
-            tar -cf - ~/.ccache > /dev/null
-          fi
-
+      # 2.11. Build Project
+      # Leverages ccache automatically if it's in the PATH.
       - name: Build
         uses: ./.github/actions/build
         with:
-          generator: Ninja
+          generator: Ninja # Using Ninja based on apt install
           configuration: ${{ matrix.configuration }}
         env:
-          # Make sure the build action receives the build_dir explicitly
+          # Pass build_dir explicitly if the action needs it
           build_dir: ${{ env.build_dir }}
 
-      # After your build step
+      # 2.12. ccache Statistics
+      # Display hit/miss stats. Essential for confirming cache effectiveness.
+      - name: Show ccache statistics
+        run: ccache -s
+
+      # 2.13. Save ccache Directory (Primary Attempt)
+      # Saves ~/.ccache using the primary key.
+      # NOTE: If a cache with the exact key + internal version (derived from path, not content)
+      # already exists from a prior run, the action logs a warning and skips the upload,
+      # completing successfully. This is expected; the remote cache blob is not updated.
+      # You can clear caches via api, e.g:
+      #    gh api --method DELETE /repos/{owner}/{repo}/actions/caches\?key=${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}
       - name: Save ccache directory
         id: save-ccache
-        if: success()
         uses: actions/cache/save@v4
         with:
           path: ~/.ccache
-          # Reference the primary key from the restore step
+          # Use the exact primary key from the restore step.
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
-      - name: Save ccache with fallback in case of lock contention
-        if: always() && steps.save-ccache.outcome != 'success'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.ccache
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}-fallback
-
+      # 2.14. Set Artifact Name (Based on Matrix)
       - name: Set artifact name
         id: set-artifact-name
         run: |
@@ -177,36 +227,48 @@ jobs:
           echo "artifact_name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
           echo "Using artifact name: ${ARTIFACT_NAME}"
 
+      # 2.15. Debug Build Directory Contents (Optional)
       - name: Debug build directory
         run: |
-          echo "Checking build directory contents..."
-          ls -la ${{ env.build_dir }} || echo "Build directory not found"
+          echo "Checking build directory contents: ${{ env.build_dir }}"
+          ls -la ${{ env.build_dir }} || echo "Build directory not found or empty"
 
-#      - name: Upload build artifacts
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: ${{ steps.set-artifact-name.outputs.artifact_name }}
-#          path: ${{ env.build_dir }}
-#          retention-days: 1
-#          include-hidden-files: true
+      # 2.16. Upload Build Artifacts (Currently Disabled)
+      #      - name: Upload build artifacts
+      #        uses: actions/upload-artifact@v4
+      #        with:
+      #          name: ${{ steps.set-artifact-name.outputs.artifact_name }}
+      #          path: ${{ env.build_dir }}
+      #          retention-days: 1
+      #          include-hidden-files: true
 
+      # 2.17. Run Tests
       - name: Run tests
         run: |
-          # TODO
-          .build/rippled --unittest --unittest-jobs $(nproc)
+          # Ensure the binary exists before trying to run
+          if [ -f "${{ env.build_dir }}/rippled" ]; then
+            ${{ env.build_dir }}/rippled --unittest --unittest-jobs $(nproc)
+          else
+             echo "Error: rippled executable not found in ${{ env.build_dir }}"
+             exit 1
+          fi
 
+  # 3. Dummy Downstream Job (Build) - As requested
   build:
     runs-on: ubuntu-latest
-    needs: build-job
+    needs: build-job # Depends on the matrix build finishing
     steps:
       - name: Dummy Build
         run: |
-          echo "Dummy build relies upon build-job matrix"
+          echo "Dummy build step - relies upon build-job matrix completion."
+          echo "Would potentially download artifacts here."
 
+  # 4. Dummy Downstream Job (Tests) - As requested
   tests:
     runs-on: ubuntu-latest
-    needs: build-job
+    needs: build-job # Depends on the matrix build finishing
     steps:
-      - name: Run tests
+      - name: Dummy Tests
         run: |
-          echo "Dummy tests relies upon build-job matrix"
+          echo "Dummy tests step - relies upon build-job matrix completion."
+          echo "Would potentially download artifacts and run further tests here."
