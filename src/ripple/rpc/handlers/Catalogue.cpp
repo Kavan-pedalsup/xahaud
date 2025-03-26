@@ -455,8 +455,18 @@ doCatalogueCreate(RPC::JsonContext& context)
             "failed to write header: " + std::string(strerror(errno)));
 
     auto compStream = std::make_unique<boost::iostreams::filtering_ostream>();
-    compStream->push(boost::iostreams::zlib_compressor(
-        boost::iostreams::zlib_params(compressionLevel)));
+    if (compressionLevel > 0)
+    {
+        JLOG(context.j.info())
+            << "Setting up compression with level " << (int)compressionLevel;
+        compStream->push(boost::iostreams::zlib_compressor(
+            boost::iostreams::zlib_params(compressionLevel)));
+    }
+    else
+    {
+        JLOG(context.j.info())
+            << "No compression (level 0), using direct output";
+    }
     compStream->push(boost::ref(outfile));
 
     // Process ledgers with local processor implementation
@@ -925,7 +935,17 @@ doCatalogueLoad(RPC::JsonContext& context)
 
     // Set up decompression if needed
     auto decompStream = std::make_unique<boost::iostreams::filtering_istream>();
-    decompStream->push(boost::iostreams::zlib_decompressor());
+    if (compressionLevel > 0)
+    {
+        JLOG(context.j.info())
+            << "Setting up decompression with level " << (int)compressionLevel;
+        decompStream->push(boost::iostreams::zlib_decompressor());
+    }
+    else
+    {
+        JLOG(context.j.info())
+            << "No decompression needed (level 0), using direct input";
+    }
     decompStream->push(boost::ref(infile));
 
     uint32_t ledgersLoaded = 0;

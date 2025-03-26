@@ -52,6 +52,7 @@ public:
                 "account_info",
                 "{\"account\": "
                 "\"n94JNrQYkDrpt62bbSR7nVEhdyAvcJXRAsjEkFYyqRkh9SUTYEqV\"}");
+            std::cout << to_string(info) << "\n";
             BEAST_EXPECT(
                 info[jss::result][jss::error_code] == rpcACT_MALFORMED);
             BEAST_EXPECT(

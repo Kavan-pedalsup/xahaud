@@ -596,7 +596,9 @@ getLedger(T& ledger, uint32_t ledgerIndex, Context& context)
         auto cur = context.ledgerMaster.getCurrentLedger();
         if (cur->info().seq == ledgerIndex)
         {
-            if constexpr (is_assignable_shared_ptr<T, decltype(cur)>::value)
+            if constexpr (is_assignable_shared_ptr<
+                              decltype(ledger),
+                              decltype(cur)>::value)
             {
                 ledger = cur;
             }
@@ -617,6 +619,9 @@ getLedger(T& ledger, uint32_t ledgerIndex, Context& context)
 
     return Status::OK;
 }
+
+#include <iostream>
+#include <typeinfo>
 
 template <class T>
 Status
@@ -653,7 +658,10 @@ getLedger(T& ledger, LedgerShortcut shortcut, Context& context)
                     rpcLGR_NOT_FOUND,
                     "Reporting does not track current ledger"};
             auto cur = context.ledgerMaster.getCurrentLedger();
-            if constexpr (is_assignable_shared_ptr<T, decltype(cur)>::value)
+
+            if constexpr (is_assignable_shared_ptr<
+                              decltype(ledger),
+                              decltype(cur)>::value)
             {
                 ledger = cur;
             }

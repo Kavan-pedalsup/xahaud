@@ -21,10 +21,25 @@
 #include <ripple/beast/unit_test.h>
 #include <ripple/protocol/jss.h>
 #include <boost/filesystem.hpp>
+#include <chrono>
 #include <fstream>
 #include <test/jtx.h>
+#include <thread>
 
 namespace ripple {
+
+#pragma pack(push, 1)  // pack the struct tightly
+struct TestCATLHeader
+{
+    uint32_t magic = 0x4C544143UL;
+    uint32_t min_ledger;
+    uint32_t max_ledger;
+    uint16_t version;
+    uint16_t network_id;
+    uint64_t filesize = 0;  // Total size of the file including header
+    std::array<uint8_t, 64> hash = {};  // SHA-512 hash, initially set to zeros
+};
+#pragma pack(pop)
 
 class Catalogue_test : public beast::unit_test::suite
 {
@@ -417,11 +432,7 @@ class Catalogue_test : public beast::unit_test::suite
             }
 
             BEAST_EXPECT(sourceCount == loadedCount);
-            /*
-             std::cout << "Ledger " << seq
-                      << " SLE count: source=" << sourceCount
-                      << ", loaded=" << loadedCount << "\n";
-            */
+
             // Check existence of imported keylets
             for (auto const& sle : sourceLedger->sles)
             {
@@ -465,105 +476,11 @@ class Catalogue_test : public beast::unit_test::suite
                 }
                 BEAST_EXPECT(exists);
             }
-
-            if (0)
-            {
-                std::cout
-                    << "\n=== Original Ledger " << seq << " Information ===\n"
-                    << "Sequence: " << to_string(sourceLedger->info().seq)
-                    << "\n"
-                    << "Hash: " << to_string(sourceLedger->info().hash) << "\n"
-                    << "Parent Close Time: "
-                    << to_string(sourceLedger->info()
-                                     .parentCloseTime.time_since_epoch()
-                                     .count())
-                    << "\n"
-                    << "Transaction Hash: "
-                    << to_string(sourceLedger->info().txHash) << "\n"
-                    << "Account Hash: "
-                    << to_string(sourceLedger->info().accountHash) << "\n"
-                    << "Parent Hash: "
-                    << to_string(sourceLedger->info().parentHash) << "\n"
-                    << "Drops: " << to_string(sourceLedger->info().drops)
-                    << "\n"
-                    << "Validated: "
-                    << (sourceLedger->info().validated ? "true" : "false")
-                    << "\n"
-                    << "Accepted: "
-                    << (sourceLedger->info().accepted ? "true" : "false")
-                    << "\n"
-                    << "Close Flags: " << sourceLedger->info().closeFlags
-                    << "\n"
-                    << "Close Time Resolution: "
-                    << to_string(
-                           sourceLedger->info().closeTimeResolution.count())
-                    << "\n"
-                    << "Close Time: "
-                    << to_string(sourceLedger->info()
-                                     .closeTime.time_since_epoch()
-                                     .count())
-                    << "\n";
-
-                std::cout
-                    << "\n=== Loaded Ledger " << seq << " Information ===\n"
-                    << "Sequence: " << to_string(loadedLedger->info().seq)
-                    << "\n"
-                    << "Hash: " << to_string(loadedLedger->info().hash) << "\n"
-                    << "Parent Close Time: "
-                    << to_string(loadedLedger->info()
-                                     .parentCloseTime.time_since_epoch()
-                                     .count())
-                    << "\n"
-                    << "Transaction Hash: "
-                    << to_string(loadedLedger->info().txHash) << "\n"
-                    << "Account Hash: "
-                    << to_string(loadedLedger->info().accountHash) << "\n"
-                    << "Parent Hash: "
-                    << to_string(loadedLedger->info().parentHash) << "\n"
-                    << "Drops: " << to_string(loadedLedger->info().drops)
-                    << "\n"
-                    << "Validated: "
-                    << (loadedLedger->info().validated ? "true" : "false")
-                    << "\n"
-                    << "Accepted: "
-                    << (loadedLedger->info().accepted ? "true" : "false")
-                    << "\n"
-                    << "Close Flags: " << loadedLedger->info().closeFlags
-                    << "\n"
-                    << "Close Time Resolution: "
-                    << to_string(
-                           loadedLedger->info().closeTimeResolution.count())
-                    << "\n"
-                    << "Close Time: "
-                    << to_string(loadedLedger->info()
-                                     .closeTime.time_since_epoch()
-                                     .count())
-                    << "\n"
-                    << std::endl;
-
-                // Print all SLEs in the source ledger
-                std::cout << "\n=== SLEs in Source Ledger " << seq << " ===\n";
-                for (auto const& sle : sourceLedger->sles)
-                {
-                    std::cout << "sourceledger key (" << seq
-                              << "): " << to_string(sle->key()) << "\n";
-                }
-
-                // Print all SLEs in the loaded ledger
-                std::cout << "\n=== SLEs in Loaded Ledger " << seq << " ===\n";
-                for (auto const& sle : loadedLedger->sles)
-                {
-                    std::cout << "loadedledger key (" << seq
-                              << "): " << to_string(sle->key()) << "\n";
-                }
-            }
         }
 
         auto const loadedBobAcct = loadedLedger->read(bobKeylet);
         auto const loadedCharlieAcct = loadedLedger->read(charlieKeylet);
         auto const loadedEurTrust = loadedLedger->read(eurTrustKeylet);
-
-        auto const& ll = *loadedLedger;
 
         BEAST_EXPECT(!!loadedBobAcct);
         BEAST_EXPECT(!!loadedCharlieAcct);
@@ -674,6 +591,334 @@ class Catalogue_test : public beast::unit_test::suite
         boost::filesystem::remove_all(tempDir);
     }
 
+    void
+    testCatalogueHashVerification(FeatureBitset features)
+    {
+        testcase("catalogue_load: Hash verification");
+        using namespace test::jtx;
+
+        // Create environment and test data
+        Env env{
+            *this, envconfig(), features, nullptr, beast::severities::kInfo};
+        prepareLedgerData(env, 3);
+
+        boost::filesystem::path tempDir =
+            boost::filesystem::temp_directory_path() /
+            boost::filesystem::unique_path();
+        boost::filesystem::create_directories(tempDir);
+
+        auto cataloguePath = (tempDir / "test.catl").string();
+
+        // Create catalogue
+        {
+            Json::Value params{Json::objectValue};
+            params[jss::min_ledger] = 3;
+            params[jss::max_ledger] = 5;
+            params[jss::output_file] = cataloguePath;
+
+            auto const result =
+                env.client().invoke("catalogue_create", params)[jss::result];
+            BEAST_EXPECT(result[jss::status] == jss::success);
+            BEAST_EXPECT(result.isMember(jss::hash));
+            std::string originalHash = result[jss::hash].asString();
+            BEAST_EXPECT(!originalHash.empty());
+        }
+
+        // Test 1: Successful hash verification (normal load)
+        {
+            Json::Value params{Json::objectValue};
+            params[jss::input_file] = cataloguePath;
+
+            auto const result =
+                env.client().invoke("catalogue_load", params)[jss::result];
+            BEAST_EXPECT(result[jss::status] == jss::success);
+            BEAST_EXPECT(result.isMember(jss::hash));
+        }
+
+        // Test 2: Corrupt the file and test hash mismatch detection
+        {
+            // Modify a byte in the middle of the file to cause hash mismatch
+            std::fstream file(
+                cataloguePath, std::ios::in | std::ios::out | std::ios::binary);
+            BEAST_EXPECT(file.good());
+
+            // Skip header and modify a byte
+            file.seekp(sizeof(TestCATLHeader) + 100, std::ios::beg);
+            char byte = 0xFF;
+            file.write(&byte, 1);
+            file.close();
+
+            // Try to load the corrupted file
+            Json::Value params{Json::objectValue};
+            params[jss::input_file] = cataloguePath;
+
+            auto const result =
+                env.client().invoke("catalogue_load", params)[jss::result];
+            BEAST_EXPECT(result[jss::status] == "error");
+            BEAST_EXPECT(result[jss::error] == "invalidParams");
+            BEAST_EXPECT(
+                result[jss::error_message].asString().find(
+                    "hash verification failed") != std::string::npos);
+        }
+
+        // Test 3: Test ignore_hash parameter
+        {
+            Json::Value params{Json::objectValue};
+            params[jss::input_file] = cataloguePath;
+            params[jss::ignore_hash] = true;
+
+            auto const result =
+                env.client().invoke("catalogue_load", params)[jss::result];
+            // This might still fail due to data corruption, but not because of
+            // hash verification The important part is that it didn't
+            // immediately reject due to hash
+            if (result[jss::status] == "error")
+            {
+                BEAST_EXPECT(
+                    result[jss::error_message].asString().find(
+                        "hash verification failed") == std::string::npos);
+            }
+        }
+
+        boost::filesystem::remove_all(tempDir);
+    }
+
+    void
+    testCatalogueFileSize(FeatureBitset features)
+    {
+        testcase("catalogue_load: File size verification");
+        using namespace test::jtx;
+
+        // Create environment and test data
+        Env env{
+            *this, envconfig(), features, nullptr, beast::severities::kInfo};
+        prepareLedgerData(env, 3);
+
+        boost::filesystem::path tempDir =
+            boost::filesystem::temp_directory_path() /
+            boost::filesystem::unique_path();
+        boost::filesystem::create_directories(tempDir);
+
+        auto cataloguePath = (tempDir / "test.catl").string();
+
+        // Create catalogue
+        {
+            Json::Value params{Json::objectValue};
+            params[jss::min_ledger] = 3;
+            params[jss::max_ledger] = 5;
+            params[jss::output_file] = cataloguePath;
+
+            auto const result =
+                env.client().invoke("catalogue_create", params)[jss::result];
+            BEAST_EXPECT(result[jss::status] == jss::success);
+            BEAST_EXPECT(result.isMember(jss::file_size));
+            uint64_t originalSize = result[jss::file_size].asUInt();
+            BEAST_EXPECT(originalSize > 0);
+        }
+
+        // Test 1: Successful file size verification (normal load)
+        {
+            Json::Value params{Json::objectValue};
+            params[jss::input_file] = cataloguePath;
+
+            auto const result =
+                env.client().invoke("catalogue_load", params)[jss::result];
+            BEAST_EXPECT(result[jss::status] == jss::success);
+            BEAST_EXPECT(result.isMember(jss::file_size));
+        }
+
+        // Test 2: Modify file size in header to cause mismatch
+        {
+            // Modify the filesize in the header to cause mismatch
+            std::fstream file(
+                cataloguePath, std::ios::in | std::ios::out | std::ios::binary);
+            BEAST_EXPECT(file.good());
+
+            file.seekp(offsetof(TestCATLHeader, filesize), std::ios::beg);
+            uint64_t wrongSize = 12345;  // Some arbitrary wrong size
+            file.write(
+                reinterpret_cast<const char*>(&wrongSize), sizeof(wrongSize));
+            file.close();
+
+            // Try to load the modified file
+            Json::Value params{Json::objectValue};
+            params[jss::input_file] = cataloguePath;
+
+            auto const result =
+                env.client().invoke("catalogue_load", params)[jss::result];
+            BEAST_EXPECT(result[jss::status] == "error");
+            BEAST_EXPECT(result[jss::error] == "invalidParams");
+            BEAST_EXPECT(
+                result[jss::error_message].asString().find(
+                    "file size mismatch") != std::string::npos);
+        }
+
+        boost::filesystem::remove_all(tempDir);
+    }
+
+    void
+    testCatalogueCompression(FeatureBitset features)
+    {
+        testcase("catalogue: Compression levels");
+        using namespace test::jtx;
+
+        // Create environment and test data
+        Env env{
+            *this, envconfig(), features, nullptr, beast::severities::kInfo};
+        prepareLedgerData(env, 5);
+
+        boost::filesystem::path tempDir =
+            boost::filesystem::temp_directory_path() /
+            boost::filesystem::unique_path();
+        boost::filesystem::create_directories(tempDir);
+
+        std::vector<std::pair<std::string, Json::Value>> compressionTests = {
+            {"no_compression", Json::Value(0)},       // Level 0 (none)
+            {"min_compression", Json::Value(1)},      // Level 1 (minimal)
+            {"default_compression", Json::Value(6)},  // Level 6 (default)
+            {"max_compression", Json::Value(9)},      // Level 9 (maximum)
+            {"boolean_true_compression",
+             Json::Value(true)}  // Boolean true (should use default level 6)
+        };
+
+        uint64_t prevSize = 0;
+        for (const auto& test : compressionTests)
+        {
+            std::string testName = test.first;
+            Json::Value compressionLevel = test.second;
+
+            auto cataloguePath = (tempDir / (testName + ".catl")).string();
+
+            // Create catalogue with specific compression level
+            Json::Value createParams{Json::objectValue};
+            createParams[jss::min_ledger] = 3;
+            createParams[jss::max_ledger] = 10;
+            createParams[jss::output_file] = cataloguePath;
+            createParams[jss::compression_level] = compressionLevel;
+
+            auto createResult = env.client().invoke(
+                "catalogue_create", createParams)[jss::result];
+            BEAST_EXPECT(createResult[jss::status] == jss::success);
+
+            uint64_t fileSize = createResult[jss::file_size].asUInt();
+            BEAST_EXPECT(fileSize > 0);
+
+            // Load the catalogue to verify it works
+            Json::Value loadParams{Json::objectValue};
+            loadParams[jss::input_file] = cataloguePath;
+
+            auto loadResult =
+                env.client().invoke("catalogue_load", loadParams)[jss::result];
+            BEAST_EXPECT(loadResult[jss::status] == jss::success);
+
+            // For levels > 0, verify size is smaller than uncompressed (or at
+            // least not larger)
+            if (prevSize > 0 && compressionLevel.asUInt() > 0)
+            {
+                BEAST_EXPECT(fileSize <= prevSize);
+            }
+
+            // Store size for comparison with next level
+            if (compressionLevel.asUInt() == 0)
+            {
+                prevSize = fileSize;
+            }
+
+            // Verify compression level in response
+            if (compressionLevel.isBool() && compressionLevel.asBool())
+            {
+                BEAST_EXPECT(
+                    createResult[jss::compression_level].asUInt() == 6);
+            }
+            else
+            {
+                BEAST_EXPECT(
+                    createResult[jss::compression_level].asUInt() ==
+                    compressionLevel.asUInt());
+            }
+        }
+
+        boost::filesystem::remove_all(tempDir);
+    }
+
+    void
+    testCatalogueStatus(FeatureBitset features)
+    {
+        testcase("catalogue_status: Status reporting");
+        using namespace test::jtx;
+
+        // Create environment
+        Env env{
+            *this, envconfig(), features, nullptr, beast::severities::kInfo};
+
+        boost::filesystem::path tempDir =
+            boost::filesystem::temp_directory_path() /
+            boost::filesystem::unique_path();
+        boost::filesystem::create_directories(tempDir);
+
+        auto cataloguePath = (tempDir / "test.catl").string();
+
+        // Test 1: Check status when no job is running
+        {
+            auto result = env.client().invoke(
+                "catalogue_status", Json::objectValue)[jss::result];
+            BEAST_EXPECT(result[jss::status] == "no_job_running");
+        }
+
+        // Test 2: Start a job and check status in parallel
+        {
+            // Prepare for a long running create operation
+            prepareLedgerData(env, 10);
+
+            // Launch catalogue create in a separate thread
+            Json::Value createParams{Json::objectValue};
+            createParams[jss::min_ledger] = 3;
+            createParams[jss::max_ledger] = 15;
+            createParams[jss::output_file] = cataloguePath;
+            createParams[jss::compression_level] =
+                9;  // Use max compression to make it slower
+
+            std::thread createThread([&]() {
+                env.client().invoke("catalogue_create", createParams);
+            });
+
+            // Give it a moment to start
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            // Check status while running
+            auto statusResult = env.client().invoke(
+                "catalogue_status", Json::objectValue)[jss::result];
+            BEAST_EXPECT(statusResult[jss::status] == "job_in_progress");
+            BEAST_EXPECT(statusResult.isMember(jss::min_ledger));
+            BEAST_EXPECT(statusResult.isMember(jss::max_ledger));
+            BEAST_EXPECT(statusResult.isMember(jss::current_ledger));
+            BEAST_EXPECT(statusResult.isMember(jss::percent_complete));
+            BEAST_EXPECT(statusResult.isMember(jss::elapsed_seconds));
+            BEAST_EXPECT(statusResult.isMember(jss::estimated_time_remaining));
+            BEAST_EXPECT(statusResult.isMember(jss::start_time));
+            BEAST_EXPECT(statusResult.isMember(jss::job_type));
+            BEAST_EXPECT(statusResult.isMember(jss::file));
+            BEAST_EXPECT(statusResult.isMember(jss::compression_level));
+
+            // Try to start another operation while one is running
+            auto conflictResult = env.client().invoke(
+                "catalogue_create", createParams)[jss::result];
+            BEAST_EXPECT(conflictResult[jss::status] == "job_in_progress");
+            BEAST_EXPECT(conflictResult.isMember(jss::error));
+            BEAST_EXPECT(conflictResult.isMember(jss::error_message));
+
+            // Wait for the operation to complete
+            createThread.join();
+
+            // Check status after completion
+            auto finalStatusResult = env.client().invoke(
+                "catalogue_status", Json::objectValue)[jss::result];
+            BEAST_EXPECT(finalStatusResult[jss::status] == "no_job_running");
+        }
+
+        boost::filesystem::remove_all(tempDir);
+    }
+
 public:
     void
     run() override
@@ -685,6 +930,12 @@ public:
         testCatalogueLoadBadInput(all);
         testCatalogueLoadAndVerify(all);
         testNetworkMismatch(all);
+
+        // New test cases for the enhanced features
+        testCatalogueHashVerification(all);
+        testCatalogueFileSize(all);
+        testCatalogueCompression(all);
+        //        testCatalogueStatus(all);
     }
 };
 
