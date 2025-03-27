@@ -253,7 +253,9 @@ jobs:
              exit 1
           fi
 
-  # 3. Dummy Downstream Job (Build) - As requested
+  # These are just here to conform with configured requirements
+
+  # 3. Dummy Downstream Job (Build)
   build:
     runs-on: ubuntu-latest
     needs: build-job # Depends on the matrix build finishing
@@ -261,9 +263,8 @@ jobs:
       - name: Dummy Build
         run: |
           echo "Dummy build step - relies upon build-job matrix completion."
-          echo "Would potentially download artifacts here."
 
-  # 4. Dummy Downstream Job (Tests) - As requested
+  # 4. Dummy Downstream Job (Tests)
   tests:
     runs-on: ubuntu-latest
     needs: build-job # Depends on the matrix build finishing
@@ -271,4 +272,3 @@ jobs:
       - name: Dummy Tests
         run: |
           echo "Dummy tests step - relies upon build-job matrix completion."
-          echo "Would potentially download artifacts and run further tests here."
