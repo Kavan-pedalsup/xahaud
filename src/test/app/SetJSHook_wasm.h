@@ -2741,7 +2741,7 @@ std::map<std::string, std::vector<uint8_t>> jswasm = {
                 ASSERT(etxn_burden() === PREREQUISITE_NOT_MET)
 
                 ASSERT(etxn_reserve(2) === 2)
-                
+
                 ASSERT(otxn_burden() > 0)
                 ASSERT(etxn_burden() === otxn_burden() * 2)
 
@@ -3264,7 +3264,7 @@ std::map<std::string, std::vector<uint8_t>> jswasm = {
             }
             const Hook = (reserved) => {
                 let nonces = [[], []];
-                
+
                 for (let i = 0; i < 256; ++i)
                 {
                     nonces[i % 2] = etxn_nonce();
@@ -3346,7 +3346,7 @@ std::map<std::string, std::vector<uint8_t>> jswasm = {
                 ASSERT(etxn_reserve(255) === 255);
                 ASSERT(etxn_reserve(255) === ALREADY_SET);
                 ASSERT(etxn_reserve(1) === ALREADY_SET);
-                
+
                 return accept("",0);
             }
         )[test.hook]",

@@ -16,11 +16,13 @@
     OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 //==============================================================================
+
 #include <ripple/app/hook/Enum.h>
 #include <ripple/app/ledger/LedgerMaster.h>
 #include <ripple/app/tx/impl/SetHook.h>
 #include <ripple/protocol/TxFlags.h>
 #include <ripple/protocol/jss.h>
+#include <boost/regex.hpp>
 #include <test/app/Import_json.h>
 #include <test/app/SetJSHook_wasm.h>
 #include <test/jtx.h>
@@ -52,6 +54,39 @@ using TestHook = std::vector<uint8_t> const&;
         ripple::sha512Half_s(ripple::Slice(x##_wasm.data(), x##_wasm.size())); \
     [[maybe_unused]] std::string const x##_hash_str = to_string(x##_hash);     \
     [[maybe_unused]] Keylet const x##_keylet = keylet::hookDefinition(x##_hash);
+
+#define TEST_TARGET_PATTERN(target_regex_pattern, test_func_name, ...)         \
+    do                                                                         \
+    {                                                                          \
+        const char* current_test_name = #test_func_name;                       \
+        const std::string& pattern_str = (target_regex_pattern);               \
+                                                                               \
+        /* Check 1: Does the name match the regex pattern (or is the pattern   \
+         * empty?) */                                                          \
+        bool name_matches = pattern_str.empty();                               \
+        if (!name_matches)                                                     \
+        {                                                                      \
+            try                                                                \
+            {                                                                  \
+                boost::regex pattern_regex(pattern_str);                       \
+                name_matches =                                                 \
+                    boost::regex_search(current_test_name, pattern_regex);     \
+            }                                                                  \
+            catch (const boost::regex_error& e)                                \
+            {                                                                  \
+                std::cerr << "Warning: Invalid regex pattern '" << pattern_str \
+                          << "' for TEST_TARGET_PATTERN: " << e.what()         \
+                          << std::endl;                                        \
+                name_matches = false;                                          \
+            }                                                                  \
+        }                                                                      \
+                                                                               \
+        if (name_matches)                                                      \
+        {                                                                      \
+            /* Pattern matched (or was empty): Execute the test */             \
+            test_func_name(__VA_ARGS__);                                       \
+        }                                                                      \
+    } while (0)
 
 class SetJSHook_test : public beast::unit_test::suite
 {
@@ -2838,7 +2873,7 @@ public:
                 ASSERT(etxn_burden() === PREREQUISITE_NOT_MET)
 
                 ASSERT(etxn_reserve(2) === 2)
-                
+
                 ASSERT(otxn_burden() > 0)
                 ASSERT(etxn_burden() === otxn_burden() * 2)
 
@@ -3222,7 +3257,7 @@ public:
             }
             const Hook = (reserved) => {
                 let nonces = [[], []];
-                
+
                 for (let i = 0; i < 256; ++i)
                 {
                     nonces[i % 2] = etxn_nonce();
@@ -3275,7 +3310,7 @@ public:
                 ASSERT(etxn_reserve(255) === 255);
                 ASSERT(etxn_reserve(255) === ALREADY_SET);
                 ASSERT(etxn_reserve(1) === ALREADY_SET);
-                
+
                 return accept("",0);
             }
         )[test.hook]"];
@@ -10956,119 +10991,125 @@ public:
     }
 
     void
-    testWithFeatures(FeatureBitset features)
+    testWithFeatures(FeatureBitset features, const std::string& target)
     {
-        testHooksOwnerDir(features);
-        testHooksDisabled(features);
-        testTxStructure(features);
+        TEST_TARGET_PATTERN(target, testHooksOwnerDir, features);
+        TEST_TARGET_PATTERN(target, testHooksDisabled, features);
+        TEST_TARGET_PATTERN(target, testTxStructure, features);
         // // testInferHookSetOperation(); // Not Version Specific
-        // // testParams(features); // Not Version Specific
-        // // testGrants(features); // Not Version Specific
+        // // TEST_TARGET_PATTERN(target, testParams, features); // Not Version
+        // Specific
+        // // TEST_TARGET_PATTERN(target, testGrants, features); // Not Version
+        // Specific
 
-        testInstall(features);
-        testDelete(features);
-        testNSDelete(features);
-        testCreate(features);
-        testUpdate(features);
-        testWithTickets(features);
+        TEST_TARGET_PATTERN(target, testInstall, features);
+        TEST_TARGET_PATTERN(target, testDelete, features);
+        TEST_TARGET_PATTERN(target, testNSDelete, features);
+        TEST_TARGET_PATTERN(target, testCreate, features);
+        TEST_TARGET_PATTERN(target, testUpdate, features);
+        TEST_TARGET_PATTERN(target, testWithTickets, features);
 
         // // DA TODO: illegalfunc_wasm
-        // // testWasm(features);
-        test_accept(features);
-        test_rollback(features);
+        // // TEST_TARGET_PATTERN(target, testWasm, features);
+        TEST_TARGET_PATTERN(target, test_accept, features);
+        TEST_TARGET_PATTERN(target, test_rollback, features);
 
-        // testGuards(features); // Not Used in JSHooks
+        // TEST_TARGET_PATTERN(target, testGuards, features); // Not Used in
+        // JSHooks
 
-        test_emit(features);  //
-        // test_prepare(features);  // JS ONLY tested above
-        // test_etxn_burden(features);       // tested above
-        // test_etxn_generation(features);   // tested above
-        // test_otxn_burden(features);       // tested above
-        // test_otxn_generation(features);   // tested above
-        test_etxn_details(features);   //
-        test_etxn_fee_base(features);  //
-        test_etxn_nonce(features);     //
-        test_etxn_reserve(features);   //
+        TEST_TARGET_PATTERN(target, test_emit, features);  //
+        // TEST_TARGET_PATTERN(target, test_prepare, features);  // JS ONLY
+        // tested above TEST_TARGET_PATTERN(target, test_etxn_burden, features);
+        // // tested above TEST_TARGET_PATTERN(target, test_etxn_generation,
+        // features);   // tested above TEST_TARGET_PATTERN(target,
+        // test_otxn_burden, features);       // tested above
+        // TEST_TARGET_PATTERN(target, test_otxn_generation, features);   //
+        // tested above
+        TEST_TARGET_PATTERN(target, test_etxn_details, features);   //
+        TEST_TARGET_PATTERN(target, test_etxn_fee_base, features);  //
+        TEST_TARGET_PATTERN(target, test_etxn_nonce, features);     //
+        TEST_TARGET_PATTERN(target, test_etxn_reserve, features);   //
 
-        test_fee_base(features);       //
-        test_otxn_field(features);     //
-        test_ledger_keylet(features);  //
+        TEST_TARGET_PATTERN(target, test_fee_base, features);       //
+        TEST_TARGET_PATTERN(target, test_otxn_field, features);     //
+        TEST_TARGET_PATTERN(target, test_ledger_keylet, features);  //
 
-        test_float_compare(features);   //
-        test_float_divide(features);    //
-        test_float_int(features);       //
-        test_float_invert(features);    //
-        test_float_log(features);       //
-        test_float_mantissa(features);  //
-        test_float_mulratio(features);  //
-        test_float_multiply(features);  //
-        test_float_negate(features);    //
-        test_float_one(features);       //
-        test_float_root(features);      //
-        test_float_set(features);       //
-        test_float_sign(features);      //
-        test_float_sto(features);       //
-        test_float_sto_set(features);   //
-        test_float_sum(features);       //
+        TEST_TARGET_PATTERN(target, test_float_compare, features);   //
+        TEST_TARGET_PATTERN(target, test_float_divide, features);    //
+        TEST_TARGET_PATTERN(target, test_float_int, features);       //
+        TEST_TARGET_PATTERN(target, test_float_invert, features);    //
+        TEST_TARGET_PATTERN(target, test_float_log, features);       //
+        TEST_TARGET_PATTERN(target, test_float_mantissa, features);  //
+        TEST_TARGET_PATTERN(target, test_float_mulratio, features);  //
+        TEST_TARGET_PATTERN(target, test_float_multiply, features);  //
+        TEST_TARGET_PATTERN(target, test_float_negate, features);    //
+        TEST_TARGET_PATTERN(target, test_float_one, features);       //
+        TEST_TARGET_PATTERN(target, test_float_root, features);      //
+        TEST_TARGET_PATTERN(target, test_float_set, features);       //
+        TEST_TARGET_PATTERN(target, test_float_sign, features);      //
+        TEST_TARGET_PATTERN(target, test_float_sto, features);       //
+        TEST_TARGET_PATTERN(target, test_float_sto_set, features);   //
+        TEST_TARGET_PATTERN(target, test_float_sum, features);       //
 
-        test_hook_account(features);    //
-        test_hook_again(features);      //
-        test_hook_hash(features);       //
-        test_hook_param(features);      //
-        test_hook_param_set(features);  //
-        test_hook_pos(features);        //
-        test_hook_skip(features);       //
+        TEST_TARGET_PATTERN(target, test_hook_account, features);    //
+        TEST_TARGET_PATTERN(target, test_hook_again, features);      //
+        TEST_TARGET_PATTERN(target, test_hook_hash, features);       //
+        TEST_TARGET_PATTERN(target, test_hook_param, features);      //
+        TEST_TARGET_PATTERN(target, test_hook_param_set, features);  //
+        TEST_TARGET_PATTERN(target, test_hook_pos, features);        //
+        TEST_TARGET_PATTERN(target, test_hook_skip, features);       //
 
-        test_ledger_last_hash(features);  //
-        test_ledger_last_time(features);  //
-        test_ledger_nonce(features);      //
-        test_ledger_seq(features);        //
+        TEST_TARGET_PATTERN(target, test_ledger_last_hash, features);  //
+        TEST_TARGET_PATTERN(target, test_ledger_last_time, features);  //
+        TEST_TARGET_PATTERN(target, test_ledger_nonce, features);      //
+        TEST_TARGET_PATTERN(target, test_ledger_seq, features);        //
 
-        test_meta_slot(features);  //
-        test_xpop_slot(features);  //
+        TEST_TARGET_PATTERN(target, test_meta_slot, features);  //
+        TEST_TARGET_PATTERN(target, test_xpop_slot, features);  //
 
-        test_otxn_id(features);    //
-        test_otxn_slot(features);  //
-        test_otxn_type(features);
-        test_otxn_param(features);  //
-        test_otxn_json(features);   // JS ONLY
+        TEST_TARGET_PATTERN(target, test_otxn_id, features);    //
+        TEST_TARGET_PATTERN(target, test_otxn_slot, features);  //
+        TEST_TARGET_PATTERN(target, test_otxn_type, features);
+        TEST_TARGET_PATTERN(target, test_otxn_param, features);  //
+        TEST_TARGET_PATTERN(target, test_otxn_json, features);   // JS ONLY
 
-        test_slot(features);
-        test_slot_clear(features);     //
-        test_slot_count(features);     //
-        test_slot_float(features);     //
-        test_slot_set(features);       //
-        test_slot_size(features);      //
-        test_slot_subarray(features);  //
-        test_slot_subfield(features);  //
-        test_slot_type(features);      //
-        test_slot_json(features);      // JS ONLY
+        TEST_TARGET_PATTERN(target, test_slot, features);
+        TEST_TARGET_PATTERN(target, test_slot_clear, features);     //
+        TEST_TARGET_PATTERN(target, test_slot_count, features);     //
+        TEST_TARGET_PATTERN(target, test_slot_float, features);     //
+        TEST_TARGET_PATTERN(target, test_slot_set, features);       //
+        TEST_TARGET_PATTERN(target, test_slot_size, features);      //
+        TEST_TARGET_PATTERN(target, test_slot_subarray, features);  //
+        TEST_TARGET_PATTERN(target, test_slot_subfield, features);  //
+        TEST_TARGET_PATTERN(target, test_slot_type, features);      //
+        TEST_TARGET_PATTERN(target, test_slot_json, features);      // JS ONLY
 
-        test_state(features);              //
-        test_state_foreign(features);      //
-        test_state_foreign_set(features);  //
-        // test_state_foreign_set_max(features);  // Not Version Specific
-        test_state_set(features);  //
+        TEST_TARGET_PATTERN(target, test_state, features);              //
+        TEST_TARGET_PATTERN(target, test_state_foreign, features);      //
+        TEST_TARGET_PATTERN(target, test_state_foreign_set, features);  //
+        // TEST_TARGET_PATTERN(target, test_state_foreign_set_max, features); //
+        // Not Version Specific
+        TEST_TARGET_PATTERN(target, test_state_set, features);  //
 
-        test_sto_emplace(features);    //
-        test_sto_erase(features);      //
-        test_sto_subarray(features);   //
-        test_sto_subfield(features);   //
-        test_sto_validate(features);   //
-        test_sto_to_json(features);    // JS ONLY
-        test_sto_from_json(features);  // JS ONLY
+        TEST_TARGET_PATTERN(target, test_sto_emplace, features);    //
+        TEST_TARGET_PATTERN(target, test_sto_erase, features);      //
+        TEST_TARGET_PATTERN(target, test_sto_subarray, features);   //
+        TEST_TARGET_PATTERN(target, test_sto_subfield, features);   //
+        TEST_TARGET_PATTERN(target, test_sto_validate, features);   //
+        TEST_TARGET_PATTERN(target, test_sto_to_json, features);    // JS ONLY
+        TEST_TARGET_PATTERN(target, test_sto_from_json, features);  // JS ONLY
 
-        test_trace(features);  //
-        // test_trace_float(features);  // C ONLY
-        // test_trace_num(features);    // C ONLY
+        TEST_TARGET_PATTERN(target, test_trace, features);  //
+        // TEST_TARGET_PATTERN(target, test_trace_float, features);  // C ONLY
+        // TEST_TARGET_PATTERN(target, test_trace_num, features);    // C ONLY
 
-        test_util_accid(features);    //
-        test_util_keylet(features);   //
-        test_util_raddr(features);    //
-        test_util_sha512h(features);  //
-        test_util_verify(features);   //
+        TEST_TARGET_PATTERN(target, test_util_accid, features);    //
+        TEST_TARGET_PATTERN(target, test_util_keylet, features);   //
+        TEST_TARGET_PATTERN(target, test_util_raddr, features);    //
+        TEST_TARGET_PATTERN(target, test_util_sha512h, features);  //
+        TEST_TARGET_PATTERN(target, test_util_verify, features);   //
 
-        test_js_date(features);  //
+        TEST_TARGET_PATTERN(target, test_js_date, features);  //
     }
 
     void
@@ -11076,7 +11117,7 @@ public:
     {
         using namespace test::jtx;
         auto const sa = supported_amendments();
-        testWithFeatures(sa);
+        testWithFeatures(sa, arg());
     }
 
 private:
