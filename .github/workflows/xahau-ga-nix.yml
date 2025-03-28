@@ -2,7 +2,9 @@ name: Nix - GA Runner
 
 on:
   push:
-    branches-ignore: ["dev", "candidate", "release"]
+    branches: ["dev", "candidate", "release"]
+  pull_request:
+    branches: ["dev", "candidate", "release"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
