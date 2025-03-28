@@ -28,9 +28,6 @@ if [[ "$?" -ne "0" ]]; then
 fi
 
 #!/bin/bash
-rm -r Builds CMakeLists.txt &&
-cp Release.Builds/CMakeLists.txt CMakeLists.txt &&
-cp Release.Builds/Builds Builds -r &&
 sed -i 's/ed25519.h/ed25519-donna\/ed25519.h/g' src/ripple/protocol/impl/PublicKey.cpp &&
 sed -i 's/ed25519.h/ed25519-donna\/ed25519.h/g' src/ripple/protocol/impl/SecretKey.cpp &&
 sed -i 's/ed25519.h/ed25519-donna\/ed25519.h/g' src/ripple/rpc/handlers/WalletPropose.cpp &&
