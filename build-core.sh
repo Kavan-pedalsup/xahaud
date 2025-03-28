@@ -28,9 +28,6 @@ if [[ "$?" -ne "0" ]]; then
 fi
 
 #!/bin/bash
-sed -i 's/ed25519.h/ed25519-donna\/ed25519.h/g' src/ripple/protocol/impl/PublicKey.cpp &&
-sed -i 's/ed25519.h/ed25519-donna\/ed25519.h/g' src/ripple/protocol/impl/SecretKey.cpp &&
-sed -i 's/ed25519.h/ed25519-donna\/ed25519.h/g' src/ripple/rpc/handlers/WalletPropose.cpp &&
 perl -i -pe "s/^(\\s*)-DBUILD_SHARED_LIBS=OFF/\\1-DBUILD_SHARED_LIBS=OFF\\n\\1-DROCKSDB_BUILD_SHARED=OFF/g" Builds/CMake/deps/Rocksdb.cmake &&
 mv Builds/CMake/deps/WasmEdge.cmake Builds/CMake/deps/WasmEdge.old &&
 cp Builds/CMake/deps/Rocksdb.cmake Builds/CMake/deps/Rocksdb.cmake.old &&
@@ -40,7 +37,7 @@ message(STATUS \"Using LLVMConfig.cmake in: \${LLVM_DIR}\")
 add_library (wasmedge STATIC IMPORTED GLOBAL)
 set_target_properties(wasmedge PROPERTIES IMPORTED_LOCATION \${WasmEdge_LIB})
 target_link_libraries (ripple_libs INTERFACE wasmedge)
-add_library (NIH::WasmEdge ALIAS wasmedge)
+add_library (wasmedge::wasmedge ALIAS wasmedge)
 message(\"WasmEdge DONE\")
 " > Builds/CMake/deps/WasmEdge.cmake &&
 git checkout src/ripple/protocol/impl/BuildInfo.cpp &&
