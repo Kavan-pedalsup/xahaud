@@ -1,12 +1,9 @@
-# Original workflow name
 name: MacOS - GA Runner
 
 on:
-  # Use GA runners on pushes and pull requests targeting feature branches
+  # Use GA runners on pushes except for the branches which build by the sh runner
   push:
     branches-ignore: ["dev", "candidate", "release"]
-  pull_request:
-    branches: [ jshooks ] # Add other feature branches
 
 # Concurrency control: Cancels older in-progress runs for the same branch (github.ref)
 # when a new push occurs. This saves runner minutes on superseded commits.
