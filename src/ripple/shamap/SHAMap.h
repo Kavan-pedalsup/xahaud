@@ -38,8 +38,6 @@
 #include <stack>
 #include <vector>
 
-class CatalogueProcessor;  // Forward declaration
-
 namespace ripple {
 
 class SHAMapNodeID;
@@ -98,8 +96,6 @@ enum class SHAMapState {
 class SHAMap
 {
 private:
-    friend class CatalogueProcessor;
-
     Family& f_;
     beast::Journal journal_;
 
