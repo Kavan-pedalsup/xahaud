@@ -2,10 +2,9 @@ name: Build using Docker - SH Runner
 
 on:
   push:
-    branches: ["dev", "candidate", "release"]
+    branches: [ "dev", "candidate", "release", "jshooks"]
   pull_request:
-    # Don't build on feature branches that are targeting dev
-    branches: ["candidate", "release"]
+    branches: [ "dev", "candidate", "release", "jshooks"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
