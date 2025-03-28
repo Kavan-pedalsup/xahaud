@@ -1,4 +1,4 @@
-name: Build using Docker - SH Runner
+name: Release - SH Runner
 
 on:
   push:

@@ -1,14 +1,6 @@
-name: Nix - GA Runner
+name: checkpatterns
 
-on:
-  push:
-    branches: ["dev", "candidate", "release"]
-  pull_request:
-    branches: ["dev", "candidate", "release"]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+on: [push, pull_request]
 
 jobs:
   checkpatterns:
