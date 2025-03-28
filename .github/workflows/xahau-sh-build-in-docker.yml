@@ -4,8 +4,7 @@ on:
   push:
     branches: ["dev", "candidate", "release"]
   pull_request:
-    # Don't build on feature branches that are targeting dev
-    branches: ["candidate", "release"]
+    branches: ["dev", "candidate", "release"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
