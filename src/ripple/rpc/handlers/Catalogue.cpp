@@ -169,7 +169,7 @@ generateStatusJson(bool includeErrorInfo = false)
 
     if (catalogueRunStatus.isRunning)
     {
-        jvResult[jss::status] = "job_in_progress";
+        jvResult[jss::job_status] = "job_in_progress";
         jvResult[jss::min_ledger] = catalogueRunStatus.minLedger;
         jvResult[jss::max_ledger] = catalogueRunStatus.maxLedger;
         jvResult[jss::current_ledger] = catalogueRunStatus.ledgerUpto;
@@ -301,7 +301,7 @@ generateStatusJson(bool includeErrorInfo = false)
     }
     else
     {
-        jvResult[jss::status] = "no_job_running";
+        jvResult[jss::job_status] = "no_job_running";
     }
 
     return jvResult;

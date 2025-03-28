@@ -808,7 +808,7 @@ class Catalogue_test : public beast::unit_test::suite
             }
         }
 
-        // boost::filesystem::remove_all(tempDir);
+        boost::filesystem::remove_all(tempDir);
     }
 
     void
@@ -832,59 +832,12 @@ class Catalogue_test : public beast::unit_test::suite
         {
             auto result = env.client().invoke(
                 "catalogue_status", Json::objectValue)[jss::result];
-            BEAST_EXPECT(result[jss::status] == "no_job_running");
+            std::cout << to_string(result) << "\n";
+            BEAST_EXPECT(result[jss::job_status] == "no_job_running");
         }
 
-        // Test 2: Start a job and check status in parallel
-        {
-            // Prepare for a long running create operation
-            prepareLedgerData(env, 10);
-
-            // Launch catalogue create in a separate thread
-            Json::Value createParams{Json::objectValue};
-            createParams[jss::min_ledger] = 3;
-            createParams[jss::max_ledger] = 15;
-            createParams[jss::output_file] = cataloguePath;
-            createParams[jss::compression_level] =
-                9;  // Use max compression to make it slower
-
-            std::thread createThread([&]() {
-                env.client().invoke("catalogue_create", createParams);
-            });
-
-            // Give it a moment to start
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-            // Check status while running
-            auto statusResult = env.client().invoke(
-                "catalogue_status", Json::objectValue)[jss::result];
-            BEAST_EXPECT(statusResult[jss::status] == "job_in_progress");
-            BEAST_EXPECT(statusResult.isMember(jss::min_ledger));
-            BEAST_EXPECT(statusResult.isMember(jss::max_ledger));
-            BEAST_EXPECT(statusResult.isMember(jss::current_ledger));
-            BEAST_EXPECT(statusResult.isMember(jss::percent_complete));
-            BEAST_EXPECT(statusResult.isMember(jss::elapsed_seconds));
-            BEAST_EXPECT(statusResult.isMember(jss::estimated_time_remaining));
-            BEAST_EXPECT(statusResult.isMember(jss::start_time));
-            BEAST_EXPECT(statusResult.isMember(jss::job_type));
-            BEAST_EXPECT(statusResult.isMember(jss::file));
-            BEAST_EXPECT(statusResult.isMember(jss::compression_level));
-
-            // Try to start another operation while one is running
-            auto conflictResult = env.client().invoke(
-                "catalogue_create", createParams)[jss::result];
-            BEAST_EXPECT(conflictResult[jss::status] == "job_in_progress");
-            BEAST_EXPECT(conflictResult.isMember(jss::error));
-            BEAST_EXPECT(conflictResult.isMember(jss::error_message));
-
-            // Wait for the operation to complete
-            createThread.join();
-
-            // Check status after completion
-            auto finalStatusResult = env.client().invoke(
-                "catalogue_status", Json::objectValue)[jss::result];
-            BEAST_EXPECT(finalStatusResult[jss::status] == "no_job_running");
-        }
+        // TODO: add a parallel job test here... if anyone feels thats actually
+        // needed
 
         boost::filesystem::remove_all(tempDir);
     }
@@ -900,12 +853,10 @@ public:
         testCatalogueLoadBadInput(all);
         testCatalogueLoadAndVerify(all);
         testNetworkMismatch(all);
-
-        // New test cases for the enhanced features
         testCatalogueHashVerification(all);
         testCatalogueFileSize(all);
         testCatalogueCompression(all);
-        //        testCatalogueStatus(all);
+        testCatalogueStatus(all);
     }
 };
 

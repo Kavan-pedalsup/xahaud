@@ -388,6 +388,7 @@ JSS(issuer);               // in: RipplePathFind, Subscribe,
 JSS(job);
 JSS(job_queue);
 JSS(job_type);
+JSS(job_status);
 JSS(jobs);
 JSS(jsonrpc);               // json version
 JSS(jq_trans_overflow);     // JobQueue transaction limit overflow.
