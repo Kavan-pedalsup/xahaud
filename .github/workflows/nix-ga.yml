@@ -2,11 +2,11 @@
 name: Nix Development - GA Runner
 
 on:
-  # Triggers on pushes and pull requests targeting the 'jshooks' branch
+  # Use GA runners on pushes and pull requests targeting feature branches
   push:
-    branches: [jshooks]
+    branches: [jshooks] # and other feature branches
   pull_request:
-    branches: [jshooks]
+    branches: [jshooks] # and other feature branches
 
 # Concurrency control: Cancels older in-progress runs for the same branch (github.ref)
 # when a new push occurs. This saves runner minutes on superseded commits.
@@ -50,14 +50,14 @@ jobs:
           - compiler: gcc
             cc: gcc-11
             cxx: g++-11
+            compiler_id: gcc-11
     #          - compiler: clang
     #            cc: clang-14
     #            cxx: clang++-14
+    #            compiler_id: clang-14
     env:
       # Build directory relative to the workspace root
       build_dir: .build
-      # Separate directory for building dependencies
-      deps_dir: .build-deps
       # Manual cache version control. Bump this number to invalidate all caches globally.
       CACHE_VERSION: 1
       # Default branch name used for prioritizing ccache restores. Adjust if needed.
@@ -76,34 +76,14 @@ jobs:
           pip install --upgrade "conan<2"
 
       # 2.3. Configure ccache
-      - name: Configure CCache
-        run: |
-          mkdir -p ~/.ccache
-          export CONF_PATH="${CCACHE_CONFIGPATH:-${CCACHE_DIR:-$HOME/.ccache}/ccache.conf}"
-          mkdir -p $(dirname "$CONF_PATH")
-          echo "max_size = 2G" > "$CONF_PATH"
-          echo "hash_dir = true" >> "$CONF_PATH"
-          echo "compiler_check = content" >> "$CONF_PATH"
-          ccache -p # Print config for verification
-          ccache -z # Zero statistics before the build
-
-      # 2.4. Conan Cache Handling - Restore
-      # Restores the Conan package cache. Key includes OS, version, compiler, dependency files, and build configuration.
-      - name: Restore Conan cache
-        id: cache-restore-conan
-        uses: actions/cache/restore@v4
+      - name: Configure ccache
+        uses: ./.github/actions/configure-ccache
         with:
-          path: ~/.conan # Conan 1 path
-          # Primary key: Requires exact match for OS, version, compiler, dependencies, and config.
-          key: ${{ runner.os }}-conan-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-${{ matrix.configuration }}
-          # Restore keys: Fallback hierarchy.
-          # 1. Match OS, version, compiler, dependencies (ignore config).
-          # 2. Match OS, version, compiler (broad fallback for compiler).
-          restore-keys: |
-            ${{ runner.os }}-conan-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ hashFiles('**/conanfile.txt', '**/conanfile.py') }}-
-            ${{ runner.os }}-conan-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-
+          max_size: 2G
+          hash_dir: true
+          compiler_check: content
 
-      # 2.5. Configure Conan Profile
+      # 2.4. Configure Conan Profile
       # Sets up the Conan profile specifically for the compiler specified in the matrix.
       - name: Configure Conan
         run: |
@@ -124,27 +104,7 @@ jobs:
           # Display profile for verification
           conan profile show default
 
-      # 2.6. Install Conan Dependencies (Conditional)
-      # Skips if the Conan cache was fully restored (exact primary key match).
-      - name: Install dependencies
-        if: steps.cache-restore-conan.outputs.cache-hit != 'true'
-        uses: ./.github/actions/dependencies
-        with:
-          configuration: ${{ matrix.configuration }}
-        env:
-          build_dir: ${{ env.deps_dir }} # Build deps in separate dir
-
-      # 2.7. Save Conan Cache (Conditional)
-      # Saves only if the cache was modified/created in the 'Install dependencies' step.
-      - name: Save Conan cache
-        if: steps.cache-restore-conan.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.conan
-          # Use the exact primary key generated in the restore step.
-          key: ${{ steps.cache-restore-conan.outputs.cache-primary-key }}
-
-      # 2.8. Environment Verification (Optional but Recommended)
+      # 2.5. Environment Verification (Optional but Recommended)
       - name: Check environment
         run: |
           echo "PATH:"
@@ -157,69 +117,30 @@ jobs:
           echo "---- Full Environment ----"
           env
 
-      # 2.9. Prepare Branch Name for Cache Key
-      - name: Generate safe branch name
-        id: safe-branch
-        run: |
-          # Cleans the branch name to be safe for use in cache keys.
-          SAFE_BRANCH=$(echo "${{ github.ref_name }}" | tr -c 'a-zA-Z0-9_.-' '-')
-          # Output name needs to match usage below (outputs.name)
-          echo "name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
-
-      # 2.10. ccache Cache Handling - Restore
-      # Restores the ccache compilation cache. Key includes OS, version, compiler, config, and branch.
-      - name: Restore ccache directory
-        id: ccache-restore
-        uses: actions/cache/restore@v4
+      # 2.6. Install Dependencies using the action
+      - name: Install dependencies
+        uses: ./.github/actions/dependencies
         with:
-          path: ~/.ccache
-          # Primary key: Exact match for OS, version, compiler, config, specific branch.
-          key: ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}
-          # Restore keys: Fallback hierarchy.
-          # 1. Tries main branch cache (same OS/version/compiler/config) - good for PRs.
-          # 2. Tries any branch cache (same OS/version/compiler/config).
-          # 3. Tries any config/branch cache (same OS/version/compiler).
-          # 4. Tries any compiler/config/branch cache (same OS/version).
-          # 5. Tries any OS cache (very broad).
-          restore-keys: |
-            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ matrix.configuration }}-${{ env.MAIN_BRANCH_NAME }}
-            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ matrix.configuration }}-
-            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-
-            ${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-
-            ${{ runner.os }}-ccache-
+          configuration: ${{ matrix.configuration }}
+          build_dir: ${{ env.build_dir }}
+          compiler-id: ${{ matrix.compiler_id }}
+          cache_version: ${{ env.CACHE_VERSION }}
+          main_branch: ${{ env.MAIN_BRANCH_NAME }}
 
-      # 2.11. Build Project
-      # Leverages ccache automatically if it's in the PATH.
+      # 2.7. Build Project using the action
       - name: Build
         uses: ./.github/actions/build
         with:
-          generator: Ninja # Using Ninja based on apt install
+          generator: Ninja
           configuration: ${{ matrix.configuration }}
-        env:
-          # Pass build_dir explicitly if the action needs it
           build_dir: ${{ env.build_dir }}
+          cc: ${{ matrix.cc }}
+          cxx: ${{ matrix.cxx }}
+          compiler-id: ${{ matrix.compiler_id }}
+          cache_version: ${{ env.CACHE_VERSION }}
+          main_branch: ${{ env.MAIN_BRANCH_NAME }}
 
-      # 2.12. ccache Statistics
-      # Display hit/miss stats. Essential for confirming cache effectiveness.
-      - name: Show ccache statistics
-        run: ccache -s
-
-      # 2.13. Save ccache Directory (Primary Attempt)
-      # Saves ~/.ccache using the primary key.
-      # NOTE: If a cache with the exact key + internal version (derived from path, not content)
-      # already exists from a prior run, the action logs a warning and skips the upload,
-      # completing successfully. This is expected; the remote cache blob is not updated.
-      # You can clear caches via api, e.g:
-      #    gh api --method DELETE /repos/{owner}/{repo}/actions/caches\?key=${{ runner.os }}-ccache-v${{ env.CACHE_VERSION }}-${{ matrix.compiler }}-${{ matrix.configuration }}-${{ steps.safe-branch.outputs.name }}
-      - name: Save ccache directory
-        id: save-ccache
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.ccache
-          # Use the exact primary key from the restore step.
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
-
-      # 2.14. Set Artifact Name (Based on Matrix)
+      # 2.8. Set Artifact Name (Based on Matrix)
       - name: Set artifact name
         id: set-artifact-name
         run: |
@@ -227,22 +148,13 @@ jobs:
           echo "artifact_name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
           echo "Using artifact name: ${ARTIFACT_NAME}"
 
-      # 2.15. Debug Build Directory Contents (Optional)
+      # 2.9. Debug Build Directory Contents (Optional)
       - name: Debug build directory
         run: |
           echo "Checking build directory contents: ${{ env.build_dir }}"
           ls -la ${{ env.build_dir }} || echo "Build directory not found or empty"
 
-      # 2.16. Upload Build Artifacts (Currently Disabled)
-      #      - name: Upload build artifacts
-      #        uses: actions/upload-artifact@v4
-      #        with:
-      #          name: ${{ steps.set-artifact-name.outputs.artifact_name }}
-      #          path: ${{ env.build_dir }}
-      #          retention-days: 1
-      #          include-hidden-files: true
-
-      # 2.17. Run Tests
+      # 2.10. Run Tests
       - name: Run tests
         run: |
           # Ensure the binary exists before trying to run
