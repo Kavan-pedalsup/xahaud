@@ -1242,9 +1242,10 @@ SHAMap::invariants() const
     node->invariants(true);
 }
 
+template <typename StreamType>
 std::size_t
 SHAMap::serializeToStream(
-    std::ostream& stream,
+    StreamType& stream,
     std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap) const
 {
     std::unordered_set<SHAMapHash, beast::uhash<>> writtenNodes;
@@ -1391,15 +1392,14 @@ SHAMap::serializeToStream(
     return nodeCount;
 }
 
+template <typename StreamType>
 bool
-SHAMap::deserializeFromStream(std::istream& stream)
-//,   std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap)
+SHAMap::deserializeFromStream(StreamType& stream)
 {
     try
     {
-        JLOG(journal_.debug()) << "Deserialization: Starting to deserialize "
-                                  "from stream at position "
-                               << stream.tellg();
+        JLOG(journal_.info()) << "Deserialization: Starting to deserialize "
+                                 "from stream";
 
         if (state_ != SHAMapState::Modifying && state_ != SHAMapState::Synching)
             return false;
@@ -1408,10 +1408,9 @@ SHAMap::deserializeFromStream(std::istream& stream)
             root_ = std::make_shared<SHAMapInnerNode>(cowid_);
 
         // Define a lambda to deserialize a leaf node
-        auto deserializeLeaf = [this, &stream](
-                                   std::istream& s,
-                                   SHAMapNodeType& nodeType /* out */) -> bool {
-            s.read(reinterpret_cast<char*>(&nodeType), 1);
+        auto deserializeLeaf =
+            [this, &stream](SHAMapNodeType& nodeType /* out */) -> bool {
+            stream.read(reinterpret_cast<char*>(&nodeType), 1);
 
             if (nodeType == SHAMapNodeType::tnTERMINAL)
             {
@@ -1422,14 +1421,13 @@ SHAMap::deserializeFromStream(std::istream& stream)
             uint256 key;
             uint32_t size{0};
 
-            s.read(reinterpret_cast<char*>(key.data()), 32);
+            stream.read(reinterpret_cast<char*>(key.data()), 32);
 
-            if (s.fail())
+            if (stream.fail())
             {
                 JLOG(journal_.error())
-                    << "Deserialization: stopped unexpectedly at "
-                    << stream.tellg()
-                    << " while trying to read key of next entry";
+                    << "Deserialization: stream stopped unexpectedly "
+                    << "while trying to read key of next entry";
                 return false;
             }
 
@@ -1447,13 +1445,12 @@ SHAMap::deserializeFromStream(std::istream& stream)
                 return true;
             }
 
-            s.read(reinterpret_cast<char*>(&size), 4);
+            stream.read(reinterpret_cast<char*>(&size), 4);
 
-            if (s.fail())
+            if (stream.fail())
             {
                 JLOG(journal_.error())
-                    << "Deserialization: stopped unexpectedly at "
-                    << stream.tellg()
+                    << "Deserialization: stream stopped unexpectedly"
                     << " while trying to read size of data for key "
                     << to_string(key);
                 return false;
@@ -1471,8 +1468,8 @@ SHAMap::deserializeFromStream(std::istream& stream)
             std::vector<uint8_t> data;
             data.resize(size);
 
-            s.read(reinterpret_cast<char*>(data.data()), size);
-            if (s.fail())
+            stream.read(reinterpret_cast<char*>(data.data()), size);
+            if (stream.fail())
             {
                 JLOG(journal_.error())
                     << "Deserialization: Unexpected EOF while reading data for "
@@ -1488,8 +1485,7 @@ SHAMap::deserializeFromStream(std::istream& stream)
         };
 
         SHAMapNodeType lastParsed;
-        while (stream.good() && !stream.eof() &&
-               deserializeLeaf(stream, lastParsed))
+        while (!stream.eof() && deserializeLeaf(lastParsed))
             ;
 
         if (lastParsed != SHAMapNodeType::tnTERMINAL)
@@ -1511,5 +1507,29 @@ SHAMap::deserializeFromStream(std::istream& stream)
         return false;
     }
 }
+
+// explicit instantiation of templates for rpc::Catalogue
+
+using FilteringInputStream = boost::iostreams::filtering_stream<
+    boost::iostreams::input,
+    char,
+    std::char_traits<char>,
+    std::allocator<char>,
+    boost::iostreams::public_>;
+
+template bool
+SHAMap::deserializeFromStream<FilteringInputStream>(FilteringInputStream&);
+
+using FilteringOutputStream = boost::iostreams::filtering_stream<
+    boost::iostreams::output,
+    char,
+    std::char_traits<char>,
+    std::allocator<char>,
+    boost::iostreams::public_>;
+
+template std::size_t
+SHAMap::serializeToStream<FilteringOutputStream>(
+    FilteringOutputStream&,
+    std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap) const;
 
 }  // namespace ripple

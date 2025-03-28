@@ -277,11 +277,6 @@ class Catalogue_test : public beast::unit_test::suite
             Account("bob").id(),
             Currency(to_currency("EUR")));
 
-        std::cout << "bobKeylet: " << to_string(bobKeylet.key) << "\n";
-        std::cout << "charlieKeylet: " << to_string(charlieKeylet.key) << "\n";
-        std::cout << "eurTrustKeylet: " << to_string(eurTrustKeylet.key)
-                  << "\n";
-
         // Get original state entries
         auto const bobAcct = sourceLedger->read(bobKeylet);
         auto const charlieAcct = sourceLedger->read(charlieKeylet);
@@ -291,8 +286,6 @@ class Catalogue_test : public beast::unit_test::suite
         BEAST_EXPECT(charlieAcct != nullptr);
         BEAST_EXPECT(eurTrust != nullptr);
 
-        std::cout << "mantissa: "
-                  << eurTrust->getFieldAmount(sfLowLimit).mantissa() << "\n";
         BEAST_EXPECT(
             eurTrust->getFieldAmount(sfLowLimit).mantissa() ==
             2000000000000000ULL);
@@ -300,8 +293,6 @@ class Catalogue_test : public beast::unit_test::suite
         // Get initial complete_ledgers range
         auto const originalCompleteLedgers =
             env.app().getLedgerMaster().getCompleteLedgers();
-
-        std::cout << "orgCompleteLedgers: " << originalCompleteLedgers << "\n";
 
         // Create temporary directory for test files
         boost::filesystem::path tempDir =
@@ -340,7 +331,6 @@ class Catalogue_test : public beast::unit_test::suite
         auto const result =
             loadEnv.client().invoke("catalogue_load", params)[jss::result];
 
-        std::cout << result << "\n";
         BEAST_EXPECT(result[jss::status] == jss::success);
         BEAST_EXPECT(result[jss::ledger_min] == minLedger);
         BEAST_EXPECT(result[jss::ledger_max] == maxLedger);
@@ -349,8 +339,6 @@ class Catalogue_test : public beast::unit_test::suite
         // Verify complete_ledgers reflects loaded ledgers
         auto const newCompleteLedgers =
             loadEnv.app().getLedgerMaster().getCompleteLedgers();
-
-        std::cout << "newCompleteLedgers: " << newCompleteLedgers << "\n";
 
         BEAST_EXPECT(newCompleteLedgers == originalCompleteLedgers);
 
@@ -373,7 +361,6 @@ class Catalogue_test : public beast::unit_test::suite
             if (!sourceLedger || !loadedLedger)
             {
                 BEAST_EXPECT(false);  // Test failure
-                std::cout << "Failed to load ledger " << seq << "!\n";
                 continue;
             }
 
@@ -438,12 +425,6 @@ class Catalogue_test : public beast::unit_test::suite
             {
                 auto const key = sle->key();
                 bool exists = loadedLedger->exists(keylet::unchecked(key));
-                if (!exists)
-                {
-                    std::cout
-                        << "Key missing in loaded ledger: " << to_string(key)
-                        << "\n";
-                }
                 BEAST_EXPECT(exists);
 
                 // If it exists, check the serialized form matches
@@ -454,11 +435,6 @@ class Catalogue_test : public beast::unit_test::suite
                     sle->add(s1);
                     loadedSle->add(s2);
                     bool serializedEqual = (s1.peekData() == s2.peekData());
-                    if (!serializedEqual)
-                    {
-                        std::cout << "Serialized data mismatch for key: "
-                                  << to_string(key) << "\n";
-                    }
                     BEAST_EXPECT(serializedEqual);
                 }
             }
@@ -467,14 +443,7 @@ class Catalogue_test : public beast::unit_test::suite
             for (auto const& sle : loadedLedger->sles)
             {
                 auto const key = sle->key();
-                bool exists = sourceLedger->exists(keylet::unchecked(key));
-                if (!exists)
-                {
-                    std::cout
-                        << "Extra key in loaded ledger: " << to_string(key)
-                        << "\n";
-                }
-                BEAST_EXPECT(exists);
+                BEAST_EXPECT(sourceLedger->exists(keylet::unchecked(key)));
             }
         }
 
@@ -798,6 +767,7 @@ class Catalogue_test : public beast::unit_test::suite
 
             auto createResult = env.client().invoke(
                 "catalogue_create", createParams)[jss::result];
+
             BEAST_EXPECT(createResult[jss::status] == jss::success);
 
             uint64_t fileSize = createResult[jss::file_size].asUInt();
@@ -838,7 +808,7 @@ class Catalogue_test : public beast::unit_test::suite
             }
         }
 
-        boost::filesystem::remove_all(tempDir);
+        // boost::filesystem::remove_all(tempDir);
     }
 
     void

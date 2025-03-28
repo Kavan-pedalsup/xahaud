@@ -33,6 +33,7 @@
 #include <ripple/shamap/SHAMapMissingNode.h>
 #include <ripple/shamap/SHAMapTreeNode.h>
 #include <ripple/shamap/TreeNodeCache.h>
+#include <boost/iostreams/filtering_stream.hpp>
 #include <cassert>
 #include <stack>
 #include <vector>
@@ -379,9 +380,10 @@ public:
      * @param baseSHAMap Optional base map to compute delta against
      * @return Number of nodes written
      */
+    template <typename StreamType>
     std::size_t
     serializeToStream(
-        std::ostream& stream,
+        StreamType& stream,
         std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap =
             std::nullopt) const;
 
@@ -393,10 +395,9 @@ public:
      * @param baseSHAMap Optional base map to apply deltas to
      * @return True if deserialization succeeded
      */
+    template <typename StreamType>
     bool
-    deserializeFromStream(std::istream& stream);
-    //        std::optional<std::reference_wrapper<const SHAMap>> baseSHAMap =
-    //            std::nullopt);
+    deserializeFromStream(StreamType& stream);
 
 private:
     using SharedPtrNodeStack =

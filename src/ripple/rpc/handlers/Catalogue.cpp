@@ -459,8 +459,11 @@ doCatalogueCreate(RPC::JsonContext& context)
     {
         JLOG(context.j.info())
             << "Setting up compression with level " << (int)compressionLevel;
-        compStream->push(boost::iostreams::zlib_compressor(
-            boost::iostreams::zlib_params(compressionLevel)));
+
+        boost::iostreams::zlib_params params((int)compressionLevel);
+        params.window_bits = 15;
+        params.noheader = false;
+        compStream->push(boost::iostreams::zlib_compressor(params));
     }
     else
     {
@@ -939,7 +942,10 @@ doCatalogueLoad(RPC::JsonContext& context)
     {
         JLOG(context.j.info())
             << "Setting up decompression with level " << (int)compressionLevel;
-        decompStream->push(boost::iostreams::zlib_decompressor());
+        boost::iostreams::zlib_params params((int)compressionLevel);
+        params.window_bits = 15;
+        params.noheader = false;
+        decompStream->push(boost::iostreams::zlib_decompressor(params));
     }
     else
     {
