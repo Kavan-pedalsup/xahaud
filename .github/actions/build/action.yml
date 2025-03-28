@@ -1,4 +1,4 @@
-name: 'build'
+name: build
 description: 'Builds the project with ccache integration'
 
 inputs:
@@ -63,33 +63,36 @@ runs:
           ${{ runner.os }}-ccache-v${{ inputs.cache_version }}-${{ inputs.compiler-id }}-
           ${{ runner.os }}-ccache-v${{ inputs.cache_version }}-
 
-    # Configure and build the project
+    # Configure project
     - name: Configure project
       shell: bash
       run: |
         mkdir -p ${{ inputs.build_dir }}
         cd ${{ inputs.build_dir }}
         
-        # Set up environment variables for compilers if provided
+        # Set compiler environment variables if provided
         if [ -n "${{ inputs.cc }}" ]; then
-          if [ "${{ inputs.ccache_enabled }}" = "true" ]; then
-            export CC="ccache ${{ inputs.cc }}"
-          else
-            export CC="${{ inputs.cc }}"
-          fi
+          export CC="${{ inputs.cc }}"
         fi
         
         if [ -n "${{ inputs.cxx }}" ]; then
-          if [ "${{ inputs.ccache_enabled }}" = "true" ]; then
-            export CXX="ccache ${{ inputs.cxx }}"
-          else
-            export CXX="${{ inputs.cxx }}"
-          fi
+          export CXX="${{ inputs.cxx }}"
+        fi
+        
+        # Configure ccache launcher args
+        CCACHE_ARGS=""
+        if [ "${{ inputs.ccache_enabled }}" = "true" ]; then
+          CCACHE_ARGS="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
         fi
         
         # Run CMake configure
-        cmake .. -G "${{ inputs.generator }}" -DCMAKE_BUILD_TYPE=${{ inputs.configuration }} -DBoost_NO_BOOST_CMAKE=ON
+        cmake .. \
+          -G "${{ inputs.generator }}" \
+          $CCACHE_ARGS \
+          -DCMAKE_TOOLCHAIN_FILE:FILEPATH=build/generators/conan_toolchain.cmake \
+          -DCMAKE_BUILD_TYPE=${{ inputs.configuration }}
 
+    # Build project
     - name: Build project
       shell: bash
       run: |
