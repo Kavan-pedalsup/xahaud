@@ -23,6 +23,9 @@
 #include <ripple/protocol/TxFlags.h>
 #include <ripple/protocol/jss.h>
 #include <boost/regex.hpp>
+
+#include "ripple/json/Writer.h"
+#include "ripple/json/json_writer.h"
 #include <test/app/Import_json.h>
 #include <test/app/SetJSHook_wasm.h>
 #include <test/jtx.h>
@@ -55,16 +58,17 @@ using TestHook = std::vector<uint8_t> const&;
     [[maybe_unused]] std::string const x##_hash_str = to_string(x##_hash);     \
     [[maybe_unused]] Keylet const x##_keylet = keylet::hookDefinition(x##_hash);
 
-#define TEST_TARGET_PATTERN(target_regex_pattern, test_func_name, ...)         \
+#define TEST_TARGET_PATTERN(a, target_regex_pattern, test_func_name, ...)      \
     do                                                                         \
     {                                                                          \
         const char* current_test_name = #test_func_name;                       \
         const std::string& pattern_str = (target_regex_pattern);               \
-                                                                               \
+        Json::Value& names = a;                                                \
+        names.append(std::string(current_test_name));                          \
         /* Check 1: Does the name match the regex pattern (or is the pattern   \
          * empty?) */                                                          \
         bool name_matches = pattern_str.empty();                               \
-        if (!name_matches)                                                     \
+        if (!name_matches && pattern_str != ":log-test-names:")                \
         {                                                                      \
             try                                                                \
             {                                                                  \
@@ -10993,123 +10997,141 @@ public:
     void
     testWithFeatures(FeatureBitset features, const std::string& target)
     {
-        TEST_TARGET_PATTERN(target, testHooksOwnerDir, features);
-        TEST_TARGET_PATTERN(target, testHooksDisabled, features);
-        TEST_TARGET_PATTERN(target, testTxStructure, features);
-        // // testInferHookSetOperation(); // Not Version Specific
-        // // TEST_TARGET_PATTERN(target, testParams, features); // Not Version
-        // Specific
-        // // TEST_TARGET_PATTERN(target, testGrants, features); // Not Version
-        // Specific
+        Json::Value a(Json::arrayValue);
 
-        TEST_TARGET_PATTERN(target, testInstall, features);
-        TEST_TARGET_PATTERN(target, testDelete, features);
-        TEST_TARGET_PATTERN(target, testNSDelete, features);
-        TEST_TARGET_PATTERN(target, testCreate, features);
-        TEST_TARGET_PATTERN(target, testUpdate, features);
-        TEST_TARGET_PATTERN(target, testWithTickets, features);
+        if (target == ":log-test-names:")
+        {
+            testcase(target);
+        }
+
+        TEST_TARGET_PATTERN(a, target, testHooksOwnerDir, features);
+        TEST_TARGET_PATTERN(a, target, testHooksDisabled, features);
+        TEST_TARGET_PATTERN(a, target, testTxStructure, features);
+        // // testInferHookSetOperation(); // Not Version Specific
+        // // TEST_TARGET_PATTERN(a, target, testParams, features); // Not
+        // Version Specific
+        // // TEST_TARGET_PATTERN(a, target, testGrants, features); // Not
+        // Version Specific
+
+        TEST_TARGET_PATTERN(a, target, testInstall, features);
+        TEST_TARGET_PATTERN(a, target, testDelete, features);
+        TEST_TARGET_PATTERN(a, target, testNSDelete, features);
+        TEST_TARGET_PATTERN(a, target, testCreate, features);
+        TEST_TARGET_PATTERN(a, target, testUpdate, features);
+        TEST_TARGET_PATTERN(a, target, testWithTickets, features);
 
         // // DA TODO: illegalfunc_wasm
-        // // TEST_TARGET_PATTERN(target, testWasm, features);
-        TEST_TARGET_PATTERN(target, test_accept, features);
-        TEST_TARGET_PATTERN(target, test_rollback, features);
+        // // TEST_TARGET_PATTERN(a, target, testWasm, features);
+        TEST_TARGET_PATTERN(a, target, test_accept, features);
+        TEST_TARGET_PATTERN(a, target, test_rollback, features);
 
-        // TEST_TARGET_PATTERN(target, testGuards, features); // Not Used in
+        // TEST_TARGET_PATTERN(a, target, testGuards, features); // Not Used in
         // JSHooks
 
-        TEST_TARGET_PATTERN(target, test_emit, features);  //
-        // TEST_TARGET_PATTERN(target, test_prepare, features);  // JS ONLY
-        // tested above TEST_TARGET_PATTERN(target, test_etxn_burden, features);
-        // // tested above TEST_TARGET_PATTERN(target, test_etxn_generation,
-        // features);   // tested above TEST_TARGET_PATTERN(target,
+        TEST_TARGET_PATTERN(a, target, test_emit, features);  //
+        // TEST_TARGET_PATTERN(a, target, test_prepare, features);  // JS ONLY
+        // tested above TEST_TARGET_PATTERN(a, target, test_etxn_burden,
+        // features);
+        // // tested above TEST_TARGET_PATTERN(a, target, test_etxn_generation,
+        // features);   // tested above TEST_TARGET_PATTERN(a, target,
         // test_otxn_burden, features);       // tested above
-        // TEST_TARGET_PATTERN(target, test_otxn_generation, features);   //
+        // TEST_TARGET_PATTERN(a, target, test_otxn_generation, features);   //
         // tested above
-        TEST_TARGET_PATTERN(target, test_etxn_details, features);   //
-        TEST_TARGET_PATTERN(target, test_etxn_fee_base, features);  //
-        TEST_TARGET_PATTERN(target, test_etxn_nonce, features);     //
-        TEST_TARGET_PATTERN(target, test_etxn_reserve, features);   //
+        TEST_TARGET_PATTERN(a, target, test_etxn_details, features);   //
+        TEST_TARGET_PATTERN(a, target, test_etxn_fee_base, features);  //
+        TEST_TARGET_PATTERN(a, target, test_etxn_nonce, features);     //
+        TEST_TARGET_PATTERN(a, target, test_etxn_reserve, features);   //
 
-        TEST_TARGET_PATTERN(target, test_fee_base, features);       //
-        TEST_TARGET_PATTERN(target, test_otxn_field, features);     //
-        TEST_TARGET_PATTERN(target, test_ledger_keylet, features);  //
+        TEST_TARGET_PATTERN(a, target, test_fee_base, features);       //
+        TEST_TARGET_PATTERN(a, target, test_otxn_field, features);     //
+        TEST_TARGET_PATTERN(a, target, test_ledger_keylet, features);  //
 
-        TEST_TARGET_PATTERN(target, test_float_compare, features);   //
-        TEST_TARGET_PATTERN(target, test_float_divide, features);    //
-        TEST_TARGET_PATTERN(target, test_float_int, features);       //
-        TEST_TARGET_PATTERN(target, test_float_invert, features);    //
-        TEST_TARGET_PATTERN(target, test_float_log, features);       //
-        TEST_TARGET_PATTERN(target, test_float_mantissa, features);  //
-        TEST_TARGET_PATTERN(target, test_float_mulratio, features);  //
-        TEST_TARGET_PATTERN(target, test_float_multiply, features);  //
-        TEST_TARGET_PATTERN(target, test_float_negate, features);    //
-        TEST_TARGET_PATTERN(target, test_float_one, features);       //
-        TEST_TARGET_PATTERN(target, test_float_root, features);      //
-        TEST_TARGET_PATTERN(target, test_float_set, features);       //
-        TEST_TARGET_PATTERN(target, test_float_sign, features);      //
-        TEST_TARGET_PATTERN(target, test_float_sto, features);       //
-        TEST_TARGET_PATTERN(target, test_float_sto_set, features);   //
-        TEST_TARGET_PATTERN(target, test_float_sum, features);       //
+        TEST_TARGET_PATTERN(a, target, test_float_compare, features);   //
+        TEST_TARGET_PATTERN(a, target, test_float_divide, features);    //
+        TEST_TARGET_PATTERN(a, target, test_float_int, features);       //
+        TEST_TARGET_PATTERN(a, target, test_float_invert, features);    //
+        TEST_TARGET_PATTERN(a, target, test_float_log, features);       //
+        TEST_TARGET_PATTERN(a, target, test_float_mantissa, features);  //
+        TEST_TARGET_PATTERN(a, target, test_float_mulratio, features);  //
+        TEST_TARGET_PATTERN(a, target, test_float_multiply, features);  //
+        TEST_TARGET_PATTERN(a, target, test_float_negate, features);    //
+        TEST_TARGET_PATTERN(a, target, test_float_one, features);       //
+        TEST_TARGET_PATTERN(a, target, test_float_root, features);      //
+        TEST_TARGET_PATTERN(a, target, test_float_set, features);       //
+        TEST_TARGET_PATTERN(a, target, test_float_sign, features);      //
+        TEST_TARGET_PATTERN(a, target, test_float_sto, features);       //
+        TEST_TARGET_PATTERN(a, target, test_float_sto_set, features);   //
+        TEST_TARGET_PATTERN(a, target, test_float_sum, features);       //
 
-        TEST_TARGET_PATTERN(target, test_hook_account, features);    //
-        TEST_TARGET_PATTERN(target, test_hook_again, features);      //
-        TEST_TARGET_PATTERN(target, test_hook_hash, features);       //
-        TEST_TARGET_PATTERN(target, test_hook_param, features);      //
-        TEST_TARGET_PATTERN(target, test_hook_param_set, features);  //
-        TEST_TARGET_PATTERN(target, test_hook_pos, features);        //
-        TEST_TARGET_PATTERN(target, test_hook_skip, features);       //
+        TEST_TARGET_PATTERN(a, target, test_hook_account, features);    //
+        TEST_TARGET_PATTERN(a, target, test_hook_again, features);      //
+        TEST_TARGET_PATTERN(a, target, test_hook_hash, features);       //
+        TEST_TARGET_PATTERN(a, target, test_hook_param, features);      //
+        TEST_TARGET_PATTERN(a, target, test_hook_param_set, features);  //
+        TEST_TARGET_PATTERN(a, target, test_hook_pos, features);        //
+        TEST_TARGET_PATTERN(a, target, test_hook_skip, features);       //
 
-        TEST_TARGET_PATTERN(target, test_ledger_last_hash, features);  //
-        TEST_TARGET_PATTERN(target, test_ledger_last_time, features);  //
-        TEST_TARGET_PATTERN(target, test_ledger_nonce, features);      //
-        TEST_TARGET_PATTERN(target, test_ledger_seq, features);        //
+        TEST_TARGET_PATTERN(a, target, test_ledger_last_hash, features);  //
+        TEST_TARGET_PATTERN(a, target, test_ledger_last_time, features);  //
+        TEST_TARGET_PATTERN(a, target, test_ledger_nonce, features);      //
+        TEST_TARGET_PATTERN(a, target, test_ledger_seq, features);        //
 
-        TEST_TARGET_PATTERN(target, test_meta_slot, features);  //
-        TEST_TARGET_PATTERN(target, test_xpop_slot, features);  //
+        TEST_TARGET_PATTERN(a, target, test_meta_slot, features);  //
+        TEST_TARGET_PATTERN(a, target, test_xpop_slot, features);  //
 
-        TEST_TARGET_PATTERN(target, test_otxn_id, features);    //
-        TEST_TARGET_PATTERN(target, test_otxn_slot, features);  //
-        TEST_TARGET_PATTERN(target, test_otxn_type, features);
-        TEST_TARGET_PATTERN(target, test_otxn_param, features);  //
-        TEST_TARGET_PATTERN(target, test_otxn_json, features);   // JS ONLY
+        TEST_TARGET_PATTERN(a, target, test_otxn_id, features);    //
+        TEST_TARGET_PATTERN(a, target, test_otxn_slot, features);  //
+        TEST_TARGET_PATTERN(a, target, test_otxn_type, features);
+        TEST_TARGET_PATTERN(a, target, test_otxn_param, features);  //
+        TEST_TARGET_PATTERN(a, target, test_otxn_json, features);   // JS ONLY
 
-        TEST_TARGET_PATTERN(target, test_slot, features);
-        TEST_TARGET_PATTERN(target, test_slot_clear, features);     //
-        TEST_TARGET_PATTERN(target, test_slot_count, features);     //
-        TEST_TARGET_PATTERN(target, test_slot_float, features);     //
-        TEST_TARGET_PATTERN(target, test_slot_set, features);       //
-        TEST_TARGET_PATTERN(target, test_slot_size, features);      //
-        TEST_TARGET_PATTERN(target, test_slot_subarray, features);  //
-        TEST_TARGET_PATTERN(target, test_slot_subfield, features);  //
-        TEST_TARGET_PATTERN(target, test_slot_type, features);      //
-        TEST_TARGET_PATTERN(target, test_slot_json, features);      // JS ONLY
+        TEST_TARGET_PATTERN(a, target, test_slot, features);
+        TEST_TARGET_PATTERN(a, target, test_slot_clear, features);     //
+        TEST_TARGET_PATTERN(a, target, test_slot_count, features);     //
+        TEST_TARGET_PATTERN(a, target, test_slot_float, features);     //
+        TEST_TARGET_PATTERN(a, target, test_slot_set, features);       //
+        TEST_TARGET_PATTERN(a, target, test_slot_size, features);      //
+        TEST_TARGET_PATTERN(a, target, test_slot_subarray, features);  //
+        TEST_TARGET_PATTERN(a, target, test_slot_subfield, features);  //
+        TEST_TARGET_PATTERN(a, target, test_slot_type, features);      //
+        TEST_TARGET_PATTERN(a, target, test_slot_json, features);  // JS ONLY
 
-        TEST_TARGET_PATTERN(target, test_state, features);              //
-        TEST_TARGET_PATTERN(target, test_state_foreign, features);      //
-        TEST_TARGET_PATTERN(target, test_state_foreign_set, features);  //
-        // TEST_TARGET_PATTERN(target, test_state_foreign_set_max, features); //
-        // Not Version Specific
-        TEST_TARGET_PATTERN(target, test_state_set, features);  //
+        TEST_TARGET_PATTERN(a, target, test_state, features);              //
+        TEST_TARGET_PATTERN(a, target, test_state_foreign, features);      //
+        TEST_TARGET_PATTERN(a, target, test_state_foreign_set, features);  //
+        // TEST_TARGET_PATTERN(a, target, test_state_foreign_set_max, features);
+        // // Not Version Specific
+        TEST_TARGET_PATTERN(a, target, test_state_set, features);  //
 
-        TEST_TARGET_PATTERN(target, test_sto_emplace, features);    //
-        TEST_TARGET_PATTERN(target, test_sto_erase, features);      //
-        TEST_TARGET_PATTERN(target, test_sto_subarray, features);   //
-        TEST_TARGET_PATTERN(target, test_sto_subfield, features);   //
-        TEST_TARGET_PATTERN(target, test_sto_validate, features);   //
-        TEST_TARGET_PATTERN(target, test_sto_to_json, features);    // JS ONLY
-        TEST_TARGET_PATTERN(target, test_sto_from_json, features);  // JS ONLY
+        TEST_TARGET_PATTERN(a, target, test_sto_emplace, features);   //
+        TEST_TARGET_PATTERN(a, target, test_sto_erase, features);     //
+        TEST_TARGET_PATTERN(a, target, test_sto_subarray, features);  //
+        TEST_TARGET_PATTERN(a, target, test_sto_subfield, features);  //
+        TEST_TARGET_PATTERN(a, target, test_sto_validate, features);  //
+        TEST_TARGET_PATTERN(a, target, test_sto_to_json, features);   // JS ONLY
+        TEST_TARGET_PATTERN(
+            a, target, test_sto_from_json, features);  // JS ONLY
 
-        TEST_TARGET_PATTERN(target, test_trace, features);  //
-        // TEST_TARGET_PATTERN(target, test_trace_float, features);  // C ONLY
-        // TEST_TARGET_PATTERN(target, test_trace_num, features);    // C ONLY
+        TEST_TARGET_PATTERN(a, target, test_trace, features);  //
+        // TEST_TARGET_PATTERN(a, target, test_trace_float, features);  // C
+        // ONLY TEST_TARGET_PATTERN(a, target, test_trace_num, features);    //
+        // C ONLY
 
-        TEST_TARGET_PATTERN(target, test_util_accid, features);    //
-        TEST_TARGET_PATTERN(target, test_util_keylet, features);   //
-        TEST_TARGET_PATTERN(target, test_util_raddr, features);    //
-        TEST_TARGET_PATTERN(target, test_util_sha512h, features);  //
-        TEST_TARGET_PATTERN(target, test_util_verify, features);   //
+        TEST_TARGET_PATTERN(a, target, test_util_accid, features);    //
+        TEST_TARGET_PATTERN(a, target, test_util_keylet, features);   //
+        TEST_TARGET_PATTERN(a, target, test_util_raddr, features);    //
+        TEST_TARGET_PATTERN(a, target, test_util_sha512h, features);  //
+        TEST_TARGET_PATTERN(a, target, test_util_verify, features);   //
 
-        TEST_TARGET_PATTERN(target, test_js_date, features);  //
+        TEST_TARGET_PATTERN(a, target, test_js_date, features);  //
+
+        if (target == ":log-test-names:")
+        {
+            std::cout << "\nTEST-NAMES-START\n"
+                      << Json::FastWriter().write(a) << "\nTEST-NAMES-END\n"
+                      << std::endl;
+            pass();
+        }
     }
 
     void
