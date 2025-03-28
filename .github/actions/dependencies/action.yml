@@ -8,7 +8,7 @@ inputs:
   build_dir:
     description: 'Directory to build dependencies in'
     required: false
-    default: '.build-deps'
+    default: '.build'
   compiler-id:
     description: 'Unique identifier for compiler/version combination used for cache keys'
     required: false
