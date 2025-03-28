@@ -11,6 +11,11 @@ echo "Cleaning previously built binary"
 rm -f release-build/xahaud
 
 BUILD_CORES=$(echo "scale=0 ; `nproc` / 1.337" | bc)
+GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-""}
+GITHUB_SHA=${GITHUB_SHA:-"local"}
+GITHUB_RUN_NUMBER=${GITHUB_RUN_NUMBER:-"0"}
+GITHUB_WORKFLOW=${GITHUB_WORKFLOW:-"local"}
+GITHUB_REF=${GITHUB_REF:-"local"}
 
 if [[ "$GITHUB_REPOSITORY" == "" ]]; then
   #Default
