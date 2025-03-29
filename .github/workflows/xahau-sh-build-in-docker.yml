@@ -12,7 +12,7 @@ concurrency:
 
 env:
   DEBUG_CONTAINERS: 1
-  REMOVE_CONTAINERS: 1
+  REMOVE_CONTAINERS: 0
 
 jobs:
   build-and-test:
@@ -59,19 +59,16 @@ jobs:
           if [[ "${DEBUG_CONTAINERS}" == "1" ]]; then
             echo "🔍 Checking for leftover containers..."
             BUILD_CONTAINERS=$(docker ps --format '{{.Names}}' | grep '^xahaud_cached_builder' || echo "")
-
+            CONTAINER_NAME="xahaud_cached_builder_${{ github.workflow }}-${{ github.ref_name }}"
             if [[ -n "$BUILD_CONTAINERS" && "${REMOVE_CONTAINERS}" == "1" ]]; then
               echo "⚠️ WARNING: Some build containers are still running"
               echo "$BUILD_CONTAINERS"
-              # stop and remove the build containers
-              echo "Attempting to stop build containers..."
-              for CONTAINER in $BUILD_CONTAINERS; do
-                echo "Stopping container: $CONTAINER"
-                docker stop "$CONTAINER" || echo "Failed to stop container: $CONTAINER"
-                echo "Removing container: $CONTAINER"
-                docker rm -f "$CONTAINER" || echo "Failed to remove container: $CONTAINER"
-              done
-              echo "✅ Build containers stopped and removed"
+              echo "Attempting to stop build containers.."
+              echo "Stopping container: $CONTAINER_NAME"
+              docker stop "$CONTAINER_NAME" || echo "Failed to stop container: $CONTAINER_NAME"
+              echo "Removing container: $CONTAINER_NAME"
+              docker rm -f "$CONTAINER_NAME" || echo "Failed to remove container: $CONTAINER_NAME"
+              echo "✅ Build container stopped and removed"
             else
               echo "✅ No build containers found"
             fi
