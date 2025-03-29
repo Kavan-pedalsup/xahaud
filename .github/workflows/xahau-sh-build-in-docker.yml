@@ -11,7 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DEBUG_BUILD_CONTAINERS_AFTER_CLEANUP: 1
+  DEBUG_CONTAINERS: 1
+  REMOVE_CONTAINERS: 1
 
 jobs:
   build-and-test:
@@ -55,13 +56,22 @@ jobs:
             echo "⚠️ Cleanup script failed! Keeping for debugging: $JOB_CLEANUP_SCRIPT"
           fi
 
-          if [[ "${DEBUG_BUILD_CONTAINERS_AFTER_CLEANUP}" == "1" ]]; then
+          if [[ "${DEBUG_CONTAINERS}" == "1" ]]; then
             echo "🔍 Checking for leftover containers..."
             BUILD_CONTAINERS=$(docker ps --format '{{.Names}}' | grep '^xahaud_cached_builder' || echo "")
 
-            if [[ -n "$BUILD_CONTAINERS" ]]; then
+            if [[ -n "$BUILD_CONTAINERS" && "${REMOVE_CONTAINERS}" == "1" ]]; then
               echo "⚠️ WARNING: Some build containers are still running"
               echo "$BUILD_CONTAINERS"
+              # stop and remove the build containers
+              echo "Attempting to stop build containers..."
+              for CONTAINER in $BUILD_CONTAINERS; do
+                echo "Stopping container: $CONTAINER"
+                docker stop "$CONTAINER" || echo "Failed to stop container: $CONTAINER"
+                echo "Removing container: $CONTAINER"
+                docker rm -f "$CONTAINER" || echo "Failed to remove container: $CONTAINER"
+              done
+              echo "✅ Build containers stopped and removed"
             else
               echo "✅ No build containers found"
             fi
