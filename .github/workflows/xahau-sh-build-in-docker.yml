@@ -14,40 +14,45 @@ env:
   DEBUG_BUILD_CONTAINERS_AFTER_CLEANUP: 1
 
 jobs:
-  checkout:
+  build-and-test:
     runs-on: [self-hosted, vanity]
-    outputs:
-      checkout_path: ${{ steps.vars.outputs.checkout_path }}
     steps:
-      - name: Prepare checkout path
-        id: vars
+      - name: Clean up any leftover containers from previous runs
+        run: |
+          BUILD_CONTAINERS=$(docker ps -q --filter "name=xahaud_cached_builder") || true
+          if [[ -n "$BUILD_CONTAINERS" ]]; then
+            echo "Found leftover containers from previous runs, stopping them"
+            docker stop $BUILD_CONTAINERS || echo "Failed to stop some containers"
+            docker rm -f $BUILD_CONTAINERS || echo "Failed to remove some containers"
+          else
+            echo "No leftover containers found"
+          fi
+
+      - name: Prepare workspace
         run: |
           SAFE_BRANCH=$(echo "${{ github.ref_name }}" | sed -e 's/[^a-zA-Z0-9._-]/-/g')
           CHECKOUT_PATH="${SAFE_BRANCH}-${{ github.sha }}"
-          echo "checkout_path=${CHECKOUT_PATH}" >> "$GITHUB_OUTPUT"
+          echo "CHECKOUT_PATH=${CHECKOUT_PATH}" >> $GITHUB_ENV
+          mkdir -p "$CHECKOUT_PATH"
 
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          path: ${{ steps.vars.outputs.checkout_path }}
+          path: ${{ env.CHECKOUT_PATH }}
           clean: true
-          fetch-depth: 2 # Only get the last 2 commits, to avoid fetching all history
+          fetch-depth: 2
 
-  build:
-    runs-on: [self-hosted, vanity]
-    needs: [checkout]
-    defaults:
-      run:
-        working-directory: ${{ needs.checkout.outputs.checkout_path }}
-    steps:
       - name: Set Cleanup Script Path
         run: |
           echo "JOB_CLEANUP_SCRIPT=$(mktemp)" >> $GITHUB_ENV
 
       - name: Build using Docker
+        working-directory: ${{ env.CHECKOUT_PATH }}
         run: /bin/bash release-builder.sh
 
-      - name: Stop Container (Cleanup)
+      - name: Stop Container (Cleanup after build)
         if: always()
+        working-directory: ${{ env.CHECKOUT_PATH }}
         run: |
           echo "Running cleanup script: $JOB_CLEANUP_SCRIPT"
           /bin/bash -e -x "$JOB_CLEANUP_SCRIPT"
@@ -73,23 +78,12 @@ jobs:
             fi
           fi
 
-  tests:
-    runs-on: [self-hosted, vanity]
-    needs: [build, checkout]
-    defaults:
-      run:
-        working-directory: ${{ needs.checkout.outputs.checkout_path }}
-    steps:
-      - name: Unit tests
+      - name: Run unit tests
+        working-directory: ${{ env.CHECKOUT_PATH }}
         run: /bin/bash docker-unit-tests.sh
 
-  cleanup:
-    runs-on: [self-hosted, vanity]
-    needs: [tests, checkout]
-    if: always()
-    steps:
       - name: Cleanup workspace
+        if: always()
         run: |
-          CHECKOUT_PATH="${{ needs.checkout.outputs.checkout_path }}"
           echo "Cleaning workspace for ${CHECKOUT_PATH}"
           rm -rf "${{ github.workspace }}/${CHECKOUT_PATH}"
