@@ -36,6 +36,22 @@ if(thread_safety_analysis)
   add_link_options("-stdlib=libc++")
 endif()
 
+option(USE_CONAN "Use Conan package manager for dependencies" OFF)
+# Then, auto-detect if conan_toolchain.cmake is being used
+if(CMAKE_TOOLCHAIN_FILE)
+  # Check if the toolchain file path contains "conan_toolchain"
+  if(CMAKE_TOOLCHAIN_FILE MATCHES "conan_toolchain")
+    set(USE_CONAN ON CACHE BOOL "Using Conan detected from toolchain file" FORCE)
+    message(STATUS "Conan toolchain detected: ${CMAKE_TOOLCHAIN_FILE}")
+    message(STATUS "Building with Conan dependencies")
+  endif()
+endif()
+
+if (NOT USE_CONAN)
+  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake")
+  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake/deps")
+endif()
+
 include (CheckCXXCompilerFlag)
 include (FetchContent)
 include (ExternalProject)
@@ -48,6 +64,9 @@ endif ()
 include(RippledSanity)
 include(RippledVersion)
 include(RippledSettings)
+if (NOT USE_CONAN)
+  include(RippledNIH)
+endif()
 # this check has to remain in the top-level cmake
 # because of the early return statement
 if (packages_only)
@@ -60,19 +79,7 @@ include(RippledCompiler)
 include(RippledInterface)
 
 ###
-option(USE_CONAN "Use Conan package manager for dependencies" OFF)
-# Then, auto-detect if conan_toolchain.cmake is being used
-if(CMAKE_TOOLCHAIN_FILE)
-  # Check if the toolchain file path contains "conan_toolchain"
-  if(CMAKE_TOOLCHAIN_FILE MATCHES "conan_toolchain")
-    set(USE_CONAN ON CACHE BOOL "Using Conan detected from toolchain file" FORCE)
-    message(STATUS "Conan toolchain detected: ${CMAKE_TOOLCHAIN_FILE}")
-    message(STATUS "Building with Conan dependencies")
-  endif()
-endif()
 if (NOT USE_CONAN)
-  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake")
-  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake/deps")
   add_subdirectory(src/secp256k1)
   add_subdirectory(src/ed25519-donna)
   include(deps/Boost)

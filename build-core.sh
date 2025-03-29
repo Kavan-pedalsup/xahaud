@@ -27,10 +27,8 @@ if [[ "$?" -ne "0" ]]; then
   exit 127
 fi
 
-#!/bin/bash
 perl -i -pe "s/^(\\s*)-DBUILD_SHARED_LIBS=OFF/\\1-DBUILD_SHARED_LIBS=OFF\\n\\1-DROCKSDB_BUILD_SHARED=OFF/g" Builds/CMake/deps/Rocksdb.cmake &&
 mv Builds/CMake/deps/WasmEdge.cmake Builds/CMake/deps/WasmEdge.old &&
-cp Builds/CMake/deps/Rocksdb.cmake Builds/CMake/deps/Rocksdb.cmake.old &&
 echo "find_package(LLVM REQUIRED CONFIG)
 message(STATUS \"Found LLVM \${LLVM_PACKAGE_VERSION}\")
 message(STATUS \"Using LLVMConfig.cmake in: \${LLVM_DIR}\")
