@@ -5,19 +5,19 @@
 # debugging.
 set -ex
 
-# which docker 2> /dev/null 2> /dev/null
-# if [ "$?" -eq "1" ]
-# then
-#   echo 'Docker not found. Install it first.'
-#   exit 1
-# fi
+which docker 2> /dev/null 2> /dev/null
+if [ "$?" -eq "1" ]
+then
+  echo 'Docker not found. Install it first.'
+  exit 1
+fi
 
-# stat .git 2> /dev/null 2> /dev/null
-# if [ "$?" -eq "1" ]
-# then
-#   echo 'Run this inside the source directory. (.git dir not found).'
-#   exit 1
-# fi
+stat .git 2> /dev/null 2> /dev/null
+if [ "$?" -eq "1" ]
+then
+  echo 'Run this inside the source directory. (.git dir not found).'
+  exit 1
+fi
 
 # Add trap to handle termination
 cleanup() {
