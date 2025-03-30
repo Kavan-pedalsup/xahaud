@@ -40,7 +40,6 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    # Generate a safe branch name for cache keys
     - name: Generate safe branch name
       if: inputs.ccache_enabled == 'true'
       id: safe-branch
@@ -49,7 +48,6 @@ runs:
         SAFE_BRANCH=$(echo "${{ github.ref_name }}" | tr -c 'a-zA-Z0-9_.-' '-')
         echo "name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
 
-    # Restore ccache if enabled
     - name: Restore ccache directory
       if: inputs.ccache_enabled == 'true'
       id: ccache-restore
@@ -63,7 +61,6 @@ runs:
           ${{ runner.os }}-ccache-v${{ inputs.cache_version }}-${{ inputs.compiler-id }}-
           ${{ runner.os }}-ccache-v${{ inputs.cache_version }}-
 
-    # Configure project
     - name: Configure project
       shell: bash
       run: |
@@ -92,20 +89,17 @@ runs:
           -DCMAKE_TOOLCHAIN_FILE:FILEPATH=build/generators/conan_toolchain.cmake \
           -DCMAKE_BUILD_TYPE=${{ inputs.configuration }}
 
-    # Build project
     - name: Build project
       shell: bash
       run: |
         cd ${{ inputs.build_dir }}
         cmake --build . --config ${{ inputs.configuration }} --parallel $(nproc)
 
-    # Show ccache statistics
     - name: Show ccache statistics
       if: inputs.ccache_enabled == 'true'
       shell: bash
       run: ccache -s
 
-    # Save ccache
     - name: Save ccache directory
       if: inputs.ccache_enabled == 'true'
       uses: actions/cache/save@v4
