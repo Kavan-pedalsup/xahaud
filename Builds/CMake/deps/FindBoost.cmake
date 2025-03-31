@@ -248,7 +248,7 @@ include(FindPackageHandleStandardArgs)
 # Save project's policies
 cmake_policy(PUSH)
 cmake_policy(SET CMP0057 NEW) # if IN_LIST
-cmake_policy(SET CMP0144 NEW)
+#cmake_policy(SET CMP0144 NEW)
 
 #-------------------------------------------------------------------------------
 # Before we go searching, check whether a boost cmake package is available, unless
