@@ -987,9 +987,11 @@ doCatalogueLoad(RPC::JsonContext& context)
                 reinterpret_cast<char*>(&parentCloseTime),
                 sizeof(parentCloseTime)))
         {
-            JLOG(context.j.warn()) << "Catalogue load expected but could not "
-                                      "read the next ledger header.";
-            break;
+            JLOG(context.j.warn())
+                << "Catalogue load expected but could not "
+                << "read the next ledger header at seq=" << expected_seq << ". "
+                << "Ledgers prior to this in the file (if any) were loaded.";
+            return rpcError(rpcINTERNAL, "Unexpected end of catalogue file.");
         }
 
         info.closeTime = time_point{duration{closeTime}};
