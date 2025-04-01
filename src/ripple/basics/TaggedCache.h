@@ -21,18 +21,15 @@
 #define RIPPLE_BASICS_TAGGEDCACHE_H_INCLUDED
 
 #include <ripple/basics/Log.h>
-#include <ripple/basics/ToString.h>
 #include <ripple/basics/UnorderedContainers.h>
 #include <ripple/basics/hardened_hash.h>
 #include <ripple/beast/clock/abstract_clock.h>
 #include <ripple/beast/insight/Insight.h>
 #include <atomic>
 #include <functional>
-#include <iostream>
 #include <mutex>
 #include <thread>
 #include <type_traits>
-#include <typeinfo>
 #include <vector>
 
 namespace ripple {
@@ -182,7 +179,6 @@ public:
 
     /** Refresh the last access time on a key if present.
         @return `true` If the key was found.
-
     */
     template <class KeyComparable>
     bool
@@ -737,11 +733,7 @@ private:
         std::atomic<int>& allRemovals,
         std::lock_guard<std::recursive_mutex> const&)
     {
-        // Debug the original shouldSweep before moving it
-
         return std::thread([&, this]() {
-            // Debug the moved shouldSweep_ inside the thread
-
             int cacheRemovals = 0;
             int mapRemovals = 0;
 
