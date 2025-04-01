@@ -1088,6 +1088,20 @@ doCatalogueLoad(RPC::JsonContext& context)
         ledger->setCloseFlags(info.closeFlags);
         ledger->setImmutable(true);
 
+        // we can double check the computed hashes now, since setImmutable
+        // recomputes the hashes
+        if (ledger->info().hash != info.hash)
+        {
+            JLOG(context.j.error())
+                << "Ledger seq=" << info.seq
+                << " was loaded from catalogue, but computed hash does not "
+                   "match. "
+                << "This ledger was not saved, and ledger loading from this "
+                   "catalogue file ended here.";
+            return rpcError(
+                rpcINTERNAL, "Catalogue file contains a corrupted ledger.");
+        }
+
         // Save in database
         pendSaveValidated(context.app, ledger, false, false);
 
