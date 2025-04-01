@@ -588,16 +588,6 @@ doCatalogueCreate(RPC::JsonContext& context)
 
         ledgers_written++;
 
-        // Periodically flush the stream to prevent excessive memory usage in
-        // compression buffers Flush every 1000 ledgers as a reasonable balance
-        // between compression efficiency and memory usage
-        if (ledgers_written % 1000 == 0)
-        {
-            JLOG(context.j.info())
-                << "Flushing compression stream at ledger " << ledger_seq;
-            compStream->flush();
-        }
-
         // Cycle the ledgers: current becomes previous, we'll load a new current
         // next iteration
         prevLedger = currLedger;
