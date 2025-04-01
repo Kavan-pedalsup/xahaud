@@ -1026,7 +1026,7 @@ doCatalogueLoad(RPC::JsonContext& context)
             // Base ledger - create a fresh one
             ledger = std::make_shared<Ledger>(
                 info.seq,
-                context.app.timeKeeper().closeTime(),
+                info.closeTime,
                 context.app.config(),
                 context.app.getNodeFamily());
 
