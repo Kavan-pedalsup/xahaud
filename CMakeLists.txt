@@ -1,10 +1,13 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required (VERSION 3.16)
 
 if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
 endif()
 if(POLICY CMP0077)
   cmake_policy(SET CMP0077 NEW)
+endif()
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
 endif()
 
 # Fix "unrecognized escape" issues when passing CMAKE_MODULE_PATH on Windows.
@@ -15,7 +18,6 @@ project(rippled)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 set(Boost_NO_BOOST_CMAKE ON)
 
 # make GIT_COMMIT_HASH define available to all sources
