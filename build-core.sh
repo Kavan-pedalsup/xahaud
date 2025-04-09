@@ -1,4 +1,11 @@
-#!/bin/bash
+#!/bin/bash -u
+# We use set -e and bash with -u to bail on first non zero exit code of any
+# processes launched or upon any unbound variable.
+# We use set -x to print commands before running them to help with
+# debugging.
+set -ex
+
+set -e
 
 echo "START INSIDE CONTAINER - CORE"
 
@@ -23,7 +30,7 @@ fi
 perl -i -pe "s/^(\\s*)-DBUILD_SHARED_LIBS=OFF/\\1-DBUILD_SHARED_LIBS=OFF\\n\\1-DROCKSDB_BUILD_SHARED=OFF/g" Builds/CMake/deps/Rocksdb.cmake &&
 mv Builds/CMake/deps/WasmEdge.cmake Builds/CMake/deps/WasmEdge.old &&
 echo "find_package(LLVM REQUIRED CONFIG)
-message(STATUS \"Found LLVM ${LLVM_PACKAGE_VERSION}\")
+message(STATUS \"Found LLVM \${LLVM_PACKAGE_VERSION}\")
 message(STATUS \"Using LLVMConfig.cmake in: \${LLVM_DIR}\")
 add_library (wasmedge STATIC IMPORTED GLOBAL)
 set_target_properties(wasmedge PROPERTIES IMPORTED_LOCATION \${WasmEdge_LIB})

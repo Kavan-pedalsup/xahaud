@@ -1079,6 +1079,24 @@ Transactor::checkMultiSign(PreclaimContext const& ctx)
 
 //------------------------------------------------------------------------------
 
+// increment the touch counter on an account
+static void
+touchAccount(ApplyView& view, AccountID const& id)
+{
+    if (!view.rules().enabled(featureTouch))
+        return;
+
+    std::shared_ptr<SLE> sle = view.peek(keylet::account(id));
+    if (!sle)
+        return;
+
+    uint64_t tc =
+        sle->isFieldPresent(sfTouchCount) ? sle->getFieldU64(sfTouchCount) : 0;
+
+    sle->setFieldU64(sfTouchCount, tc + 1);
+    view.update(sle);
+}
+
 static void
 removeUnfundedOffers(
     ApplyView& view,
@@ -1270,9 +1288,17 @@ Transactor::executeHookChain(
                 if (results.back().exitType == hook_api::ExitType::WASM_ERROR)
                 {
                     JLOG(j_.warn()) << "HookError[" << account << "-"
-                                    << ctx_.tx.getAccountID(sfAccount) << "]: "
+                                    << ctx_.tx.getAccountID(sfAccount)
                                     << "]: Execution failure (graceful) "
                                     << "HookHash: " << hookHash;
+                }
+                if (results.back().exitType == hook_api::ExitType::UNSET)
+                {
+                    JLOG(j_.warn())
+                        << "HookError[" << account << "-"
+                        << ctx_.tx.getAccountID(sfAccount)
+                        << "]: Execution failure (no exit type specified) "
+                        << "HookHash: " << hookHash;
                 }
                 return tecHOOK_REJECTED;
             }
@@ -1298,7 +1324,7 @@ Transactor::executeHookChain(
         {
             JLOG(j_.warn())
                 << "HookError[" << account << "-"
-                << ctx_.tx.getAccountID(sfAccount) << "]: "
+                << ctx_.tx.getAccountID(sfAccount)
                 << "]: Execution failure (exceptional) "
                 << "Exception: " << e.what() << " HookHash: " << hookHash;
 
@@ -1426,13 +1452,13 @@ Transactor::doHookCallback(
                 finalizeHookResult(callbackResult, ctx_, success);
 
             JLOG(j_.trace()) << "HookInfo[" << callbackAccountID << "-"
-                             << ctx_.tx.getAccountID(sfAccount) << "]: "
-                             << "Callback finalizeHookResult = " << result;
+                             << ctx_.tx.getAccountID(sfAccount)
+                             << "]: Callback finalizeHookResult = " << result;
         }
         catch (std::exception& e)
         {
             JLOG(j_.fatal()) << "HookError[" << callbackAccountID << "-"
-                             << ctx_.tx.getAccountID(sfAccount) << "]: "
+                             << ctx_.tx.getAccountID(sfAccount)
                              << "]: Callback failure " << e.what();
         }
     }
@@ -1510,6 +1536,8 @@ Transactor::doTSH(
         // only process the relevant ones
         if ((!canRollback && strong) || (canRollback && !strong))
             continue;
+
+        touchAccount(view, tshAccountID);
 
         auto klTshHook = keylet::hook(tshAccountID);
 
@@ -1678,13 +1706,13 @@ Transactor::doAgainAsWeak(
             results.push_back(aawResult);
 
             JLOG(j_.trace()) << "HookInfo[" << hookAccountID << "-"
-                             << ctx_.tx.getAccountID(sfAccount) << "]: "
-                             << " aaw Hook ExitCode = " << aawResult.exitCode;
+                             << ctx_.tx.getAccountID(sfAccount)
+                             << "]: aaw Hook ExitCode = " << aawResult.exitCode;
         }
         catch (std::exception& e)
         {
             JLOG(j_.fatal()) << "HookError[" << hookAccountID << "-"
-                             << ctx_.tx.getAccountID(sfAccount) << "]: "
+                             << ctx_.tx.getAccountID(sfAccount)
                              << "]: aaw failure " << e.what();
         }
     }

@@ -392,6 +392,7 @@ target_sources (rippled PRIVATE
   src/ripple/app/misc/NegativeUNLVote.cpp
   src/ripple/app/misc/NetworkOPs.cpp
   src/ripple/app/misc/SHAMapStoreImp.cpp
+  src/ripple/app/misc/StateAccounting.cpp
   src/ripple/app/misc/detail/impl/WorkSSL.cpp
   src/ripple/app/misc/impl/AccountTxPaging.cpp
   src/ripple/app/misc/impl/AmendmentTable.cpp
@@ -606,6 +607,7 @@ target_sources (rippled PRIVATE
   src/ripple/rpc/handlers/BlackList.cpp
   src/ripple/rpc/handlers/BookOffers.cpp
   src/ripple/rpc/handlers/CanDelete.cpp
+  src/ripple/rpc/handlers/Catalogue.cpp
   src/ripple/rpc/handlers/Connect.cpp
   src/ripple/rpc/handlers/ConsensusInfo.cpp
   src/ripple/rpc/handlers/CrawlShards.cpp
@@ -661,6 +663,7 @@ target_sources (rippled PRIVATE
   src/ripple/rpc/handlers/ValidatorListSites.cpp
   src/ripple/rpc/handlers/Validators.cpp
   src/ripple/rpc/handlers/WalletPropose.cpp
+  src/ripple/rpc/handlers/Catalogue.cpp
   src/ripple/rpc/impl/DeliveredAmount.cpp
   src/ripple/rpc/impl/Handler.cpp
   src/ripple/rpc/impl/LegacyPathFind.cpp
@@ -758,6 +761,7 @@ if (tests)
     src/test/app/Taker_test.cpp
     src/test/app/TheoreticalQuality_test.cpp
     src/test/app/Ticket_test.cpp
+    src/test/app/Touch_test.cpp
     src/test/app/Transaction_ordering_test.cpp
     src/test/app/TrustAndBalance_test.cpp
     src/test/app/TxQ_test.cpp
@@ -996,6 +1000,7 @@ if (tests)
     src/test/rpc/AccountTx_test.cpp
     src/test/rpc/AmendmentBlocked_test.cpp
     src/test/rpc/Book_test.cpp
+    src/test/rpc/Catalogue_test.cpp
     src/test/rpc/DepositAuthorized_test.cpp
     src/test/rpc/DeliveredAmount_test.cpp
     src/test/rpc/Feature_test.cpp

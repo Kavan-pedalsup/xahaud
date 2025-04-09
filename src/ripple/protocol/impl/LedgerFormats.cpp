@@ -67,6 +67,7 @@ LedgerFormats::LedgerFormats()
             {sfGovernanceFlags,      soeOPTIONAL},
             {sfGovernanceMarks,      soeOPTIONAL},
             {sfAccountIndex,         soeOPTIONAL},
+            {sfTouchCount,           soeOPTIONAL},
         },
         commonFields);
 
