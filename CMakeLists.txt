@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required (VERSION 3.16)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
@@ -11,11 +14,11 @@ endif()
 file(TO_CMAKE_PATH "${CMAKE_MODULE_PATH}" CMAKE_MODULE_PATH)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake")
 
-project(rippled)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
+endif()
 
+project (rippled)
 set(Boost_NO_BOOST_CMAKE ON)
 
 # make GIT_COMMIT_HASH define available to all sources
