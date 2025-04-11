@@ -316,9 +316,7 @@ class Catalogue_test : public beast::unit_test::suite
         Env loadEnv{
             *this,
             test::jtx::envconfig(test::jtx::port_increment, 3),
-            features,
-            nullptr,
-            beast::severities::kInfo};
+            features};
 
         // Now load the catalogue
         Json::Value params{Json::objectValue};
@@ -512,9 +510,7 @@ class Catalogue_test : public beast::unit_test::suite
                     cfg->NETWORK_ID = 123;
                     return cfg;
                 }),
-                features,
-                nullptr,
-                beast::severities::kInfo};
+                features};
             prepareLedgerData(env1, 5);
 
             // Create catalogue with network ID 123
@@ -538,9 +534,7 @@ class Catalogue_test : public beast::unit_test::suite
                     cfg->NETWORK_ID = 456;
                     return cfg;
                 }),
-                features,
-                nullptr,
-                beast::severities::kInfo};
+                features};
 
             {
                 Json::Value params{Json::objectValue};
