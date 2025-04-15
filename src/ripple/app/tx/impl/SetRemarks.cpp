@@ -122,7 +122,7 @@ SetRemarks::preflight(PreflightContext const& ctx)
     if (tx.isFieldPresent(sfFlags) && tx.getFieldU32(sfFlags) != 0)
     {
         JLOG(j.warn()) << "SetRemarks: Invalid flags set.";
-        return temMALFORMED;
+        return temINVALID_FLAG;
     }
 
     auto const& remarks = tx.getFieldArray(sfRemarks);
