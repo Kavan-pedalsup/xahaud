@@ -118,6 +118,7 @@ CONSTRUCT_TYPED_SFIELD(sfTransferRate,          "TransferRate",         UINT32, 
 CONSTRUCT_TYPED_SFIELD(sfWalletSize,            "WalletSize",           UINT32,    12);
 CONSTRUCT_TYPED_SFIELD(sfOwnerCount,            "OwnerCount",           UINT32,    13);
 CONSTRUCT_TYPED_SFIELD(sfDestinationTag,        "DestinationTag",       UINT32,    14);
+CONSTRUCT_TYPED_SFIELD(sfRoyaltyRate,           "RoyaltyRate",          UINT32,    15);
 
 // 32-bit integers (uncommon)
 CONSTRUCT_TYPED_SFIELD(sfHighQualityIn,         "HighQualityIn",        UINT32,    16);

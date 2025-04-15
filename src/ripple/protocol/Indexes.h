@@ -297,6 +297,10 @@ import_vlseq(PublicKey const& key) noexcept;
 Keylet
 uritoken(AccountID const& issuer, Blob const& uri);
 
+/** The initial directory page for a specific quality */
+Keylet
+uritoken_offer(Keylet const& k, std::uint64_t q, AccountID const& issuer, Currency const& currency) noexcept;
+
 }  // namespace keylet
 
 // Everything below is deprecated and should be removed in favor of keylets:

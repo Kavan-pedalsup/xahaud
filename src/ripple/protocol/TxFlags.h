@@ -182,7 +182,11 @@ constexpr std::uint32_t const tfNFTokenCancelOfferMask     = ~(tfUniversal);
 constexpr std::uint32_t const tfNFTokenAcceptOfferMask     = ~tfUniversal;
 
 // URIToken mask
-constexpr std::uint32_t const tfURITokenMintMask = ~(tfUniversal | tfBurnable);
+enum URITokenMintFlags : uint32_t {
+    // tfBurnable = 0x00000001,
+    tfRoyalty = 0x00000002,
+};
+constexpr std::uint32_t const tfURITokenMintMask = ~(tfUniversal | tfBurnable | tfRoyalty);
 constexpr std::uint32_t const tfURITokenNonMintMask = ~tfUniversal;
 
 // ClaimReward flags:

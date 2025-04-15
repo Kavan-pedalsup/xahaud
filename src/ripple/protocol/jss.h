@@ -147,6 +147,7 @@ JSS(TransactionType);          // in: TransactionSign.
 JSS(TransferRate);             // in: TransferRate.
 JSS(TrustSet);                 // transaction type.
 JSS(URIToken);                 // out: LedgerEntry
+JSS(URITokenOffer);            // out: LedgerEntry
 JSS(URITokenMint);             // tx type
 JSS(URITokenBurn);             // tx type
 JSS(URITokenBuy);              // tx type

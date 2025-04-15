@@ -419,6 +419,7 @@ TxFormats::TxFormats()
             {sfAmount, soeOPTIONAL},
             {sfDestination, soeOPTIONAL},
             {sfTicketSequence, soeOPTIONAL},
+            {sfRoyaltyRate, soeOPTIONAL},
         },
         commonFields);
 

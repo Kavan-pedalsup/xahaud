@@ -370,6 +370,7 @@ extern SF_UINT32 const sfTransferRate;
 extern SF_UINT32 const sfWalletSize;
 extern SF_UINT32 const sfOwnerCount;
 extern SF_UINT32 const sfDestinationTag;
+extern SF_UINT32 const sfRoyaltyRate;
 
 // 32-bit integers (uncommon)
 extern SF_UINT32 const sfHighQualityIn;

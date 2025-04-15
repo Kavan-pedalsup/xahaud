@@ -220,7 +220,11 @@ URIToken::preclaim(PreclaimContext const& ctx)
 
             // check if the seller has listed it at all
             if (!saleAmount)
-                return tecNO_PERMISSION;
+            {
+                // Amendment Guard
+                // return tecNO_PERMISSION;
+                return tesSUCCESS;
+            }
 
             // check if the seller has listed it for sale to a specific account
             if (dest && *dest != acc)
@@ -336,6 +340,140 @@ URIToken::preclaim(PreclaimContext const& ctx)
     }
 }
 
+static TER
+transfer(
+    Sandbox& sb,
+    STAmount const& priorBalance,
+    STAmount const& purchaseAmount,
+    STAmount const& saleAmount,
+    STAmount const& fee,
+    AccountID const& receiver,
+    AccountID const& sender,
+    Keylet const& kl,
+    std::shared_ptr<SLE> const& sleU,
+    std::shared_ptr<SLE> const& sleReciever,
+    std::shared_ptr<SLE> const& sleSender,
+    beast::Journal journal)
+{
+    if (purchaseAmount < saleAmount)
+        return tecINSUFFICIENT_PAYMENT;
+
+    // if it's an xrp sale/purchase then no trustline needed
+    if (purchaseAmount.native())
+    {
+        STAmount needed{sb.fees().accountReserve(
+            sleReciever->getFieldU32(sfOwnerCount) + 1)};
+
+        // STAmount const fee = ctx_.tx.getFieldAmount(sfFee).xrp();
+
+        if (needed + fee < needed)
+            return tecINTERNAL;
+
+        needed += fee;
+
+        if (needed + purchaseAmount < needed)
+            return tecINTERNAL;
+
+        needed += purchaseAmount;
+
+        if (needed > priorBalance)
+            return tecINSUFFICIENT_FUNDS;
+    }
+    else
+    {
+        // IOU sale
+        if (TER result = trustTransferAllowed(
+                sb, {receiver, sender}, purchaseAmount.issue(), journal);
+            !isTesSuccess(result))
+        {
+            JLOG(journal.trace())
+                << "URIToken::doApply trustTransferAllowed result=" << result;
+
+            return result;
+        }
+
+        if (STAmount availableFunds{accountFunds(
+                sb, receiver, purchaseAmount, fhZERO_IF_FROZEN, journal)};
+            purchaseAmount > availableFunds)
+            return tecINSUFFICIENT_FUNDS;
+    }
+
+    // execute the funds transfer, we'll check reserves last
+    if (TER result =
+            accountSend(sb, receiver, sender, purchaseAmount, journal, false);
+        !isTesSuccess(result))
+        return result;
+
+    // add token to new owner dir
+    auto const newPage = sb.dirInsert(
+        keylet::ownerDir(receiver), kl, describeOwnerDir(receiver));
+
+    JLOG(journal.trace()) << "Adding URIToken to owner directory "
+                          << to_string(kl.key) << ": "
+                          << (newPage ? "success" : "failure");
+
+    if (!newPage)
+        return tecDIR_FULL;
+
+    // remove from current owner directory
+    if (!sb.dirRemove(
+            keylet::ownerDir(sender),
+            sleU->getFieldU64(sfOwnerNode),
+            kl.key,
+            true))
+    {
+        JLOG(journal.fatal())
+            << "Could not remove URIToken from owner directory";
+
+        return tefBAD_LEDGER;
+    }
+
+    // adjust owner counts
+    adjustOwnerCount(sb, sleSender, -1, journal);
+    adjustOwnerCount(sb, sleReciever, 1, journal);
+
+    // clean the offer off the object
+    sleU->makeFieldAbsent(sfAmount);
+    if (sleU->isFieldPresent(sfDestination))
+        sleU->makeFieldAbsent(sfDestination);
+
+    // set the new owner of the object
+    sleU->setAccountID(sfOwner, receiver);
+
+    // tell the ledger where to find it
+    sleU->setFieldU64(sfOwnerNode, *newPage);
+
+    // check each side has sufficient balance remaining to cover the
+    // updated ownercounts
+    auto hasSufficientReserve = [&](std::shared_ptr<SLE> const& sle) -> bool {
+        std::uint32_t const uOwnerCount = sle->getFieldU32(sfOwnerCount);
+        return sle->getFieldAmount(sfBalance) >=
+            sb.fees().accountReserve(uOwnerCount);
+    };
+
+    if (!hasSufficientReserve(sleReciever))
+    {
+        JLOG(journal.trace()) << "URIToken: buyer " << receiver
+                              << " has insufficient reserve to buy";
+        return tecINSUFFICIENT_RESERVE;
+    }
+
+    // This should only happen if the owner burned their reserves
+    // below the needed amount via another transactor. If this
+    // happens they should top up their account before selling!
+    if (!hasSufficientReserve(sleSender))
+    {
+        JLOG(journal.warn()) << "URIToken: seller " << sender
+                             << " has insufficient reserve to allow purchase!";
+        return tecINSUF_RESERVE_SELLER;
+    }
+
+    sb.update(sleU);
+    sb.update(sleReciever);
+    sb.update(sleSender);
+    return tesSUCCESS;
+}
+
 TER
 URIToken::doApply()
 {
@@ -434,6 +572,11 @@ URIToken::doApply()
             if (flags & tfBurnable)
                 sleU->setFlag(tfBurnable);
 
+            // Amendment Guard
+            if (ctx_.tx.isFieldPresent(sfRoyaltyRate))
+                sleU->setFieldU32(
+                    sfRoyaltyRate, ctx_.tx.getFieldU32(sfRoyaltyRate));
+
             auto const page = sb.dirInsert(
                 keylet::ownerDir(account_), *kl, describeOwnerDir(account_));
 
@@ -474,7 +617,43 @@ URIToken::doApply()
 
             // check if the seller has listed it at all
             if (!saleAmount)
-                return tecNO_PERMISSION;
+            {
+                // Amendment Guard
+
+                // Create Buy Offer
+                auto uRate = getRate(purchaseAmount, STAmount{1});
+                auto const buyOfferKey = keylet::uritoken_offer(
+                    *kl,
+                    uRate,
+                    purchaseAmount.getIssuer(),
+                    purchaseAmount.getCurrency());
+
+                // Add offer to owner's directory.
+                auto const ownerNode = sb.dirInsert(
+                    keylet::ownerDir(account_),
+                    buyOfferKey,
+                    describeOwnerDir(account_));
+
+                if (!ownerNode)
+                {
+                    JLOG(j_.debug()) << "final result: failed to add offer to "
+                                        "owner's directory";
+                    return tecDIR_FULL;
+                }
+
+                // Update owner count.
+                adjustOwnerCount(sb, sle, 1, j);
+
+                // Create Offer
+                auto sleOffer = std::make_shared<SLE>(buyOfferKey);
+                sleOffer->setAccountID(sfOwner, account_);
+                sleOffer->setFieldH256(sfURITokenID, kl->key);
+                sleOffer->setFieldAmount(sfAmount, purchaseAmount);
+                sleOffer->setFieldU64(sfOwnerNode, *ownerNode);
+                sb.insert(sleOffer);
+                sb.apply(ctx_.rawView());
+                return tesSUCCESS;
+            }
 
             // check if the seller has listed it for sale to a specific account
             if (dest && *dest != account_)
@@ -486,129 +665,22 @@ URIToken::doApply()
             if (fixV1)
             {
                 // this is the reworked version of the buy routine
-
-                if (purchaseAmount < saleAmount)
-                    return tecINSUFFICIENT_PAYMENT;
-
-                // if it's an xrp sale/purchase then no trustline needed
-                if (purchaseAmount.native())
-                {
-                    STAmount needed{sb.fees().accountReserve(
-                        sle->getFieldU32(sfOwnerCount) + 1)};
-
-                    STAmount const fee = ctx_.tx.getFieldAmount(sfFee).xrp();
-
-                    if (needed + fee < needed)
-                        return tecINTERNAL;
-
-                    needed += fee;
-
-                    if (needed + purchaseAmount < needed)
-                        return tecINTERNAL;
-
-                    needed += purchaseAmount;
-
-                    if (needed > mPriorBalance)
-                        return tecINSUFFICIENT_FUNDS;
-                }
-                else
-                {
-                    // IOU sale
-                    if (TER result = trustTransferAllowed(
-                            sb, {account_, *owner}, purchaseAmount.issue(), j);
-                        !isTesSuccess(result))
-                    {
-                        JLOG(j.trace())
-                            << "URIToken::doApply trustTransferAllowed result="
-                            << result;
-
-                        return result;
-                    }
-
-                    if (STAmount availableFunds{accountFunds(
-                            sb, account_, purchaseAmount, fhZERO_IF_FROZEN, j)};
-                        purchaseAmount > availableFunds)
-                        return tecINSUFFICIENT_FUNDS;
-                }
-
-                // execute the funds transfer, we'll check reserves last
-                if (TER result = accountSend(
-                        sb, account_, *owner, purchaseAmount, j, false);
-                    !isTesSuccess(result))
-                    return result;
-
-                // add token to new owner dir
-                auto const newPage = sb.dirInsert(
-                    keylet::ownerDir(account_),
-                    *kl,
-                    describeOwnerDir(account_));
-
-                JLOG(j_.trace()) << "Adding URIToken to owner directory "
-                                 << to_string(kl->key) << ": "
-                                 << (newPage ? "success" : "failure");
-
-                if (!newPage)
-                    return tecDIR_FULL;
-
-                // remove from current owner directory
-                if (!sb.dirRemove(
-                        keylet::ownerDir(*owner),
-                        sleU->getFieldU64(sfOwnerNode),
-                        kl->key,
-                        true))
-                {
-                    JLOG(j.fatal())
-                        << "Could not remove URIToken from owner directory";
-
-                    return tefBAD_LEDGER;
-                }
-
-                // adjust owner counts
-                adjustOwnerCount(sb, sleOwner, -1, j);
-                adjustOwnerCount(sb, sle, 1, j);
-
-                // clean the offer off the object
-                sleU->makeFieldAbsent(sfAmount);
-                if (sleU->isFieldPresent(sfDestination))
-                    sleU->makeFieldAbsent(sfDestination);
-
-                // set the new owner of the object
-                sleU->setAccountID(sfOwner, account_);
-
-                // tell the ledger where to find it
-                sleU->setFieldU64(sfOwnerNode, *newPage);
-
-                // check each side has sufficient balance remaining to cover the
-                // updated ownercounts
-                auto hasSufficientReserve =
-                    [&](std::shared_ptr<SLE> const& sle) -> bool {
-                    std::uint32_t const uOwnerCount =
-                        sle->getFieldU32(sfOwnerCount);
-                    return sle->getFieldAmount(sfBalance) >=
-                        sb.fees().accountReserve(uOwnerCount);
-                };
-
-                if (!hasSufficientReserve(sle))
-                {
-                    JLOG(j.trace()) << "URIToken: buyer " << account_
-                                    << " has insufficient reserve to buy";
-                    return tecINSUFFICIENT_RESERVE;
-                }
-
-                // This should only happen if the owner burned their reserves
-                // below the needed amount via another transactor. If this
-                // happens they should top up their account before selling!
-                if (!hasSufficientReserve(sleOwner))
-                {
-                    JLOG(j.warn())
-                        << "URIToken: seller " << *owner
-                        << " has insufficient reserve to allow purchase!";
-                    return tecINSUF_RESERVE_SELLER;
-                }
-
-                sb.update(sle);
-                sb.update(sleU);
-                sb.update(sleOwner);
+                STAmount const fee = ctx_.tx.getFieldAmount(sfFee).xrp();
+                if (auto const ter = transfer(
+                        sb,
+                        mPriorBalance,
+                        purchaseAmount,
+                        *saleAmount,
+                        fee,
+                        account_,  // receiver
+                        *owner,    // sender
+                        *kl,
+                        sleU,
+                        sle,       // receiver sle
+                        sleOwner,  // sender sle
+                        j_);
+                    !isTesSuccess(ter))
+                    return ter;
                 sb.apply(ctx_.rawView());
                 return tesSUCCESS;
             }
@@ -750,10 +822,9 @@ URIToken::doApply()
                             true);
                     }
 
-                    initSellerBal = !sleDstLine
-                        ? purchaseAmount.zeroed()
-                        : sellerLow ? ((*sleDstLine)[sfBalance])
-                                    : -((*sleDstLine)[sfBalance]);
+                    initSellerBal = !sleDstLine ? purchaseAmount.zeroed()
+                        : sellerLow             ? ((*sleDstLine)[sfBalance])
+                                                : -((*sleDstLine)[sfBalance]);
 
                     finSellerBal = *initSellerBal + *dstAmt;
                 }
@@ -1016,6 +1087,51 @@ URIToken::doApply()
             if (account_ != *owner)
                 return tecNO_PERMISSION;
 
+            // Amendment Guard
+            auto const amount = ctx_.tx[sfAmount];
+            auto uRate = getRate(amount, STAmount{1});
+            auto const buyOfferKey = keylet::uritoken_offer(
+                *kl, uRate, amount.getIssuer(), amount.getCurrency());
+            if (sb.exists(buyOfferKey))
+            {
+                auto const buyOfferSle = sb.peek(buyOfferKey);
+                owner = buyOfferSle->getAccountID(sfOwner);
+                STAmount const offerAmount =
+                    buyOfferSle->getFieldAmount(sfAmount);
+                sleOwner = sb.peek(keylet::account(*owner));
+                STAmount const fee = ctx_.tx.getFieldAmount(sfFee).xrp();
+                if (auto const ter = transfer(
+                        sb,
+                        mPriorBalance,
+                        offerAmount,
+                        amount,
+                        fee,
+                        *owner,    // receiver
+                        account_,  // sender
+                        *kl,
+                        sleU,
+                        sleOwner,  // receiver
+                        sle,       // sender
+                        j_);
+                    !isTesSuccess(ter))
+                    return ter;
+
+                if (!sb.dirRemove(
+                        keylet::ownerDir(*owner),
+                        buyOfferSle->getFieldU64(sfOwnerNode),
+                        buyOfferKey.key,
+                        true))
+                {
+                    JLOG(j.fatal()) << "Could not remove URITokenOffer from "
+                                       "owner directory";
+                    return tefBAD_LEDGER;
+                }
+                adjustOwnerCount(sb, sleOwner, -1, j);
+                sb.erase(buyOfferSle);
+                sb.apply(ctx_.rawView());
+                return tesSUCCESS;
+            }
+
             auto const txDest = ctx_.tx[~sfDestination];
 
             // update destination where applicable
@@ -1024,7 +1140,7 @@ URIToken::doApply()
             else if (dest)
                 sleU->makeFieldAbsent(sfDestination);
 
-            sleU->setFieldAmount(sfAmount, ctx_.tx[sfAmount]);
+            sleU->setFieldAmount(sfAmount, amount);
 
             sb.update(sleU);
             sb.apply(ctx_.rawView());

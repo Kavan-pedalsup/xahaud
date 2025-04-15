@@ -359,6 +359,19 @@ LedgerFormats::LedgerFormats()
             {sfDigest,               soeOPTIONAL},
             {sfAmount,               soeOPTIONAL},
             {sfDestination,          soeOPTIONAL},
+            {sfRoyaltyRate,          soeOPTIONAL},
+            {sfPreviousTxnID,        soeREQUIRED},
+            {sfPreviousTxnLgrSeq,    soeREQUIRED}
+        },
+        commonFields);
+
+    add(jss::URITokenOffer,
+        ltURI_TOKEN_OFFER,
+        {
+            {sfOwner,                soeREQUIRED},
+            {sfOwnerNode,            soeREQUIRED},
+            {sfURITokenID,           soeREQUIRED},
+            {sfAmount,               soeREQUIRED},
             {sfPreviousTxnID,        soeREQUIRED},
             {sfPreviousTxnLgrSeq,    soeREQUIRED}
         },

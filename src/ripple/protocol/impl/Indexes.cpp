@@ -72,6 +72,7 @@ enum class LedgerNameSpace : std::uint16_t {
     URI_TOKEN = 'U',
     IMPORT_VLSEQ = 'I',
     UNL_REPORT = 'R',
+    URI_TOKEN_OFFER = 'z',
 
     // No longer used or supported. Left here to reserve the space
     // to avoid accidental reuse.
@@ -441,6 +442,24 @@ uritoken(AccountID const& issuer, Blob const& uri)
         ltURI_TOKEN,
         indexHash(
             LedgerNameSpace::URI_TOKEN, issuer, Slice{uri.data(), uri.size()})};
+}
+
+Keylet
+uritoken_offer(Keylet const& k, std::uint64_t q, AccountID const& issuer, Currency const& currency) noexcept
+{
+    assert(k.type == ltURI_TOKEN);
+
+    // Indexes are stored in big endian format: they print as hex as stored.
+    // Most significant bytes are first and the least significant bytes
+    // represent adjacent entries. We place the quality, in big endian format,
+    // in the 8 right most bytes; this way, incrementing goes to the next entry
+    // for indexes.
+    uint256 x = k.key;
+
+    // FIXME This is ugly and we can and should do better...
+    ((std::uint64_t*)x.end())[-1] = boost::endian::native_to_big(q);
+
+    return {ltURI_TOKEN_OFFER, indexHash(LedgerNameSpace::URI_TOKEN_OFFER, x, issuer, currency)};
 }
 
 }  // namespace keylet
