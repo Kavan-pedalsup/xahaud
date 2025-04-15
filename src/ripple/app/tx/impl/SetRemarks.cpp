@@ -119,7 +119,7 @@ SetRemarks::preflight(PreflightContext const& ctx)
     auto& tx = ctx.tx;
     auto& j = ctx.j;
 
-    if (tx.isFieldPresent(sfFlags) && tx.getFieldU32(sfFlags) != 0)
+    if (tx.getFlags() & tfUniversalMask)
     {
         JLOG(j.warn()) << "SetRemarks: Invalid flags set.";
         return temINVALID_FLAG;
