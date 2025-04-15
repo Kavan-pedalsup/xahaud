@@ -278,9 +278,9 @@ SetRemarks::preclaim(PreclaimContext const& ctx)
 
         auto const& [valObj, immutable] = keys[name];
 
-        // even if it's immutable, if we don't mutate it that's a noop so just
+        // even if it's mutable, if we don't mutate it that's a noop so just
         // pass it
-        if (valTxn && *valTxn == valObj)
+        if (valTxn.has_value() && *valTxn == valObj)
             continue;
 
         if (immutable)
@@ -356,7 +356,7 @@ SetRemarks::doApply()
             val = remark.getFieldVL(sfRemarkValue);
         Blob name = remark.getFieldVL(sfRemarkName);
 
-        bool const isDeletion = !val;
+        bool const isDeletion = !val.has_value();
         uint32_t flags =
             remark.isFieldPresent(sfFlags) ? remark.getFieldU32(sfFlags) : 0;
         bool const setImmutable = (flags & tfImmutable) != 0;
@@ -393,7 +393,7 @@ SetRemarks::doApply()
 
         remark.setFieldVL(sfRemarkName, k);
         remark.setFieldVL(sfRemarkValue, remarksMap[k].first);
-        if (remarksMap[k].second & tfImmutable)
+        if (remarksMap[k].second)
             remark.setFieldU32(sfFlags, lsfImmutable);
 
         newRemarks.push_back(std::move(remark));
@@ -416,8 +416,6 @@ SetRemarks::doApply()
 XRPAmount
 SetRemarks::calculateBaseFee(ReadView const& view, STTx const& tx)
 {
-    // RH TODO: transaction fee needs to charge for remarks, in particular
-    // because they are not ownercounted.
     XRPAmount remarkFee{0};
     if (tx.isFieldPresent(sfRemarks))
     {
