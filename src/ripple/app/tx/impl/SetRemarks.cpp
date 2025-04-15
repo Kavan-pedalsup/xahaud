@@ -259,7 +259,7 @@ SetRemarks::preclaim(PreclaimContext const& ctx)
         std::optional<Blob> valTxn;
         if (remark.isFieldPresent(sfRemarkValue))
             valTxn = remark.getFieldVL(sfRemarkValue);
-        bool const isDeletion = !valTxn;
+        bool const isDeletion = !valTxn.has_value();
 
         Blob name = remark.getFieldVL(sfRemarkName);
         if (keys.find(name) == keys.end())
