@@ -124,7 +124,7 @@ struct SetRemarks_test : public beast::unit_test::suite
         // temDISABLED
         // DA: testEnabled()
 
-        // temMALFORMED: SetRemarks: Invalid flags set.
+        // temINVALID_FLAG: SetRemarks: Invalid flags set.
         {
             std::vector<remarks::remark> marks = {
                 {"CAFE", "DEADBEEF", 0},
@@ -132,7 +132,7 @@ struct SetRemarks_test : public beast::unit_test::suite
             env(remarks::setRemarks(alice, keylet::account(alice).key, marks),
                 txflags(tfClose),
                 fee(XRP(1)),
-                ter(temMALFORMED));
+                ter(temINVALID_FLAG));
             env.close();
         }
         // temMALFORMED: SetRemarks: Cannot set more than 32 remarks (or fewer
