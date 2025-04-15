@@ -60,15 +60,16 @@ SetRemarks::validateRemarks(STArray const& remarks, beast::Journal const& j)
             return temMALFORMED;
 
         Blob const& name = remark.getFieldVL(sfRemarkName);
-        if (already_seen.find(name) != already_seen.end())
-        {
-            JLOG(j.warn()) << "SetRemarks: duplicate RemarkName entry.";
-            return temMALFORMED;
-        }
         if (name.size() == 0 || name.size() > 256)
         {
             JLOG(j.warn()) << "SetRemarks: RemarkName cannot be empty or "
                               "larger than 256 chars.";
+            return temMALFORMED;
+        }
+
+        if (already_seen.find(name) != already_seen.end())
+        {
+            JLOG(j.warn()) << "SetRemarks: duplicate RemarkName entry.";
             return temMALFORMED;
         }
 
