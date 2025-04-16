@@ -44,6 +44,12 @@ mint(jtx::Account const& account, std::string const& uri)
 }
 
 void
+royalty::operator()(Env& env, JTx& jt) const
+{
+    jt.jv[sfRoyaltyRate.jsonName] = std::uint32_t(1000000000 * royalty_);;
+}
+
+void
 dest::operator()(Env& env, JTx& jt) const
 {
     jt.jv[sfDestination.jsonName] = dest_.human();

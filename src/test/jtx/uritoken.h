@@ -36,6 +36,21 @@ tokenid(jtx::Account const& account, std::string const& uri);
 Json::Value
 mint(jtx::Account const& account, std::string const& uri);
 
+/** Sets the optional RoyaltyRate on a JTx. */
+class royalty
+{
+private:
+    double royalty_;
+
+public:
+    explicit royalty(double const& royalty) : royalty_(royalty)
+    {
+    }
+
+    void
+    operator()(Env&, JTx& jtx) const;
+};
+
 /** Sets the optional Destination on a JTx. */
 class dest
 {

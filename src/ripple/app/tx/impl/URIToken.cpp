@@ -349,6 +349,7 @@ transfer(
     STAmount const& fee,
     AccountID const& receiver,
     AccountID const& sender,
+    AccountID const& issuer,
     Keylet const& kl,
     std::shared_ptr<SLE> const& sleU,
     std::shared_ptr<SLE> const& sleReciever,
@@ -357,6 +358,18 @@ transfer(
 {
     if (purchaseAmount < saleAmount)
         return tecINSUFFICIENT_PAYMENT;
+
+    STAmount deliverAmount = purchaseAmount;
+    STAmount royaltyAmount = STAmount{0};
+
+    // Amendment Guard
+    if (sleU->isFieldPresent(sfRoyaltyRate))
+    {
+        auto const royaltyRate = sleU->getFieldU32(sfRoyaltyRate);
+        royaltyAmount = multiplyRound(
+            deliverAmount, Rate{royaltyRate}, deliverAmount.issue(), true);
+        deliverAmount -= royaltyAmount;
+    }
 
     // if it's an xrp sale/purchase then no trustline needed
     if (purchaseAmount.native())
@@ -400,7 +413,7 @@ transfer(
 
     // execute the funds transfer, we'll check reserves last
     if (TER result =
-            accountSend(sb, receiver, sender, purchaseAmount, journal, false);
+            accountSend(sb, receiver, sender, deliverAmount, journal, false);
         !isTesSuccess(result))
         return result;
 
@@ -466,6 +479,20 @@ transfer(
         JLOG(journal.warn()) << "URIToken: seller " << sender
                              << " has insufficient reserve to allow purchase!";
         return tecINSUF_RESERVE_SELLER;
+    }
+
+    // Amendment Guard
+    if (sleU->isFieldPresent(sfRoyaltyRate) &&
+        sb.exists(keylet::account(issuer)))
+    {
+        if (TER result = accountSend(
+                sb, receiver, issuer, royaltyAmount, journal, false);
+            !isTesSuccess(result))
+        {
+            JLOG(journal.warn())
+                << "URIToken: failed to transfer royalty to issuer";
+            return result;
+        }
     }
 
     sb.update(sleU);
@@ -615,12 +642,24 @@ URIToken::doApply()
         case ttURITOKEN_BUY: {
             STAmount const purchaseAmount = ctx_.tx.getFieldAmount(sfAmount);
 
+            // OLD Amendment Guard
             // check if the seller has listed it at all
-            if (!saleAmount)
+            // if (!saleAmount)
+            //     return tecNO_PERMISSION;
+
+            auto const offerMatched = [&]() -> bool {
+                if (!saleAmount)
+                    return false;
+                if (purchaseAmount.issue() != saleAmount->issue())
+                    return false;
+                if (purchaseAmount != *saleAmount)
+                    return false;
+                return true;
+            };
+
+            if (!saleAmount || !offerMatched())
             {
                 // Amendment Guard
-
-                // Create Buy Offer
                 auto uRate = getRate(purchaseAmount, STAmount{1});
                 auto const buyOfferKey = keylet::uritoken_offer(
                     *kl,
@@ -674,6 +713,7 @@ URIToken::doApply()
                         fee,
                         account_,  // receiver
                         *owner,    // sender
+                        *issuer,   // issuer
                         *kl,
                         sleU,
                         sle,       // receiver sle
@@ -1108,6 +1148,7 @@ URIToken::doApply()
                         fee,
                         *owner,    // receiver
                         account_,  // sender
+                        *issuer,   // issuer
                         *kl,
                         sleU,
                         sleOwner,  // receiver

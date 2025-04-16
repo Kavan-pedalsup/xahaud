@@ -2556,39 +2556,53 @@ struct URIToken_test : public beast::unit_test::suite
 
         auto const alice = Account("alice");
         auto const bob = Account("bob");
+        auto const minter = Account("minter");
         auto const gw = Account{"gateway"};
         auto const USD = gw["USD"];
 
         // setup env
-        env.fund(XRP(1000), alice, bob, gw);
-        env.trust(USD(100000), alice, bob);
+        env.fund(XRP(1000), alice, bob, minter, gw);
+        env.trust(USD(100000), alice, bob, minter);
         env.close();
         env(pay(gw, alice, USD(1000)));
         env(pay(gw, bob, USD(1000)));
+        env(pay(gw, minter, USD(1000)));
         env.close();
 
         auto const feeDrops = env.current()->fees().base;
         std::string const uri(maxTokenURILength, '?');
-        auto const tid = uritoken::tokenid(alice, uri);
+        auto const tid = uritoken::tokenid(minter, uri);
         std::string const hexid{strHex(tid)};
 
         // Buy Offer Before Sell Offer
         {
             
-            // alice mints
-            const auto delta = XRP(10);
-            auto preAlice = env.balance(alice);
-            auto preBob = env.balance(bob);
-            env(uritoken::mint(alice, uri));
+            // minter mints
+            const auto delta = USD(10);
+            env(uritoken::mint(minter, uri), uritoken::royalty(0.1), ter(tesSUCCESS));
             env.close();
 
+            BEAST_EXPECT(inOwnerDir(*env.current(), minter, tid));
+            BEAST_EXPECT(!inOwnerDir(*env.current(), alice, tid));
+            BEAST_EXPECT(!inOwnerDir(*env.current(), bob, tid));
+
+            // minter remits to alice
+            env(remit::remit(minter, alice), remit::token_ids({strHex(tid)}), ter(tesSUCCESS));
+            env.close();
+
+            BEAST_EXPECT(!inOwnerDir(*env.current(), minter, tid));
             BEAST_EXPECT(inOwnerDir(*env.current(), alice, tid));
             BEAST_EXPECT(!inOwnerDir(*env.current(), bob, tid));
+
+            auto preMinterUSD = env.balance(minter, USD.issue());
+            auto preAliceUSD = env.balance(alice, USD.issue());
+            auto preBobUSD = env.balance(bob, USD.issue());
             
             // bob creates buy offer
             env(uritoken::buy(bob, hexid), uritoken::amt(delta));
             env.close();
 
+            BEAST_EXPECT(!inOwnerDir(*env.current(), minter, tid));
             BEAST_EXPECT(inOwnerDir(*env.current(), alice, tid));
             BEAST_EXPECT(!inOwnerDir(*env.current(), bob, tid));
 
@@ -2605,8 +2619,13 @@ struct URIToken_test : public beast::unit_test::suite
             env(uritoken::sell(alice, hexid), uritoken::amt(delta));
             env.close();
 
+            BEAST_EXPECT(!inOwnerDir(*env.current(), minter, tid));
             BEAST_EXPECT(!inOwnerDir(*env.current(), alice, tid));
             BEAST_EXPECT(inOwnerDir(*env.current(), bob, tid));
+
+            BEAST_EXPECT(env.balance(minter, USD.issue()) == preMinterUSD + USD(1));
+            BEAST_EXPECT(env.balance(alice, USD.issue()) == preAliceUSD + USD(9));
+            BEAST_EXPECT(env.balance(bob, USD.issue()) == preBobUSD - delta);
 
             // {
             //     Json::Value params;
