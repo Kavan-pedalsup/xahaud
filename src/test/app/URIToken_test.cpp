@@ -2576,10 +2576,11 @@ struct URIToken_test : public beast::unit_test::suite
 
         // Buy Offer Before Sell Offer
         {
-            
             // minter mints
             const auto delta = USD(10);
-            env(uritoken::mint(minter, uri), uritoken::royalty(0.1), ter(tesSUCCESS));
+            env(uritoken::mint(minter, uri),
+                uritoken::royalty(1.1),
+                ter(tesSUCCESS));
             env.close();
 
             BEAST_EXPECT(inOwnerDir(*env.current(), minter, tid));
@@ -2587,7 +2588,9 @@ struct URIToken_test : public beast::unit_test::suite
             BEAST_EXPECT(!inOwnerDir(*env.current(), bob, tid));
 
             // minter remits to alice
-            env(remit::remit(minter, alice), remit::token_ids({strHex(tid)}), ter(tesSUCCESS));
+            env(remit::remit(minter, alice),
+                remit::token_ids({strHex(tid)}),
+                ter(tesSUCCESS));
             env.close();
 
             BEAST_EXPECT(!inOwnerDir(*env.current(), minter, tid));
@@ -2597,7 +2600,7 @@ struct URIToken_test : public beast::unit_test::suite
             auto preMinterUSD = env.balance(minter, USD.issue());
             auto preAliceUSD = env.balance(alice, USD.issue());
             auto preBobUSD = env.balance(bob, USD.issue());
-            
+
             // bob creates buy offer
             env(uritoken::buy(bob, hexid), uritoken::amt(delta));
             env.close();
@@ -2611,8 +2614,8 @@ struct URIToken_test : public beast::unit_test::suite
             //     params[jss::ledger_index] = env.current()->seq() - 1;
             //     params[jss::transactions] = true;
             //     params[jss::expand] = true;
-            //     auto const jrr = env.rpc("json", "ledger", to_string(params));
-            //     std::cout << jrr << std::endl;
+            //     auto const jrr = env.rpc("json", "ledger",
+            //     to_string(params)); std::cout << jrr << std::endl;
             // }
 
             // alice sells to bobs buy offer
@@ -2623,17 +2626,27 @@ struct URIToken_test : public beast::unit_test::suite
             BEAST_EXPECT(!inOwnerDir(*env.current(), alice, tid));
             BEAST_EXPECT(inOwnerDir(*env.current(), bob, tid));
 
-            BEAST_EXPECT(env.balance(minter, USD.issue()) == preMinterUSD + USD(1));
-            BEAST_EXPECT(env.balance(alice, USD.issue()) == preAliceUSD + USD(9));
-            BEAST_EXPECT(env.balance(bob, USD.issue()) == preBobUSD - delta);
+            std::cout << "env.balance(minter, USD.issue()): "
+                      << env.balance(minter, USD.issue()) << std::endl;
+            std::cout << "env.balance(alice, USD.issue()): "
+                      << env.balance(alice, USD.issue()) << std::endl;
+            std::cout << "env.balance(bob, USD.issue()): "
+                      << env.balance(bob, USD.issue()) << std::endl;
+
+            BEAST_EXPECT(
+                env.balance(minter, USD.issue()) == preMinterUSD + USD(1));
+            BEAST_EXPECT(
+                env.balance(alice, USD.issue()) == preAliceUSD + delta);
+            BEAST_EXPECT(
+                env.balance(bob, USD.issue()) == preBobUSD - delta - USD(1));
 
             // {
             //     Json::Value params;
             //     params[jss::ledger_index] = env.current()->seq() - 1;
             //     params[jss::transactions] = true;
             //     params[jss::expand] = true;
-            //     auto const jrr = env.rpc("json", "ledger", to_string(params));
-            //     std::cout << jrr << std::endl;
+            //     auto const jrr = env.rpc("json", "ledger",
+            //     to_string(params)); std::cout << jrr << std::endl;
             // }
         }
     }

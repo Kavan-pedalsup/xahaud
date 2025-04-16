@@ -116,6 +116,32 @@ URIToken::preflight(PreflightContext const& ctx)
         case ttURITOKEN_MINT: {
             if (flags & tfURITokenMintMask)
                 return temINVALID_FLAG;
+
+            // Amendment Guard
+            if (ctx.tx.isFieldPresent(sfRoyaltyRate))
+            {
+                std::uint32_t uRate = ctx.tx.getFieldU32(sfRoyaltyRate);
+                if (uRate == 0)
+                {
+                    JLOG(ctx.j.error())
+                        << "Malformed transaction: Royalty rate unset.";
+                    return temBAD_TRANSFER_RATE;
+                }
+
+                if (uRate && (uRate < QUALITY_ONE))
+                {
+                    JLOG(ctx.j.error())
+                        << "Malformed transaction: Transfer rate too small.";
+                    return temBAD_TRANSFER_RATE;
+                }
+
+                if (uRate > 2 * QUALITY_ONE)
+                {
+                    JLOG(ctx.j.error())
+                        << "Malformed transaction: Transfer rate too large.";
+                    return temBAD_TRANSFER_RATE;
+                }
+            }
             break;
         }
 
@@ -125,7 +151,6 @@ URIToken::preflight(PreflightContext const& ctx)
         case ttURITOKEN_CREATE_SELL_OFFER: {
             if (flags & tfURITokenNonMintMask)
                 return temINVALID_FLAG;
-
             break;
         }
 
@@ -359,16 +384,23 @@ transfer(
     if (purchaseAmount < saleAmount)
         return tecINSUFFICIENT_PAYMENT;
 
-    STAmount deliverAmount = purchaseAmount;
     STAmount royaltyAmount = STAmount{0};
 
     // Amendment Guard
     if (sleU->isFieldPresent(sfRoyaltyRate))
     {
-        auto const royaltyRate = sleU->getFieldU32(sfRoyaltyRate);
-        royaltyAmount = multiplyRound(
-            deliverAmount, Rate{royaltyRate}, deliverAmount.issue(), true);
-        deliverAmount -= royaltyAmount;
+        STAmount deliverAmount = purchaseAmount;
+        static Rate const parityRate(QUALITY_ONE);
+        auto const royaltyRate = [&]() -> Rate {
+            if (sleU->isFieldPresent(sfRoyaltyRate))
+                return Rate{sleU->getFieldU32(sfRoyaltyRate)};
+            return Rate{QUALITY_ONE};
+        }();
+
+        if (royaltyRate != parityRate)
+            deliverAmount = multiplyRound(
+                deliverAmount, royaltyRate, deliverAmount.issue(), true);
+        royaltyAmount = deliverAmount - purchaseAmount;
     }
 
     // if it's an xrp sale/purchase then no trustline needed
@@ -413,7 +445,7 @@ transfer(
 
     // execute the funds transfer, we'll check reserves last
     if (TER result =
-            accountSend(sb, receiver, sender, deliverAmount, journal, false);
+            accountSend(sb, receiver, sender, purchaseAmount, journal, false);
         !isTesSuccess(result))
         return result;
 
@@ -648,8 +680,6 @@ URIToken::doApply()
             //     return tecNO_PERMISSION;
 
             auto const offerMatched = [&]() -> bool {
-                if (!saleAmount)
-                    return false;
                 if (purchaseAmount.issue() != saleAmount->issue())
                     return false;
                 if (purchaseAmount != *saleAmount)
