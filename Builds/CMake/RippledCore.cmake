@@ -23,6 +23,11 @@ else()
   message(STATUS "ACL not found, continuing without ACL support")
 endif()
 
+add_library(libxrpl INTERFACE)
+target_link_libraries(libxrpl INTERFACE xrpl_core)
+add_library(xrpl::libxrpl ALIAS libxrpl)
+
+
 #[===============================[
     beast/legacy FILES:
     TODO: review these sources for removal or replacement
