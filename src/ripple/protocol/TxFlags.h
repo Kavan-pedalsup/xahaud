@@ -190,6 +190,10 @@ constexpr std::uint32_t const tfURITokenNonMintMask = ~tfUniversal;
 enum ClaimRewardFlags : uint32_t {
     tfOptOut = 0x00000001,
 };
+constexpr std::uint32_t const tfClaimRewardMask = ~(tfUniversal | tfOptOut);
+
+// Remarks flags:
+constexpr std::uint32_t const tfImmutable = 1;
 
 // Clawback flags:
 constexpr std::uint32_t const tfClawbackMask     = ~tfUniversal;

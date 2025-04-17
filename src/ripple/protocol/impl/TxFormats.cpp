@@ -525,6 +525,14 @@ TxFormats::TxFormats()
         },
         commonFields);
 
+    add(jss::SetRemarks,
+        ttREMARKS_SET,
+        {
+            {sfObjectID, soeREQUIRED},
+            {sfRemarks, soeREQUIRED},
+        },
+        commonFields);
+
     add(jss::Clawback,
         ttCLAWBACK,
         {

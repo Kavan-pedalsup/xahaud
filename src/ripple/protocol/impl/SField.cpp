@@ -220,7 +220,8 @@ CONSTRUCT_TYPED_SFIELD(sfNFTokenID,             "NFTokenID",            UINT256,
 CONSTRUCT_TYPED_SFIELD(sfEmitParentTxnID,       "EmitParentTxnID",      UINT256,   11);
 CONSTRUCT_TYPED_SFIELD(sfEmitNonce,             "EmitNonce",            UINT256,   12);
 CONSTRUCT_TYPED_SFIELD(sfEmitHookHash,          "EmitHookHash",         UINT256,   13);
-CONSTRUCT_TYPED_SFIELD(sfAMMID,                 "AMMID",                UINT256,   14);
+CONSTRUCT_TYPED_SFIELD(sfObjectID,              "ObjectID",             UINT256,   14);
+CONSTRUCT_TYPED_SFIELD(sfAMMID,                 "AMMID",                UINT256,   15);
 
 // 256-bit (uncommon)
 CONSTRUCT_TYPED_SFIELD(sfBookDirectory,         "BookDirectory",        UINT256,   16);
@@ -313,6 +314,8 @@ CONSTRUCT_TYPED_SFIELD(sfHookReturnString,      "HookReturnString",     VL,     
 CONSTRUCT_TYPED_SFIELD(sfHookParameterName,     "HookParameterName",    VL,        24);
 CONSTRUCT_TYPED_SFIELD(sfHookParameterValue,    "HookParameterValue",   VL,        25);
 CONSTRUCT_TYPED_SFIELD(sfBlob,                  "Blob",                 VL,        26);
+CONSTRUCT_TYPED_SFIELD(sfRemarkValue,           "RemarkValue",          VL,        98);
+CONSTRUCT_TYPED_SFIELD(sfRemarkName,            "RemarkName",           VL,        99);
 
 // account
 CONSTRUCT_TYPED_SFIELD(sfAccount,               "Account",              ACCOUNT,    1);
@@ -374,6 +377,7 @@ CONSTRUCT_UNTYPED_SFIELD(sfHookGrant,           "HookGrant",            OBJECT, 
 CONSTRUCT_UNTYPED_SFIELD(sfVoteEntry,           "VoteEntry",            OBJECT,    25);
 CONSTRUCT_UNTYPED_SFIELD(sfAuctionSlot,         "AuctionSlot",          OBJECT,    26);
 CONSTRUCT_UNTYPED_SFIELD(sfAuthAccount,         "AuthAccount",          OBJECT,    27);
+CONSTRUCT_UNTYPED_SFIELD(sfRemark,              "Remark",               OBJECT,    97);
 CONSTRUCT_UNTYPED_SFIELD(sfGenesisMint,         "GenesisMint",          OBJECT,    96);
 CONSTRUCT_UNTYPED_SFIELD(sfActiveValidator,     "ActiveValidator",      OBJECT,    95);
 CONSTRUCT_UNTYPED_SFIELD(sfImportVLKey,         "ImportVLKey",          OBJECT,    94);
@@ -403,6 +407,7 @@ CONSTRUCT_UNTYPED_SFIELD(sfHookParameters,      "HookParameters",       ARRAY,  
 CONSTRUCT_UNTYPED_SFIELD(sfHookGrants,          "HookGrants",           ARRAY,     20);
 // 21-24 is reserved for side-chains
 CONSTRUCT_UNTYPED_SFIELD(sfAuthAccounts,        "AuthAccounts",         ARRAY,     25);
+CONSTRUCT_UNTYPED_SFIELD(sfRemarks,             "Remarks",              ARRAY,     97);
 CONSTRUCT_UNTYPED_SFIELD(sfGenesisMints,        "GenesisMints",         ARRAY,     96);
 CONSTRUCT_UNTYPED_SFIELD(sfActiveValidators,    "ActiveValidators",     ARRAY,     95);
 CONSTRUCT_UNTYPED_SFIELD(sfImportVLKeys,        "ImportVLKeys",         ARRAY,     94);

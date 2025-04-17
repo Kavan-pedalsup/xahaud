@@ -160,6 +160,14 @@ InnerObjectFormats::InnerObjectFormats()
             {sfFlags, soeOPTIONAL},
         });
 
+    add(sfRemark.jsonName.c_str(),
+        sfRemark.getCode(),
+        {
+            {sfRemarkName, soeREQUIRED},
+            {sfRemarkValue, soeOPTIONAL},
+            {sfFlags, soeOPTIONAL},
+        });
+
     add(sfVoteEntry.jsonName.c_str(),
         sfVoteEntry.getCode(),
         {
