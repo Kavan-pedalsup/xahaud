@@ -25,6 +25,7 @@
 #include <ripple/protocol/Indexes.h>
 #include <ripple/protocol/PublicKey.h>
 #include <ripple/protocol/Quality.h>
+#include <ripple/protocol/TxFlags.h>
 #include <ripple/protocol/st.h>
 
 namespace ripple {
