@@ -2545,6 +2545,19 @@ struct URIToken_test : public beast::unit_test::suite
         }
     }
 
+    static STAmount
+    lockedAmount(
+        jtx::Env const& env,
+        jtx::Account const& account,
+        jtx::Account const& gw,
+        jtx::IOU const& iou)
+    {
+        auto const sle = env.le(keylet::line(account, gw, iou.currency));
+        if (sle->isFieldPresent(sfLockedBalance))
+            return (*sle)[sfLockedBalance];
+        return STAmount(iou, 0);
+    }
+
     void
     testRoyalty(FeatureBitset features)
     {
@@ -2609,14 +2622,14 @@ struct URIToken_test : public beast::unit_test::suite
             BEAST_EXPECT(inOwnerDir(*env.current(), alice, tid));
             BEAST_EXPECT(!inOwnerDir(*env.current(), bob, tid));
 
-            // {
-            //     Json::Value params;
-            //     params[jss::ledger_index] = env.current()->seq() - 1;
-            //     params[jss::transactions] = true;
-            //     params[jss::expand] = true;
-            //     auto const jrr = env.rpc("json", "ledger",
-            //     to_string(params)); std::cout << jrr << std::endl;
-            // }
+            BEAST_EXPECT(
+                env.balance(minter, USD.issue()) == preMinterUSD);
+            BEAST_EXPECT(
+                env.balance(alice, USD.issue()) == preAliceUSD);
+            BEAST_EXPECT(
+                env.balance(bob, USD.issue()) == preBobUSD);
+            BEAST_EXPECT(
+                -lockedAmount(env, bob, gw, USD) == delta);
 
             // alice sells to bobs buy offer
             env(uritoken::sell(alice, hexid), uritoken::amt(delta));
@@ -2626,28 +2639,14 @@ struct URIToken_test : public beast::unit_test::suite
             BEAST_EXPECT(!inOwnerDir(*env.current(), alice, tid));
             BEAST_EXPECT(inOwnerDir(*env.current(), bob, tid));
 
-            std::cout << "env.balance(minter, USD.issue()): "
-                      << env.balance(minter, USD.issue()) << std::endl;
-            std::cout << "env.balance(alice, USD.issue()): "
-                      << env.balance(alice, USD.issue()) << std::endl;
-            std::cout << "env.balance(bob, USD.issue()): "
-                      << env.balance(bob, USD.issue()) << std::endl;
-
             BEAST_EXPECT(
                 env.balance(minter, USD.issue()) == preMinterUSD + USD(1));
             BEAST_EXPECT(
-                env.balance(alice, USD.issue()) == preAliceUSD + delta);
+                env.balance(alice, USD.issue()) == preAliceUSD + (delta - USD(1)));
             BEAST_EXPECT(
-                env.balance(bob, USD.issue()) == preBobUSD - delta - USD(1));
-
-            // {
-            //     Json::Value params;
-            //     params[jss::ledger_index] = env.current()->seq() - 1;
-            //     params[jss::transactions] = true;
-            //     params[jss::expand] = true;
-            //     auto const jrr = env.rpc("json", "ledger",
-            //     to_string(params)); std::cout << jrr << std::endl;
-            // }
+                env.balance(bob, USD.issue()) == preBobUSD - delta);
+            BEAST_EXPECT(
+                lockedAmount(env, bob, gw, USD) == USD(0));
         }
     }
 

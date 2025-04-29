@@ -443,7 +443,8 @@ struct RunType
 {
     // see:
     // http://alumni.media.mit.edu/~rahimi/compile-time-flags/
-    constexpr operator T() const
+    constexpr
+    operator T() const
     {
         static_assert(std::is_same<bool, T>::value);
         return V;
@@ -493,6 +494,8 @@ trustAdjustLockedBalance(
         (std::is_same<V, ReadView const>::value &&
          std::is_same<S, std::shared_ptr<SLE const>>::value) ||
         (std::is_same<V, ApplyView>::value &&
+         std::is_same<S, std::shared_ptr<SLE>>::value) ||
+        (std::is_same<V, Sandbox>::value &&
          std::is_same<S, std::shared_ptr<SLE>>::value));
 
     // dry runs are explicit in code, but really the view type determines
@@ -589,8 +592,10 @@ trustAdjustLockedBalance(
         return tesSUCCESS;
 
     if constexpr (
-        std::is_same<V, ApplyView>::value &&
-        std::is_same<S, std::shared_ptr<SLE>>::value)
+        (std::is_same<V, ApplyView>::value &&
+         std::is_same<S, std::shared_ptr<SLE>>::value) ||
+        (std::is_same<V, Sandbox>::value &&
+         std::is_same<S, std::shared_ptr<SLE>>::value))
     {
         if (finalLockedBalance == beast::zero || finalLockCount == 0)
         {
@@ -785,18 +790,25 @@ trustTransferLockedBalance(
     R dryRun)
 {
     typedef typename std::conditional<
-        std::is_same<V, ApplyView>::value && !dryRun,
+        (std::is_same<V, ApplyView>::value ||
+         std::is_same<V, Sandbox>::value) &&
+            !dryRun,
         std::shared_ptr<SLE>,
         std::shared_ptr<SLE const>>::type SLEPtr;
 
     auto peek = [&](Keylet& k) {
         if constexpr (std::is_same<V, ApplyView>::value && !dryRun)
             return const_cast<ApplyView&>(view).peek(k);
+        else if constexpr (std::is_same<V, Sandbox>::value && !dryRun)
+            return const_cast<Sandbox&>(view).peek(k);
         else
             return view.read(k);
     };
 
-    static_assert(std::is_same<V, ApplyView>::value || dryRun);
+    static_assert(
+        std::is_same<V, ApplyView>::value || std::is_same<V, Sandbox>::value ||
+            dryRun,
+        "trustTransferLockedBalance requires ApplyView or Sandbox");
 
     if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
         return tefINTERNAL;
@@ -1032,7 +1044,9 @@ trustTransferLockedBalance(
 
     if constexpr (!dryRun)
     {
-        static_assert(std::is_same<V, ApplyView>::value);
+        static_assert(
+            std::is_same<V, ApplyView>::value ||
+            std::is_same<V, Sandbox>::value);
 
         // if source account is not issuer
         if (!srcIssuer)
