@@ -5311,7 +5311,7 @@ class Import_test : public beast::unit_test::suite
         // test bad IMPORT_VL_KEYS no UNLReport
         {
             std::vector<std::string> const badVLKeys = {
-                "ED74D4036C6591A4BDF9C54CEFA39B996A5DCE5F86D11FDA1874481CE9D5A1"
+                "ED74D4036C6591A4BDF9C54CEFA39B996A5DCE5F86D11FDA1874481CE9D5A1" // public_key
                 "CDC2"};
             test::jtx::Env env{
                 *this, network::makeNetworkVLConfig(21337, badVLKeys)};
