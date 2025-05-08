@@ -44,6 +44,7 @@
 #include <ripple/app/tx/impl/SetAccount.h>
 #include <ripple/app/tx/impl/SetHook.h>
 #include <ripple/app/tx/impl/SetRegularKey.h>
+#include <ripple/app/tx/impl/SetRemarks.h>
 #include <ripple/app/tx/impl/SetSignerList.h>
 #include <ripple/app/tx/impl/SetTrust.h>
 #include <ripple/app/tx/impl/URIToken.h>
@@ -169,6 +170,8 @@ invoke_preflight(PreflightContext const& ctx)
             return invoke_preflight_helper<Invoke>(ctx);
         case ttREMIT:
             return invoke_preflight_helper<Remit>(ctx);
+        case ttREMARKS_SET:
+            return invoke_preflight_helper<SetRemarks>(ctx);
         case ttURITOKEN_MINT:
         case ttURITOKEN_BURN:
         case ttURITOKEN_BUY:
@@ -290,6 +293,8 @@ invoke_preclaim(PreclaimContext const& ctx)
             return invoke_preclaim<Invoke>(ctx);
         case ttREMIT:
             return invoke_preclaim<Remit>(ctx);
+        case ttREMARKS_SET:
+            return invoke_preclaim<SetRemarks>(ctx);
         case ttURITOKEN_MINT:
         case ttURITOKEN_BURN:
         case ttURITOKEN_BUY:
@@ -373,6 +378,8 @@ invoke_calculateBaseFee(ReadView const& view, STTx const& tx)
             return Invoke::calculateBaseFee(view, tx);
         case ttREMIT:
             return Remit::calculateBaseFee(view, tx);
+        case ttREMARKS_SET:
+            return SetRemarks::calculateBaseFee(view, tx);
         case ttURITOKEN_MINT:
         case ttURITOKEN_BURN:
         case ttURITOKEN_BUY:
@@ -556,6 +563,10 @@ invoke_apply(ApplyContext& ctx)
             Remit p(ctx);
             return p();
         }
+        case ttREMARKS_SET: {
+            SetRemarks p(ctx);
+            return p();
+        }
         case ttURITOKEN_MINT:
         case ttURITOKEN_BURN:
         case ttURITOKEN_BUY:
@@ -580,19 +591,15 @@ preflight(
 {
     PreflightContext const pfctx(app, tx, rules, flags, j);
 
-#ifndef DEBUG
     try
     {
-#endif
         return {pfctx, invoke_preflight(pfctx)};
-#ifndef DEBUG
     }
     catch (std::exception const& e)
     {
         JLOG(j.fatal()) << "apply: " << e.what();
         return {pfctx, {tefEXCEPTION, TxConsequences{tx}}};
     }
-#endif
 }
 
 PreclaimResult
@@ -629,21 +636,17 @@ preclaim(
             preflightResult.j);
     }
 
-#ifndef DEBUG
     try
     {
-#endif
         if (!isTesSuccess(ctx->preflightResult))
             return {*ctx, ctx->preflightResult};
         return {*ctx, invoke_preclaim(*ctx)};
-#ifndef DEBUG
     }
     catch (std::exception const& e)
     {
         JLOG(ctx->j.fatal()) << "apply: " << e.what();
         return {*ctx, tefEXCEPTION};
     }
-#endif
 }
 
 XRPAmount
@@ -667,10 +670,8 @@ doApply(PreclaimResult const& preclaimResult, Application& app, OpenView& view)
         // info to recover.
         return {tefEXCEPTION, false};
     }
-#ifndef DEBUG
     try
     {
-#endif
         if (!preclaimResult.likelyToClaimFee)
             return {preclaimResult.ter, false};
 
@@ -683,14 +684,12 @@ doApply(PreclaimResult const& preclaimResult, Application& app, OpenView& view)
             preclaimResult.flags,
             preclaimResult.j);
         return invoke_apply(ctx);
-#ifndef DEBUG
     }
     catch (std::exception const& e)
     {
         JLOG(preclaimResult.j.fatal()) << "apply: " << e.what();
         return {tefEXCEPTION, false};
     }
-#endif
 }
 
 }  // namespace ripple
