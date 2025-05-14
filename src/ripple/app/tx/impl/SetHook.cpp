@@ -225,6 +225,7 @@ SetHook::inferOperation(STObject const& hookSetObj)
         !hookSetObj.isFieldPresent(sfHookNamespace) &&
         !hookSetObj.isFieldPresent(sfHookParameters) &&
         !hookSetObj.isFieldPresent(sfHookOn) &&
+        !hookSetObj.isFieldPresent(sfHookCanEmit) &&
         !hookSetObj.isFieldPresent(sfHookApiVersion) &&
         !hookSetObj.isFieldPresent(sfFlags))
         return hsoNOOP;
@@ -259,6 +260,7 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             if (hookSetObj.isFieldPresent(sfHookGrants) ||
                 hookSetObj.isFieldPresent(sfHookParameters) ||
                 hookSetObj.isFieldPresent(sfHookOn) ||
+                hookSetObj.isFieldPresent(sfHookCanEmit) ||
                 hookSetObj.isFieldPresent(sfHookApiVersion) ||
                 !hookSetObj.isFieldPresent(sfFlags) ||
                 !hookSetObj.isFieldPresent(sfHookNamespace))
@@ -288,6 +290,7 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             if (hookSetObj.isFieldPresent(sfHookGrants) ||
                 hookSetObj.isFieldPresent(sfHookParameters) ||
                 hookSetObj.isFieldPresent(sfHookOn) ||
+                hookSetObj.isFieldPresent(sfHookCanEmit) ||
                 hookSetObj.isFieldPresent(sfHookApiVersion) ||
                 hookSetObj.isFieldPresent(sfHookNamespace) ||
                 !hookSetObj.isFieldPresent(sfFlags))
@@ -464,146 +467,164 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             // finally validate byte code according to api version
             if (!hookSetObj.isFieldPresent(sfCreateCode))
                 return {};
-
-            Blob hook = hookSetObj.getFieldVL(sfCreateCode);
-
-            if (version == 1)
+            // validate sfHookCanEmit
+            // HookCanEmit field is an optional field for backward compatibility
+            if (!hookSetObj.isFieldPresent(sfHookCanEmit))
             {
-                // RHTODO: guard or other check for js, depending on design
-                // choices
+                // pass
+            }
 
-                if (hookSetObj.isFieldPresent(sfFee) &&
-                    isXRP(hookSetObj.getFieldAmount(sfFee)))
+            // finally validate web assembly byte code
+            {
+                if (!hookSetObj.isFieldPresent(sfCreateCode))
+                    return {};
+
+                Blob hook = hookSetObj.getFieldVL(sfCreateCode);
+
+                if (version == 1)
                 {
-                    STAmount amt = hookSetObj.getFieldAmount(sfFee);
-                    uint64_t fee = amt.xrp().drops();
-                    if (amt < beast::zero || fee < 1 || fee > 1000000)
+                    // RHTODO: guard or other check for js, depending on design
+                    // choices
+
+                    if (hookSetObj.isFieldPresent(sfFee) &&
+                        isXRP(hookSetObj.getFieldAmount(sfFee)))
+                    {
+                        STAmount amt = hookSetObj.getFieldAmount(sfFee);
+                        uint64_t fee = amt.xrp().drops();
+                        if (amt < beast::zero || fee < 1 || fee > 1000000)
+                        {
+                            JLOG(ctx.j.trace())
+                                << "HookSet(" << hook::log::JS_FEE_TOO_HIGH
+                                << ")[" << HS_ACC()
+                                << "]: Malformed transaction: When creating a "
+                                   "JS "
+                                   "Hook "
+                                << "you must include a Fee <= 1000000.";
+                            return false;
+                        }
+                    }
+                    else
                     {
                         JLOG(ctx.j.trace())
-                            << "HookSet(" << hook::log::JS_FEE_TOO_HIGH << ")["
+                            << "HookSet(" << hook::log::JS_FEE_MISSING << ")["
                             << HS_ACC()
                             << "]: Malformed transaction: When creating a JS "
                                "Hook "
-                            << "you must include a Fee <= 1000000.";
+                            << "you must include a Fee field indicating the "
+                               "instruction limit.";
                         return false;
                     }
-                }
-                else
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet(" << hook::log::JS_FEE_MISSING << ")["
-                        << HS_ACC()
-                        << "]: Malformed transaction: When creating a JS Hook "
-                        << "you must include a Fee field indicating the "
-                           "instruction limit.";
-                    return false;
-                }
 
-                std::optional<std::string> result =
-                    hook::HookExecutorJS::validate(
-                        hook.data(), (size_t)hook.size());
+                    std::optional<std::string> result =
+                        hook::HookExecutorJS::validate(
+                            hook.data(), (size_t)hook.size());
 
-                if (result)
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet(" << hook::log::JS_TEST_FAILURE << ")["
-                        << HS_ACC()
-                        << "Tried to set a hook with invalid code. VM error: "
-                        << *result;
-                    return false;
-                }
-
-                // RHTODO: fix
-                return std::pair<uint64_t, uint64_t>{1, 1};
-            }
-
-            if (version == 0)
-            {
-                // RH NOTE: validateGuards has a generic non-rippled specific
-                // interface so it can be used in other projects (i.e. tooling).
-                // As such the calling here is a bit convoluted.
-
-                std::optional<std::reference_wrapper<std::basic_ostream<char>>>
-                    logger;
-                std::ostringstream loggerStream;
-                std::string hsacc{""};
-                if (ctx.j.trace())
-                {
-                    logger = loggerStream;
-                    std::stringstream ss;
-                    ss << HS_ACC();
-                    hsacc = ss.str();
-                }
-
-                auto result = validateGuards(
-                    hook,  // wasm to verify
-                    logger,
-                    hsacc,
-                    (ctx.rules.enabled(featureHooksUpdate1) ? 1 : 0) +
-                        (ctx.rules.enabled(fix20250131) ? 2 : 0));
-
-                if (ctx.j.trace())
-                {
-                    // clunky but to get the stream to accept the output
-                    // correctly we will split on new line and feed each line
-                    // one by one into the trace stream beast::Journal should be
-                    // updated to inherit from basic_ostream<char> then this
-                    // wouldn't be necessary.
-
-                    // is this a needless copy or does the compiler do copy
-                    // elision here?
-                    std::string s = loggerStream.str();
-
-                    char* data = s.data();
-                    size_t len = s.size();
-
-                    char* last = data;
-                    size_t i = 0;
-                    for (; i < len; ++i)
+                    if (result)
                     {
-                        if (data[i] == '\n')
-                        {
-                            data[i] = '\0';
-                            ctx.j.trace() << last;
-                            last = data + i;
-                        }
+                        JLOG(ctx.j.trace())
+                            << "HookSet(" << hook::log::JS_TEST_FAILURE << ")["
+                            << HS_ACC()
+                            << "Tried to set a hook with invalid code. VM "
+                               "error: "
+                            << *result;
+                        return false;
                     }
 
-                    if (last < data + i)
-                        ctx.j.trace() << last;
+                    // RHTODO: fix
+                    return std::pair<uint64_t, uint64_t>{1, 1};
                 }
 
-                if (!result)
-                    return false;
+                if (version == 0)
+                {
+                    // RH NOTE: validateGuards has a generic non-rippled
+                    // specific interface so it can be used in other projects
+                    // (i.e. tooling). As such the calling here is a bit
+                    // convoluted.
+
+                    std::optional<
+                        std::reference_wrapper<std::basic_ostream<char>>>
+                        logger;
+                    std::ostringstream loggerStream;
+                    std::string hsacc{""};
+                    if (ctx.j.trace())
+                    {
+                        logger = loggerStream;
+                        std::stringstream ss;
+                        ss << HS_ACC();
+                        hsacc = ss.str();
+                    }
+
+                    auto result = validateGuards(
+                        hook,  // wasm to verify
+                        logger,
+                        hsacc,
+                        (ctx.rules.enabled(featureHooksUpdate1) ? 1 : 0) +
+                            (ctx.rules.enabled(fix20250131) ? 2 : 0));
+
+                    if (ctx.j.trace())
+                    {
+                        // clunky but to get the stream to accept the output
+                        // correctly we will split on new line and feed each
+                        // line one by one into the trace stream beast::Journal
+                        // should be updated to inherit from basic_ostream<char>
+                        // then this wouldn't be necessary.
+
+                        // is this a needless copy or does the compiler do copy
+                        // elision here?
+                        std::string s = loggerStream.str();
+
+                        char* data = s.data();
+                        size_t len = s.size();
+
+                        char* last = data;
+                        size_t i = 0;
+                        for (; i < len; ++i)
+                        {
+                            if (data[i] == '\n')
+                            {
+                                data[i] = '\0';
+                                ctx.j.trace() << last;
+                                last = data + i;
+                            }
+                        }
+
+                        if (last < data + i)
+                            ctx.j.trace() << last;
+                    }
+
+                    if (!result)
+                        return false;
+
+                    JLOG(ctx.j.trace())
+                        << "HookSet(" << hook::log::WASM_SMOKE_TEST << ")["
+                        << HS_ACC()
+                        << "]: Trying to wasm instantiate proposed hook "
+                        << "size = " << hook.size();
+
+                    std::optional<std::string> result2 =
+                        hook::HookExecutorWasm::validate(
+                            hook.data(), (size_t)hook.size());
+
+                    if (result2)
+                    {
+                        JLOG(ctx.j.trace())
+                            << "HookSet(" << hook::log::WASM_TEST_FAILURE
+                            << ")[" << HS_ACC()
+                            << "Tried to set a hook with invalid code. VM "
+                               "error: "
+                            << *result2;
+                        return false;
+                    }
+
+                    return *result;
+                }
 
                 JLOG(ctx.j.trace())
-                    << "HookSet(" << hook::log::WASM_SMOKE_TEST << ")["
-                    << HS_ACC()
-                    << "]: Trying to wasm instantiate proposed hook "
-                    << "size = " << hook.size();
-
-                std::optional<std::string> result2 =
-                    hook::HookExecutorWasm::validate(
-                        hook.data(), (size_t)hook.size());
-
-                if (result2)
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet(" << hook::log::WASM_TEST_FAILURE << ")["
-                        << HS_ACC()
-                        << "Tried to set a hook with invalid code. VM error: "
-                        << *result2;
-                    return false;
-                }
-
-                return *result;
+                    << "HookSet(" << hook::log::HASH_OR_CODE << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook specified invalid "
+                       "HookApiVersion.";
+                return false;
             }
-
-            JLOG(ctx.j.trace())
-                << "HookSet(" << hook::log::HASH_OR_CODE << ")[" << HS_ACC()
-                << "]: Malformed transaction: SetHook specified invalid "
-                   "HookApiVersion.";
-            return false;
         }
 
         case hsoINVALID:
@@ -780,6 +801,10 @@ SetHook::preflight(PreflightContext const& ctx)
 
         allBlank = false;
 
+        if (!ctx.rules.enabled(featureHookCanEmit) &&
+            hookSetObj.isFieldPresent(sfHookCanEmit))
+            return temDISABLED;
+
         for (auto const& hookSetElement : hookSetObj)
         {
             auto const& name = hookSetElement.getFName();
@@ -787,7 +812,8 @@ SetHook::preflight(PreflightContext const& ctx)
             if (name != sfCreateCode && name != sfHookHash &&
                 name != sfHookNamespace && name != sfHookParameters &&
                 name != sfHookOn && name != sfHookGrants &&
-                name != sfHookApiVersion && name != sfFlags && name != sfFee)
+                name != sfHookApiVersion && name != sfFlags &&
+                name != sfHookCanEmit && name != sfFee)
             {
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::HOOK_INVALID_FIELD << ")["
@@ -1289,6 +1315,10 @@ SetHook::setHook()
         std::optional<uint256> newHookOn;
         std::optional<uint256> defHookOn;
 
+        std::optional<uint256> oldHookCanEmit;
+        std::optional<uint256> newHookCanEmit;
+        std::optional<uint256> defHookCanEmit;
+
         // when hsoCREATE is invoked it populates this variable in case the hook
         // definition already exists and the operation falls through into a
         // hsoINSTALL operation instead
@@ -1349,6 +1379,14 @@ SetHook::setHook()
                 oldHookOn = oldHook->get().getFieldH256(sfHookOn);
             else if (defHookOn)
                 oldHookOn = *defHookOn;
+
+            if (oldDefSLE && oldDefSLE->isFieldPresent(sfHookCanEmit))
+                defHookCanEmit = oldDefSLE->getFieldH256(sfHookCanEmit);
+
+            if (oldHook && oldHook->get().isFieldPresent(sfHookCanEmit))
+                oldHookCanEmit = oldHook->get().getFieldH256(sfHookCanEmit);
+            else if (defHookCanEmit)
+                oldHookCanEmit = *defHookCanEmit;
         }
 
         // in preparation for three way merge populate fields if they are
@@ -1364,6 +1402,9 @@ SetHook::setHook()
 
             if (hookSetObj->get().isFieldPresent(sfHookOn))
                 newHookOn = hookSetObj->get().getFieldH256(sfHookOn);
+
+            if (hookSetObj->get().isFieldPresent(sfHookCanEmit))
+                newHookCanEmit = hookSetObj->get().getFieldH256(sfHookCanEmit);
 
             if (hookSetObj->get().isFieldPresent(sfHookNamespace))
             {
@@ -1382,13 +1423,14 @@ SetHook::setHook()
             }
             else if (op == hsoNSDELETE && newDirKeylet)
             {
-                printf("Marking a namespace for destruction.... NSDELETE\n");
+                JLOG(ctx.j.trace())
+                    << "Marking a namespace for destruction.... NSDELETE";
                 namespacesToDestroy.emplace(*newNamespace);
             }
             else if (oldDirKeylet)
             {
-                printf(
-                    "Marking a namespace for destruction.... non-NSDELETE\n");
+                JLOG(ctx.j.trace())
+                    << "Marking a namespace for destruction.... non-NSDELETE";
                 namespacesToDestroy.emplace(*oldNamespace);
             }
             else
@@ -1474,6 +1516,10 @@ SetHook::setHook()
                 if (oldHook->get().isFieldPresent(sfHookOn))
                     newHook.setFieldH256(
                         sfHookOn, oldHook->get().getFieldH256(sfHookOn));
+                if (oldHook->get().isFieldPresent(sfHookCanEmit))
+                    newHook.setFieldH256(
+                        sfHookCanEmit,
+                        oldHook->get().getFieldH256(sfHookCanEmit));
                 if (oldHook->get().isFieldPresent(sfHookNamespace))
                     newHook.setFieldH256(
                         sfHookNamespace,
@@ -1501,6 +1547,19 @@ SetHook::setHook()
                     }
                     else
                         newHook.setFieldH256(sfHookOn, *newHookOn);
+                }
+
+                // set the hookcanemit field if it differs from definition
+                if (newHookCanEmit)
+                {
+                    if (defHookCanEmit.has_value() &&
+                        *defHookCanEmit == *newHookCanEmit)
+                    {
+                        if (newHook.isFieldPresent(sfHookCanEmit))
+                            newHook.makeFieldAbsent(sfHookCanEmit);
+                    }
+                    else
+                        newHook.setFieldH256(sfHookCanEmit, *newHookCanEmit);
                 }
 
                 // parameters
@@ -1679,6 +1738,9 @@ SetHook::setHook()
                     auto newHookDef = std::make_shared<SLE>(keylet);
                     newHookDef->setFieldH256(sfHookHash, *createHookHash);
                     newHookDef->setFieldH256(sfHookOn, *newHookOn);
+                    if (newHookCanEmit)
+                        newHookDef->setFieldH256(
+                            sfHookCanEmit, *newHookCanEmit);
                     newHookDef->setFieldH256(sfHookNamespace, *newNamespace);
                     newHookDef->setFieldArray(
                         sfHookParameters,
@@ -1770,6 +1832,8 @@ SetHook::setHook()
                 // change which definition we're using to the new target
                 defNamespace = newDefSLE->getFieldH256(sfHookNamespace);
                 defHookOn = newDefSLE->getFieldH256(sfHookOn);
+                if (newDefSLE->isFieldPresent(sfHookCanEmit))
+                    defHookCanEmit = newDefSLE->getFieldH256(sfHookCanEmit);
 
                 // set the namespace if it differs from the definition namespace
                 if (newNamespace && *defNamespace != *newNamespace)
@@ -1778,6 +1842,12 @@ SetHook::setHook()
                 // set the hookon field if it differs from definition
                 if (newHookOn && *defHookOn != *newHookOn)
                     newHook.setFieldH256(sfHookOn, *newHookOn);
+
+                // set the hookcanemit field if it differs from definition
+                if (newHookCanEmit &&
+                    !(defHookCanEmit.has_value() &&
+                      *defHookCanEmit == *newHookCanEmit))
+                    newHook.setFieldH256(sfHookCanEmit, *newHookCanEmit);
 
                 // parameters
                 TER result = updateHookParameters(
@@ -1827,8 +1897,8 @@ SetHook::setHook()
         // sfHook: 1 reserve PER non-blank entry
         // sfParameters: 1 reserve PER entry
         // sfGrants are: 1 reserve PER entry
-        // sfHookHash, sfHookNamespace, sfHookOn, sfHookApiVersion, sfFlags:
-        // free
+        // sfHookHash, sfHookNamespace, sfHookOn, sfHookCanEmit,
+        // sfHookApiVersion, sfFlags: free
 
         // sfHookDefinition is not reserved because it is an unowned object,
         // rather the uploader is billed via fee according to the following:

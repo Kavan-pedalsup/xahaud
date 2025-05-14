@@ -32,6 +32,7 @@ target_link_libraries(ripple_boost
     Boost::program_options
     Boost::regex
     Boost::system
+    Boost::iostreams
     Boost::thread)
 if(Boost_COMPILER)
   target_link_libraries(ripple_boost INTERFACE Boost::disable_autolinking)
