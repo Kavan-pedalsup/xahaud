@@ -9,9 +9,6 @@ endif()
 if(POLICY CMP0077)
   cmake_policy(SET CMP0077 NEW)
 endif()
-if(POLICY CMP0144)
-    cmake_policy(SET CMP0144 NEW)
-endif()
 
 # Fix "unrecognized escape" issues when passing CMAKE_MODULE_PATH on Windows.
 file(TO_CMAKE_PATH "${CMAKE_MODULE_PATH}" CMAKE_MODULE_PATH)
