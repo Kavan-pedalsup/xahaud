@@ -30,8 +30,8 @@
 #include <boost/circular_buffer.hpp>
 #include <boost/intrusive/set.hpp>
 #include <optional>
-#include <vector>
 #include <set>
+#include <vector>
 
 namespace ripple {
 
@@ -742,6 +742,7 @@ private:
         FeeMetrics::Snapshot const& metricsSnapshot,
         std::lock_guard<std::mutex> const& lock) const;
 
+public:
     // Helper function for TxQ::apply.  If a transaction's fee is high enough,
     // attempt to directly apply that transaction to the ledger.
     std::optional<std::pair<TER, bool>>
@@ -752,6 +753,7 @@ private:
         ApplyFlags flags,
         beast::Journal j);
 
+private:
     // Helper function that removes a replaced entry in _byFee.
     std::optional<TxQAccount::TxMap::iterator>
     removeFromByFee(

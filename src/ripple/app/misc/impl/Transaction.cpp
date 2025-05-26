@@ -45,6 +45,15 @@ Transaction::Transaction(
     try
     {
         mTransactionID = mTransaction->getTransactionID();
+
+        OpenView sandbox(*app.openLedger().current());
+
+        sandbox.getAndResetKeysTouched();
+
+        ApplyFlags flags{0};
+        if (auto directApplied =
+                app.getTxQ().tryDirectApply(app, sandbox, stx, flags, j_))
+            keysTouched = sandbox.getAndResetKeysTouched();
     }
     catch (std::exception& e)
     {

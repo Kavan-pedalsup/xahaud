@@ -744,6 +744,8 @@ TxQ::apply(
 
     // See if the transaction paid a high enough fee that it can go straight
     // into the ledger.
+
+    /* RHTEST
     view.getAndResetKeysTouched();
     if (auto directApplied = tryDirectApply(app, view, tx, flags, j))
     {
@@ -751,6 +753,7 @@ TxQ::apply(
             transactionID, view.getAndResetKeysTouched());
         return *directApplied;
     }
+    */
 
     // If we get past tryDirectApply() without returning then we expect
     // one of the following to occur:
