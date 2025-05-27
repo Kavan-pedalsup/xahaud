@@ -153,6 +153,7 @@ target_link_libraries (xrpl_core
     Ripple::syslibs
     secp256k1::secp256k1
     ed25519::ed25519
+    NIH::dilithium2_ref
     date::date
     Ripple::opts)
 #[=================================[

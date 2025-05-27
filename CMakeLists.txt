@@ -81,6 +81,7 @@ endif ()
 include(RippledCompiler)
 include(RippledInterface)
 
+include(deps/dilithium)
 ###
 if (NOT USE_CONAN)
   add_subdirectory(src/secp256k1)
