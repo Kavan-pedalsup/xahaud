@@ -108,9 +108,10 @@ public:
     {
         std::set<uint256> out;
         out.swap(keysTouched_);
-        std::cout << "--------------\n";
-        for (auto const& k : out)
-            std::cout << "getAndResetKeysTouched: " << to_string(k) << "\n";
+        //        std::cout << "--------------\n";
+        //        for (auto const& k : out)
+        //            std::cout << "getAndResetKeysTouched: " << to_string(k) <<
+        //            "\n";
         return out;
     }
 
