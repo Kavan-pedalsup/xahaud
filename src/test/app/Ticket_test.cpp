@@ -821,11 +821,11 @@ class Ticket_test : public beast::unit_test::suite
         //   txID ledgerSeq txSeq ticketSeq          txType
         checkTxFromDB(txHash_1, 4, 4, {}, ttTICKET_CREATE);
         checkTxFromDB(txHash_2, 4, 0, 13, ttACCOUNT_SET);
-        checkTxFromDB(txHash_3, 4, 0, 12, ttPAYMENT);
+        checkTxFromDB(txHash_3, 4, 0, 12, ttTESTPAYMENT);
         checkTxFromDB(txHash_4, 4, 0, 11, ttDEPOSIT_PREAUTH);
 
-        checkTxFromDB(txHash_5, 5, 0, 10, ttPAYMENT);
-        checkTxFromDB(txHash_6, 5, 0, 9, ttPAYMENT);
+        checkTxFromDB(txHash_5, 5, 0, 10, ttTESTPAYMENT);
+        checkTxFromDB(txHash_6, 5, 0, 9, ttTESTPAYMENT);
         checkTxFromDB(txHash_7, 5, 0, 8, ttDEPOSIT_PREAUTH);
         checkTxFromDB(txHash_8, 5, 0, 7, ttACCOUNT_SET);
     }

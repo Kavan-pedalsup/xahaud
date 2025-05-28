@@ -1,5 +1,5 @@
 // For documentation please see: https://xrpl-hooks.readme.io/reference/
-#define ttPAYMENT 0
+#define ttTESTPAYMENT 0
 #define ttESCROW_CREATE 1
 #define ttESCROW_FINISH 2
 #define ttACCOUNT_SET 3

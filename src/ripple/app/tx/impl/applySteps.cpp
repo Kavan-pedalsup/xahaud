@@ -132,7 +132,7 @@ invoke_preflight(PreflightContext const& ctx)
             return invoke_preflight_helper<PayChanCreate>(ctx);
         case ttPAYCHAN_FUND:
             return invoke_preflight_helper<PayChanFund>(ctx);
-        case ttPAYMENT:
+        case ttTESTPAYMENT:
             return invoke_preflight_helper<Payment>(ctx);
         case ttREGULAR_KEY_SET:
             return invoke_preflight_helper<SetRegularKey>(ctx);
@@ -255,7 +255,7 @@ invoke_preclaim(PreclaimContext const& ctx)
             return invoke_preclaim<PayChanCreate>(ctx);
         case ttPAYCHAN_FUND:
             return invoke_preclaim<PayChanFund>(ctx);
-        case ttPAYMENT:
+        case ttTESTPAYMENT:
             return invoke_preclaim<Payment>(ctx);
         case ttREGULAR_KEY_SET:
             return invoke_preclaim<SetRegularKey>(ctx);
@@ -340,7 +340,7 @@ invoke_calculateBaseFee(ReadView const& view, STTx const& tx)
             return PayChanCreate::calculateBaseFee(view, tx);
         case ttPAYCHAN_FUND:
             return PayChanFund::calculateBaseFee(view, tx);
-        case ttPAYMENT:
+        case ttTESTPAYMENT:
             return Payment::calculateBaseFee(view, tx);
         case ttREGULAR_KEY_SET:
             return SetRegularKey::calculateBaseFee(view, tx);
@@ -491,7 +491,7 @@ invoke_apply(ApplyContext& ctx)
             PayChanFund p(ctx);
             return p();
         }
-        case ttPAYMENT: {
+        case ttTESTPAYMENT: {
             Payment p(ctx);
             return p();
         }
