@@ -33,7 +33,7 @@ namespace ripple {
 static inline std::string const&
 systemName()
 {
-    static std::string const name = "xahau";
+    static std::string const name = "feeturre";
     return name;
 }
 
@@ -61,7 +61,7 @@ isLegalAmountSigned(XRPAmount const& amount)
 static inline std::string const&
 systemCurrencyCode()
 {
-    static std::string const code = "XAH";
+    static std::string const code = "FEE";
     return code;
 }
 

@@ -270,7 +270,7 @@ class Freeze_test : public beast::unit_test::suite
             auto offers = env.rpc(
                 "book_offers",
                 std::string("USD/") + G1.human(),
-                "XAH")[jss::result][jss::offers];
+                "FEE")[jss::result][jss::offers];
             if (!BEAST_EXPECT(checkArraySize(offers, 2u)))
                 return;
             std::set<std::string> accounts;
@@ -284,7 +284,7 @@ class Freeze_test : public beast::unit_test::suite
             //    test: visible offers where taker_gets is unfrozen issuer
             offers = env.rpc(
                 "book_offers",
-                "XAH",
+                "FEE",
                 std::string("USD/") + G1.human())[jss::result][jss::offers];
             if (!BEAST_EXPECT(checkArraySize(offers, 2u)))
                 return;
@@ -345,7 +345,7 @@ class Freeze_test : public beast::unit_test::suite
             //    (should these actually be filtered?)
             offers = env.rpc(
                 "book_offers",
-                "XAH",
+                "FEE",
                 std::string("USD/") + G1.human())[jss::result][jss::offers];
             if (!BEAST_EXPECT(checkArraySize(offers, 2u)))
                 return;
@@ -353,7 +353,7 @@ class Freeze_test : public beast::unit_test::suite
             offers = env.rpc(
                 "book_offers",
                 std::string("USD/") + G1.human(),
-                "XAH")[jss::result][jss::offers];
+                "FEE")[jss::result][jss::offers];
             if (!BEAST_EXPECT(checkArraySize(offers, 2u)))
                 return;
         }

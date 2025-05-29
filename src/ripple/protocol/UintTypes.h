@@ -66,8 +66,8 @@ xrpCurrency();
 Currency const&
 noCurrency();
 
-/** We deliberately disallow the currency that looks like "XAH" because too
-    many people were using it instead of the correct XAH currency. */
+/** We deliberately disallow the currency that looks like "FEE" because too
+    many people were using it instead of the correct FEE currency. */
 Currency const&
 badCurrency();
 
@@ -94,7 +94,7 @@ isBadCurrency(Currency const& c)
     return badCurrencies.find(c) != badCurrencies.end();
 }
 
-/** Returns "", "XAH", or three letter ISO code. */
+/** Returns "", "FEE", or three letter ISO code. */
 std::string
 to_string(Currency const& c);
 
