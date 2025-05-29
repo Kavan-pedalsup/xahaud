@@ -87,6 +87,6 @@ constexpr std::chrono::seconds const defaultAmendmentMajorityTime =
 }  // namespace ripple
 
 /** Default peer port (IANA registered) */
-inline std::uint16_t constexpr DEFAULT_PEER_PORT{21337};
+inline std::uint16_t constexpr DEFAULT_PEER_PORT{12345};
 
 #endif
