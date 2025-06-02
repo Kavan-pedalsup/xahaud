@@ -374,7 +374,7 @@ class DatabaseShard_test : public TestBase
         auto tothCount{0};
         for (auto const& tx : ledger->txs)
         {
-            if (tx.first->getTxnType() == ttTESTPAYMENT)
+            if (tx.first->getTxnType() == ttPAYMENT)
             {
                 std::int64_t xrpAmount =
                     tx.first->getFieldAmount(sfAmount).xrp().decimalXRP();

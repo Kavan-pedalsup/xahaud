@@ -362,7 +362,7 @@ getTransactionalStakeHolders(STTx const& tx, ReadView const& rv)
         }
 
         // simple two party transactions
-        case ttTESTPAYMENT:
+        case ttPAYMENT:
         case ttESCROW_CREATE:
         case ttCHECK_CREATE:
         case ttACCOUNT_DELETE:

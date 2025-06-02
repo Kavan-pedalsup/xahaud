@@ -103,7 +103,7 @@ TxFormats::TxFormats()
         commonFields);
 
     add(jss::Payment,
-        ttTESTPAYMENT,
+        ttPAYMENT,
         {
             {sfDestination, soeREQUIRED},
             {sfAmount, soeREQUIRED},

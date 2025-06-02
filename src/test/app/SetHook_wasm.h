@@ -378,7 +378,7 @@ std::map<std::string, std::vector<uint8_t>> wasm = {
         );
         #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
         #define OUT_OF_BOUNDS (-1)
-        #define ttTESTPAYMENT 0
+        #define ttPAYMENT 0
         #define tfCANONICAL 0x80000000UL
         #define amAMOUNT 1U
         #define amFEE 8U
@@ -581,7 +581,7 @@ std::map<std::string, std::vector<uint8_t>> wasm = {
                 uint32_t src_tag = (src_tag_raw);\
                 uint32_t cls = (uint32_t)ledger_seq();\
                 hook_account(SBUF(acc));\
-                _01_02_ENCODE_TT                   (buf_out, ttTESTPAYMENT                      );      /* uint16  | size   3 */ \
+                _01_02_ENCODE_TT                   (buf_out, ttPAYMENT                      );      /* uint16  | size   3 */ \
                 _02_02_ENCODE_FLAGS                (buf_out, tfCANONICAL                    );      /* uint32  | size   5 */ \
                 _02_03_ENCODE_TAG_SRC              (buf_out, src_tag                        );      /* uint32  | size   5 */ \
                 _02_04_ENCODE_SEQUENCE             (buf_out, 0                              );      /* uint32  | size   5 */ \
@@ -24818,7 +24818,7 @@ std::map<std::string, std::vector<uint8_t>> wasm = {
             extern int64_t hook_pos(void);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
             #define OUT_OF_BOUNDS (-1)
-            #define ttTESTPAYMENT 0
+            #define ttPAYMENT 0
             #define ttACCOUNT_SET 3
             #define ttHOOK_SET 22
             #define tfCANONICAL 0x80000000UL
@@ -25029,7 +25029,7 @@ std::map<std::string, std::vector<uint8_t>> wasm = {
                 uint32_t src_tag = (src_tag_raw);\
                 uint32_t cls = (uint32_t)ledger_seq();\
                 hook_account(SBUF(acc));\
-                _01_02_ENCODE_TT                   (buf_out, ttTESTPAYMENT                      );      /* uint16  | size   3 */ \
+                _01_02_ENCODE_TT                   (buf_out, ttPAYMENT                      );      /* uint16  | size   3 */ \
                 _02_02_ENCODE_FLAGS                (buf_out, tfCANONICAL                    );      /* uint32  | size   5 */ \
                 _02_03_ENCODE_TAG_SRC              (buf_out, src_tag                        );      /* uint32  | size   5 */ \
                 _02_04_ENCODE_SEQUENCE             (buf_out, 0                              );      /* uint32  | size   5 */ \

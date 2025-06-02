@@ -443,7 +443,7 @@ class Invariants_test : public beast::unit_test::suite
                 return true;
             },
             XRPAmount{},
-            STTx{ttTESTPAYMENT, [](STObject& tx) {}});
+            STTx{ttPAYMENT, [](STObject& tx) {}});
     }
 
 public:

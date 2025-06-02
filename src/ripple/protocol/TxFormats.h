@@ -56,7 +56,7 @@ namespace ripple {
 enum TxType : std::uint16_t
 {
     /** This transaction type executes a payment. */
-    ttTESTPAYMENT = 0,
+    ttPAYMENT = 0,
 
     /** This transaction type creates an escrow object. */
     ttESCROW_CREATE = 1,

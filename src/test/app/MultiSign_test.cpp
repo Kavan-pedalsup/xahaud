@@ -1010,7 +1010,7 @@ public:
         int const signerListOwners{features[featureMultiSignReserve] ? 1 : 4};
         env.require(owners(alice, signerListOwners + 0));
 
-        // Multisign a ttTESTPAYMENT.
+        // Multisign a ttPAYMENT.
         auto const baseFee = env.current()->fees().base;
         std::uint32_t aliceSeq = env.seq(alice);
         env(pay(alice, env.master, XRP(1)),

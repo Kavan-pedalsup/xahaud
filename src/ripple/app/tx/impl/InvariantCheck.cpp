@@ -597,7 +597,7 @@ ValidNewAccountRoot::finalize(
         return false;
     }
 
-    if ((tt == ttTESTPAYMENT || tt == ttIMPORT || tt == ttGENESIS_MINT ||
+    if ((tt == ttPAYMENT || tt == ttIMPORT || tt == ttGENESIS_MINT ||
          tt == ttREMIT) &&
         isTesSuccess(result))
     {

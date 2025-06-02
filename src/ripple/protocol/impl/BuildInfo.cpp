@@ -121,7 +121,7 @@ getVersionString()
 std::string const&
 getFullVersionString()
 {
-    static std::string const value = "xahaud-" + getVersionString();
+    static std::string const value = "feeturre-" + getVersionString();
     return value;
 }
 
